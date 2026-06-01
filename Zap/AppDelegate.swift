@@ -26,9 +26,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setUpStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "command", accessibilityDescription: "Zap")
+        item.button?.image = Self.statusBarImage()
         item.menu = buildMenu()
         statusItem = item
+    }
+
+    /// Builds the menu-bar icon: the `command` glyph with the app's "flash" bolt
+    /// added as a badge in the lower-trailing corner. Rendered as a template image
+    /// so the system tints it for light/dark menu bars automatically.
+    static func statusBarImage() -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+
+        let command = NSImage(systemSymbolName: "command", accessibilityDescription: "Zap")?
+            .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+        let bolt = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 9, weight: .bold))
+
+        let image = NSImage(size: size, flipped: false) { _ in
+            // Command glyph, nudged toward the top-leading corner to leave room
+            // for the bolt badge.
+            if let command {
+                let s = command.size
+                command.draw(in: NSRect(x: 0, y: 18 - s.height, width: s.width, height: s.height))
+            }
+            // Bolt badge in the lower-trailing corner. A slightly larger bolt is
+            // knocked out of the command first, so the badge keeps a transparent
+            // border that follows the bolt's own shape (not a boxy halo).
+            if let bolt {
+                let s = bolt.size
+                let frame = NSRect(origin: NSPoint(x: 18 - s.width, y: 0), size: s)
+                bolt.draw(in: frame.insetBy(dx: -2.5, dy: -2.5),
+                          from: .zero, operation: .destinationOut, fraction: 1)
+                bolt.draw(in: frame)
+            }
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 
     private func buildMenu() -> NSMenu {
