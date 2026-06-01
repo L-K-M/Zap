@@ -1,0 +1,145 @@
+import AppKit
+import CoreGraphics
+
+/// Intercepts ⌘+Tab using a `CGEventTap` and drives the custom switcher.
+///
+/// The tap is attached to the **main** run loop, so all callbacks run on the main
+/// thread and may touch UI directly. Requires Accessibility permission.
+final class EventTapMonitor {
+
+    // MARK: Callbacks (set by the controller)
+
+    /// Called when the user cycles. `forward == false` means reverse (Shift held).
+    var onCycle: ((_ forward: Bool) -> Void)?
+    /// Called when the Command key is released while the overlay is visible.
+    var onCommit: (() -> Void)?
+    /// Called when the user cancels (Escape) while the overlay is visible.
+    var onCancel: (() -> Void)?
+    /// Called when the user presses ⌘Q / ⌘W on the selection (optional handlers).
+    var onQuitSelected: (() -> Void)?
+    /// Whether a switch session is currently active (overlay shown or pending).
+    /// Drives commit/cancel behavior.
+    var isSwitching: () -> Bool = { false }
+
+    // MARK: State
+
+    private var eventTap: CFMachPort?
+    private var runLoopSource: CFRunLoopSource?
+
+    var isRunning: Bool { eventTap != nil }
+
+    // MARK: Lifecycle
+
+    /// Installs the tap. Returns `false` if it could not be created (usually means
+    /// Accessibility permission is missing).
+    @discardableResult
+    func start() -> Bool {
+        guard eventTap == nil else { return true }
+
+        let mask: CGEventMask =
+            CGEventMask(1 << CGEventType.keyDown.rawValue) |
+            CGEventMask(1 << CGEventType.flagsChanged.rawValue)
+
+        let callback: CGEventTapCallBack = { _, type, event, refcon in
+            guard let refcon else { return Unmanaged.passUnretained(event) }
+            let monitor = Unmanaged<EventTapMonitor>.fromOpaque(refcon).takeUnretainedValue()
+            return monitor.handle(type: type, event: event)
+        }
+
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: mask,
+            callback: callback,
+            userInfo: Unmanaged.passUnretained(self).toOpaque()
+        ) else {
+            return false
+        }
+
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+
+        eventTap = tap
+        runLoopSource = source
+        return true
+    }
+
+    func stop() {
+        if let tap = eventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+        }
+        if let source = runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        }
+        eventTap = nil
+        runLoopSource = nil
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        guard let tap = eventTap else { return }
+        CGEvent.tapEnable(tap: tap, enable: enabled)
+    }
+
+    // MARK: Event handling
+
+    private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        // Re-enable if the system disabled our tap (e.g. slow callback / user input).
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let tap = eventTap {
+                CGEvent.tapEnable(tap: tap, enable: true)
+            }
+            return Unmanaged.passUnretained(event)
+        }
+
+        let flags = event.flags
+        let commandDown = flags.contains(.maskCommand)
+        let shiftDown = flags.contains(.maskShift)
+
+        switch type {
+        case .flagsChanged:
+            // Commit the selection when Command is released while visible.
+            if isSwitching() && !commandDown {
+                onCommit?()
+            }
+            return Unmanaged.passUnretained(event)
+
+        case .keyDown:
+            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+
+            // ⌘+Tab (forward) / ⌘+Shift+Tab (reverse): consume and drive switcher.
+            if commandDown && keyCode == KeyCode.tab {
+                onCycle?(!shiftDown)
+                return nil
+            }
+
+            // ⌘+` cycles backward, matching native behavior.
+            if commandDown && keyCode == KeyCode.grave {
+                onCycle?(false)
+                return nil
+            }
+
+            guard isSwitching() else {
+                return Unmanaged.passUnretained(event)
+            }
+
+            // Keys handled only while the overlay is up.
+            switch keyCode {
+            case KeyCode.escape:
+                onCancel?()
+                return nil
+            case KeyCode.q, KeyCode.w:
+                // Quit the highlighted app (Command is still held here).
+                onQuitSelected?()
+                return nil
+            default:
+                // Swallow other keys so they don't leak to the front app mid-switch.
+                return nil
+            }
+
+        default:
+            return Unmanaged.passUnretained(event)
+        }
+    }
+}

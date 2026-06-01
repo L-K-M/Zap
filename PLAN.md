@@ -1,0 +1,284 @@
+# Zap — A Fast, Customizable macOS App Switcher
+
+A lightweight replacement for the built-in <kbd>⌘</kbd>+<kbd>Tab</kbd> switcher. It
+looks and behaves like the native switcher, but lets you **exclude apps** you never
+switch to and **customize basic colors**.
+
+---
+
+## 1. Goals & Non-Goals
+
+### Goals
+- Visually and behaviorally mimic the native macOS app switcher.
+- Trigger on <kbd>⌘</kbd>+<kbd>Tab</kbd> (and <kbd>⌘</kbd>+<kbd>⇧</kbd>+<kbd>Tab</kbd> to cycle backward).
+- Exclude a user-defined set of apps from the switcher.
+- Customize a few colors (background, selection highlight, optional text/label).
+- Be fast: appear instantly on keypress, no perceptible lag.
+
+### Non-Goals (v1)
+- Window-level switching (only app-level, like the native switcher).
+- Per-app actions beyond activate/quit/hide.
+- App Store distribution (see §9 — the event tap makes this impractical).
+- Themes/skins beyond a handful of color settings.
+
+---
+
+## 2. High-Level Architecture
+
+A background **menu-bar / agent app** (`LSUIElement = true`, no Dock icon) so it never
+appears in its own switcher.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Zap (LSUIElement agent app)                              │
+│                                                          │
+│  ┌────────────────┐   ┌───────────────────────────────┐  │
+│  │ HotkeyMonitor  │   │ AppListProvider               │  │
+│  │ (CGEventTap)   │   │ - NSWorkspace running apps    │  │
+│  │ - intercept    │──▶│ - MRU ordering                │  │
+│  │   ⌘Tab / Shift │   │ - exclusion filter            │  │
+│  │ - detect ⌘ up  │   └───────────────────────────────┘  │
+│  └───────┬────────┘                  │                   │
+│          │                           ▼                   │
+│          │                ┌────────────────────┐         │
+│          └───────────────▶│ SwitcherController │         │
+│                           │ - selection state  │         │
+│                           │ - show/hide overlay│         │
+│                           └─────────┬──────────┘         │
+│                                     ▼                     │
+│              ┌──────────────────────────────────┐        │
+│              │ OverlayWindow (borderless NSWindow│        │
+│              │  / SwiftUI) — icons + highlight   │        │
+│              └──────────────────────────────────┘        │
+│                                                          │
+│  ┌────────────────┐   ┌───────────────────────────────┐  │
+│  │ StatusItem     │   │ Settings (SwiftUI window)     │  │
+│  │ (menu bar)     │──▶│ - Exclusions, Colors, Perms   │  │
+│  └────────────────┘   └───────────────────────────────┘  │
+│                                  │                       │
+│                                  ▼                       │
+│                       ┌────────────────────┐             │
+│                       │ Preferences store  │             │
+│                       │ (UserDefaults)     │             │
+│                       └────────────────────┘             │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Tech stack:** Swift, SwiftUI for Settings + overlay rendering, AppKit for windowing,
+`NSWorkspace`, and a low-level `CGEventTap` for the hotkey. Targets macOS 13+.
+
+---
+
+## 3. The Hard Part: Intercepting ⌘+Tab
+
+The native ⌘+Tab is owned by the system. There is no public API to "reskin" it, so we
+must **intercept the key event and suppress the system switcher**.
+
+### Approach: `CGEventTap`
+- Install a session-level event tap (`CGEventTapCreate`) listening for `keyDown`,
+  `keyUp`, and `flagsChanged`.
+- When we see <kbd>Tab</kbd> (keycode `48`) with **only** the Command flag active
+  (plus optional Shift), we **consume** the event (return `nil` from the callback) so
+  the system switcher never sees it, and drive our own switcher instead.
+- Track the Command modifier via `flagsChanged`. When Command is **released** while the
+  overlay is visible, **commit** the current selection (activate that app) and hide.
+- Subsequent <kbd>Tab</kbd> presses while Command is still held advance the selection;
+  <kbd>⇧</kbd>+<kbd>Tab</kbd> moves backward.
+
+> **Requires Accessibility permission** (`AXIsProcessTrusted`). The app must be granted
+> access in *System Settings → Privacy & Security → Accessibility*. We can't tap keys
+> without it. The tap must be re-enabled if the system disables it
+> (`kCGEventTapDisabledByTimeout`).
+
+### Key handling while overlay is visible
+| Key                        | Action                                  |
+|----------------------------|-----------------------------------------|
+| <kbd>Tab</kbd>             | Next app                                |
+| <kbd>⇧</kbd>+<kbd>Tab</kbd> | Previous app                            |
+| <kbd>`</kbd> (backtick)    | Previous app (matches native behavior)  |
+| Release <kbd>⌘</kbd>       | Activate selected app, hide overlay     |
+| <kbd>Esc</kbd> / <kbd>.</kbd> | Cancel, hide overlay, no switch      |
+| <kbd>Q</kbd>               | Quit selected app (optional, v1.1)      |
+| <kbd>H</kbd>               | Hide selected app (optional, v1.1)      |
+| Arrow / mouse hover        | Move selection (optional, v1.1)         |
+
+### Fallback / coexistence
+- If Accessibility is **not** granted, fall back to a configurable alternate hotkey
+  (e.g. <kbd>⌥</kbd>+<kbd>Tab</kbd>) registered via Carbon `RegisterEventHotKey`, which
+  needs no special permission — and prompt the user to grant access for the real ⌘+Tab.
+- Optionally suggest the user disable native ⌘+Tab is **not** required — our tap
+  suppresses it while Zap is active.
+
+---
+
+## 4. App List, Ordering & Exclusions
+
+### Source of apps
+- `NSWorkspace.shared.runningApplications`, filtered to
+  `activationPolicy == .regular` (apps that normally appear in the switcher/Dock).
+- Each gives an `NSRunningApplication`: `bundleIdentifier`, `localizedName`, `icon`,
+  `processIdentifier`, and `activate(options:)`.
+
+### Most-Recently-Used (MRU) ordering
+- The native switcher lists apps in MRU order with the previously-active app
+  pre-selected (so a quick ⌘+Tab tap toggles between the two most recent apps).
+- Maintain our own MRU list by observing
+  `NSWorkspace.didActivateApplicationNotification` and moving the activated app to the
+  front. Persist nothing — rebuild from live notifications + current frontmost ordering
+  on launch.
+- On show: order = MRU list; default selection = index `1` (second item) so a single
+  tap switches to the last app, matching native feel.
+
+### Exclusions
+- Store a `Set<String>` of excluded **bundle identifiers** in `UserDefaults`.
+- Filter excluded apps out of the displayed list (they remain running and usable, just
+  hidden from Zap).
+- Settings UI lists currently running + previously seen apps with checkboxes.
+
+---
+
+## 5. The Overlay UI
+
+A borderless, transparent, floating window mimicking the native look.
+
+- **Window:** `NSWindow` with `styleMask = .borderless`, `isOpaque = false`,
+  `backgroundColor = .clear`, `level = .popUpMenu` (above normal windows),
+  `collectionBehavior` including `.canJoinAllSpaces` and `.stationary` so it shows on
+  any Space. Ignores mouse events except when hover-selection is enabled.
+- **Content (SwiftUI hosted in an `NSHostingView`):**
+  - Rounded-rect panel with an `NSVisualEffectView` (blur) background, tinted by the
+    user's chosen background color/opacity.
+  - Horizontal row of app icons (~64–128px), wrapping or scrolling if many.
+  - Selection highlight: rounded rectangle behind the selected icon using the user's
+    highlight color.
+  - Selected app's name shown as a label below/above the row (native shows name on top).
+- **Positioning:** Centered on the screen with the active mouse/key focus
+  (`NSScreen.main` or screen under cursor).
+- **Show/hide:** No fade by default for speed; optional short (~80ms) fade as a setting.
+  Native switcher shows after a brief hold — we can replicate the small delay so a quick
+  tap-and-release doesn't flash the UI (configurable).
+
+---
+
+## 6. Customization (Colors)
+
+Stored in `UserDefaults`, applied live to the overlay. v1 settings:
+
+| Setting                | Type            | Default                      |
+|------------------------|-----------------|------------------------------|
+| Background color       | Color + opacity | System dark translucent      |
+| Selection highlight    | Color + opacity | System accent / light gray   |
+| Label text color       | Color           | Primary label color          |
+| Icon size              | Slider (48–128) | 80                           |
+| Corner radius          | Slider          | 18                           |
+| Show app name label    | Toggle          | On                           |
+| Show delay before UI   | Slider (0–250ms)| ~150ms                       |
+
+Colors persisted as hex/`Codable` wrappers around `NSColor`. A live preview in Settings
+shows the overlay with current values.
+
+---
+
+## 7. Settings Window
+
+A standard SwiftUI window opened from the menu-bar item, with tabs:
+
+1. **General** — launch at login (`SMAppService`), show-delay, alternate hotkey.
+2. **Exclusions** — searchable list of apps with include/exclude toggles.
+3. **Appearance** — the color/size controls from §6 with live preview.
+4. **Permissions** — Accessibility status + button to open the relevant System Settings
+   pane; guidance text.
+
+Menu-bar `NSStatusItem` menu: *Settings…*, *Pause Zap*, *Quit*.
+
+---
+
+## 8. Persistence
+
+- `UserDefaults` (small, simple): excluded bundle IDs, color/appearance settings,
+  alternate hotkey, launch-at-login flag, show delay.
+- No database needed. MRU order is in-memory.
+
+---
+
+## 9. Permissions, Signing & Distribution
+
+- **Accessibility permission** is mandatory for the ⌘+Tab event tap. Onboarding must
+  detect and request it (`AXIsProcessTrustedWithOptions` with the prompt option).
+- **`LSUIElement = true`** in Info.plist so Zap has no Dock icon and never lists itself.
+- **Launch at login** via `SMAppService.mainApp` (macOS 13+).
+- **Distribution:** Developer ID signing + notarization for direct download. The App
+  Store is impractical because of the global event tap / Accessibility usage.
+- **Hardened runtime** enabled; no special entitlements beyond what the tap needs
+  (Accessibility is a user-granted permission, not an entitlement).
+
+---
+
+## 10. Project Structure (proposed)
+
+```
+Zap/
+├── Zap.xcodeproj
+├── Zap/
+│   ├── ZapApp.swift            # @main, app delegate, status item
+│   ├── Hotkey/
+│   │   ├── EventTapMonitor.swift
+│   │   └── CarbonHotkey.swift   # fallback alt-hotkey
+│   ├── Switcher/
+│   │   ├── SwitcherController.swift
+│   │   ├── AppListProvider.swift
+│   │   └── MRUTracker.swift
+│   ├── Overlay/
+│   │   ├── OverlayWindow.swift
+│   │   ├── OverlayView.swift     # SwiftUI
+│   │   └── VisualEffectView.swift
+│   ├── Settings/
+│   │   ├── SettingsView.swift
+│   │   ├── ExclusionsView.swift
+│   │   ├── AppearanceView.swift
+│   │   └── PermissionsView.swift
+│   ├── Model/
+│   │   ├── Preferences.swift     # UserDefaults wrapper
+│   │   └── AppInfo.swift
+│   └── Resources/
+│       ├── Assets.xcassets
+│       └── Info.plist
+└── README.md
+```
+
+---
+
+## 11. Implementation Phases / Milestones
+
+> **Status:** Phases 1–9 implemented in the initial build. Remaining work is
+> hardware/GUI verification (multi-monitor, Spaces, fullscreen) and release
+> signing/notarization, which require a real macOS session.
+
+1. **Skeleton** ✅ — Xcode project, `LSUIElement` agent app, menu-bar status item,
+   Settings window.
+2. **App listing** ✅ — `AppListProvider` + `MRUTracker`.
+3. **Overlay** ✅ — borderless window rendering the icon row + highlight.
+4. **Event tap** ✅ — intercept ⌘+Tab, suppress system switcher, drive selection,
+   commit on ⌘ release; Accessibility permission flow + tap re-enable.
+5. **Activation** ✅ — `activate(options:)` the selected app; MRU toggle feel.
+6. **Exclusions** ✅ — Settings UI + `UserDefaults` filtering.
+7. **Appearance** ✅ — color/size settings + live preview applied to overlay.
+8. **Polish** ✅ — show-delay, reverse cycling, Esc cancel, launch-at-login,
+   quit-selected, target-screen selection.
+9. **Hardening & release** ☐ — sign, notarize, onboarding copy, app icon art.
+
+---
+
+## 12. Key Risks & Edge Cases
+
+- **Accessibility denied** → fall back to alt-hotkey + clear prompt; core feature
+  degraded but app still usable.
+- **Event tap disabled by timeout** → listen for `kCGEventTapDisabledByTimeout` and
+  re-enable.
+- **Fullscreen / per-Space apps** → ensure overlay `collectionBehavior` shows it
+  everywhere; `activate` may switch Spaces (matches native).
+- **Apps launching/quitting mid-switch** → guard against stale `pid`/bundle IDs.
+- **Multiple monitors** → show overlay on the active screen.
+- **Performance** → pre-warm overlay window; cache icons; avoid rebuilding the whole
+  view on each Tab (only move the highlight).
+- **Conflicts with other switcher utilities** (e.g. user already remapped ⌘+Tab).
