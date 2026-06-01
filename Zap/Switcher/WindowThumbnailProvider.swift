@@ -18,8 +18,20 @@ actor WindowThumbnailProvider {
 
     private var cache: LRUImageCache
 
-    init(capacity: Int = 24, maxAge: TimeInterval = 5) {
+    /// How long a fetched window list stays valid before we re-enumerate. A whole
+    /// preview batch is captured well within this window, so the expensive
+    /// system-wide `SCShareableContent` enumeration runs once per batch rather
+    /// than once per window.
+    private let contentTTL: TimeInterval
+
+    /// Most-recent shareable-content snapshot and the time it was taken. macOS 14+
+    /// only; typed `Any?` so the property needs no availability annotation.
+    private var cachedContent: Any?
+    private var cachedContentAt: TimeInterval = 0
+
+    init(capacity: Int = 24, maxAge: TimeInterval = 5, contentTTL: TimeInterval = 1) {
         cache = LRUImageCache(capacity: capacity, maxAge: maxAge)
+        self.contentTTL = contentTTL
     }
 
     /// Returns a cached or freshly-captured thumbnail for `windowID`, scaled so its
@@ -46,14 +58,35 @@ actor WindowThumbnailProvider {
     /// Drops all cached thumbnails (e.g. when previews are turned off).
     func clear() {
         cache.removeAll()
+        cachedContent = nil
+        cachedContentAt = 0
     }
 
     // MARK: Capture backends
 
+    /// Returns a recent shareable-content snapshot, reusing the cached one while it
+    /// is still within `contentTTL`. Enumerating every on-screen window is the
+    /// expensive part of a capture, so sharing one snapshot across a preview batch
+    /// keeps the switcher's run loop responsive (an overloaded run loop gets the
+    /// ⌘+Tab event tap disabled by timeout, dropping the commit on key release).
+    @available(macOS 14.0, *)
+    private func shareableContent() async -> SCShareableContent? {
+        let now = Date.timeIntervalSinceReferenceDate
+        if let content = cachedContent as? SCShareableContent, now - cachedContentAt < contentTTL {
+            return content
+        }
+        guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true) else {
+            return nil
+        }
+        cachedContent = content
+        cachedContentAt = Date.timeIntervalSinceReferenceDate
+        return content
+    }
+
     @available(macOS 14.0, *)
     private func captureModern(windowID: CGWindowID, maxDimension: CGFloat) async -> CGImage? {
         guard
-            let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true),
+            let content = await shareableContent(),
             let window = content.windows.first(where: { $0.windowID == windowID })
         else {
             return nil
