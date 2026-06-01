@@ -84,6 +84,7 @@ final class OverlayWindowController {
     func show(apps: [AppInfo], selectedIndex: Int, on screen: NSScreen) {
         model.apps = apps
         model.selectedIndex = selectedIndex
+        model.quittingPIDs = []
         model.windows = []
         model.windowSelectedIndex = nil
         model.windowThumbnails = [:]
@@ -96,6 +97,25 @@ final class OverlayWindowController {
 
     func updateSelection(_ index: Int) {
         model.selectedIndex = index
+    }
+
+    /// Updates which app icons render dimmed (pending-quit) and moves the
+    /// highlight, without resizing or repositioning the panel.
+    func setQuitting(_ pids: Set<pid_t>, selectedIndex: Int) {
+        model.quittingPIDs = pids
+        model.selectedIndex = selectedIndex
+    }
+
+    /// Replaces the app row (e.g. once a quit is confirmed and the icon is
+    /// dropped), keeping the panel's top edge fixed so the row doesn't jump.
+    func updateApps(_ apps: [AppInfo], selectedIndex: Int, quitting: Set<pid_t>) {
+        model.apps = apps
+        model.selectedIndex = selectedIndex
+        model.quittingPIDs = quitting
+        model.windows = []
+        model.windowSelectedIndex = nil
+        model.windowThumbnails = [:]
+        layout(keepTop: true)
     }
 
     // MARK: Window list
@@ -134,6 +154,7 @@ final class OverlayWindowController {
         isVisible = false
         model.apps = []
         model.selectedIndex = 0
+        model.quittingPIDs = []
         model.windows = []
         model.windowSelectedIndex = nil
         model.windowThumbnails = [:]

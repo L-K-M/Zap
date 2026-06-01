@@ -48,6 +48,27 @@ final class SwitcherController {
     /// Auto-commit delay used only in fallback mode.
     private let autoCommitInterval: TimeInterval = 0.8
 
+    /// Apps we asked to quit and are still verifying, keyed by process id. The
+    /// app stays in `apps` (shown dimmed, skipped by the selection) until we know
+    /// whether it terminated — then it's dropped — or refused, then restored.
+    private var pendingQuits: [pid_t: PendingQuit] = [:]
+
+    /// The subset of `apps` currently shown dimmed as pending-quit. Mirrors
+    /// `pendingQuits.keys` but kept as a `Set` for cheap membership checks on the
+    /// selection hot path; pushed to the overlay so it can dim those icons.
+    private var quittingPIDs: Set<pid_t> = []
+
+    /// How long to wait after asking an app to quit before deciding it refused.
+    /// Long enough that a normal (even slow) quit completes first, short enough
+    /// that a stuck app un-dims while the user may still be holding ⌘.
+    private let quitVerificationDelay: TimeInterval = 2
+
+    /// An app the user asked to quit that we're verifying.
+    private struct PendingQuit {
+        let runningApp: NSRunningApplication
+        let timer: Timer
+    }
+
     /// Whether the switcher is currently driven by the real ⌘+Tab event tap.
     var isUsingEventTap: Bool { usesEventTap }
 
@@ -218,9 +239,8 @@ final class SwitcherController {
     }
 
     private func advanceSelection(forward: Bool) {
-        guard !apps.isEmpty else { return }
-        let count = apps.count
-        selectedIndex = ((selectedIndex + (forward ? 1 : -1)) % count + count) % count
+        guard let next = nextSelectableIndex(from: selectedIndex, forward: forward) else { return }
+        selectedIndex = next
 
         if overlay.isVisible {
             overlay.updateSelection(selectedIndex)
@@ -231,18 +251,45 @@ final class SwitcherController {
         }
     }
 
+    /// The next index in `direction` that isn't a dimmed pending-quit app, so the
+    /// highlight skips over apps on their way out. Wraps around; returns `nil`
+    /// only when there's no selectable app (empty, or every app is quitting).
+    private func nextSelectableIndex(from index: Int, forward: Bool) -> Int? {
+        guard !apps.isEmpty else { return nil }
+        let count = apps.count
+        let step = forward ? 1 : -1
+        for offset in 1...count {
+            let candidate = ((index + step * offset) % count + count) % count
+            if !quittingPIDs.contains(apps[candidate].processIdentifier) {
+                return candidate
+            }
+        }
+        return nil
+    }
+
     private func presentOverlay() {
         showTimer?.invalidate()
         showTimer = nil
         guard isSessionActive, !apps.isEmpty, let screen = targetScreen() else { return }
         overlay.show(apps: apps, selectedIndex: selectedIndex, on: screen)
+        // `show` clears the dim state; re-apply it in case a quit was requested
+        // before the overlay first appeared.
+        if !quittingPIDs.isEmpty {
+            overlay.setQuitting(quittingPIDs, selectedIndex: selectedIndex)
+        }
         restartDwell()
     }
 
     // MARK: Commit / cancel
 
     private func commit() {
-        let targetApp = isSessionActive && apps.indices.contains(selectedIndex) ? apps[selectedIndex] : nil
+        // Never activate an app that's on its way out (selection normally skips
+        // these, but guard in case it's the last one standing).
+        let targetApp: AppInfo? = {
+            guard isSessionActive, apps.indices.contains(selectedIndex) else { return nil }
+            let app = apps[selectedIndex]
+            return quittingPIDs.contains(app.processIdentifier) ? nil : app
+        }()
         let targetWindow: WindowInfo? = {
             guard let index = windowSelectedIndex, windows.indices.contains(index) else { return nil }
             return windows[index]
@@ -262,6 +309,8 @@ final class SwitcherController {
     /// Handles a click on an app icon: select it and switch immediately.
     private func pick(_ index: Int) {
         guard isSessionActive, apps.indices.contains(index) else { return }
+        // Ignore clicks on a dimmed app that's quitting.
+        guard !quittingPIDs.contains(apps[index].processIdentifier) else { return }
         selectedIndex = index
         windowSelectedIndex = nil
         commit()
@@ -272,6 +321,7 @@ final class SwitcherController {
         autoCommitTimer?.invalidate(); autoCommitTimer = nil
         dwellTimer?.invalidate(); dwellTimer = nil
         isSessionActive = false
+        quittingPIDs.removeAll()
         windows = []
         windowSelectedIndex = nil
         windowsGeneration &+= 1
@@ -283,29 +333,83 @@ final class SwitcherController {
         let victim = apps[selectedIndex]
 
         // The Finder can't meaningfully be quit — it relaunches immediately — so
-        // leave it in place rather than terminating it and dropping it from the
-        // list only to have it reappear.
+        // leave it in place rather than terminating it and dropping it.
         guard victim.bundleIdentifier != "com.apple.finder" else { return }
 
-        provider.runningApplication(for: victim)?.terminate()
+        let pid = victim.processIdentifier
+        guard !quittingPIDs.contains(pid) else { return }     // already on its way out
 
-        // `terminate()` is asynchronous, so the app can still appear in the live
-        // running list for a moment. Drop it explicitly so the overlay updates
-        // right away and a later commit (on ⌘ release) doesn't re-activate — and
-        // thereby cancel the quit of — the app we just asked to quit.
-        apps = provider.currentApps().filter { $0.processIdentifier != victim.processIdentifier }
+        // `terminate()` only *requests* a polite quit (so the app can prompt about
+        // unsaved changes); it can keep running. Resolve the live process first so
+        // we can later check whether it actually went away.
+        guard let runningApp = provider.runningApplication(for: victim) else { return }
+        runningApp.terminate()
+        quittingPIDs.insert(pid)
+        scheduleQuitVerification(for: runningApp)
+
+        // Don't yank the app out yet — dim it and jump the highlight to the next
+        // live app. The icon is removed (or restored) once `verifyQuit` knows
+        // whether the quit took. A commit while it's dimmed won't re-activate it.
+        if let next = nextSelectableIndex(from: selectedIndex, forward: true) {
+            selectedIndex = next
+        }
         windows = []
         windowSelectedIndex = nil
         windowsGeneration &+= 1
+        overlay.setQuitting(quittingPIDs, selectedIndex: selectedIndex)
+        overlay.clearWindows()
+        restartDwell()
+    }
+
+    /// Starts the one-shot timer that checks whether `runningApp` actually quit.
+    private func scheduleQuitVerification(for runningApp: NSRunningApplication) {
+        let pid = runningApp.processIdentifier
+        pendingQuits[pid]?.timer.invalidate()
+        let timer = Timer.scheduledTimer(withTimeInterval: quitVerificationDelay, repeats: false) { [weak self] _ in
+            self?.verifyQuit(pid: pid)
+        }
+        pendingQuits[pid] = PendingQuit(runningApp: runningApp, timer: timer)
+    }
+
+    /// Resolves a pending quit: if the app terminated, drop its (dimmed) icon for
+    /// good; if it refused — typically a save/confirm dialog keeps it alive —
+    /// restore it to full opacity so it can be chosen again.
+    private func verifyQuit(pid: pid_t) {
+        guard let pending = pendingQuits.removeValue(forKey: pid) else { return }
+        let terminated = pending.runningApp.isTerminated
+        quittingPIDs.remove(pid)
+
+        // With no session on screen there's nothing to update — the next list the
+        // switcher builds reflects reality (terminated apps gone, survivors back).
+        guard isSessionActive else { return }
+
+        if terminated {
+            removeApp(pid: pid)
+        } else {
+            overlay.setQuitting(quittingPIDs, selectedIndex: selectedIndex)
+        }
+    }
+
+    /// Drops a confirmed-quit app from the list, keeping the selection stable, and
+    /// re-lays-out the (now narrower) panel.
+    private func removeApp(pid: pid_t) {
+        guard let index = apps.firstIndex(where: { $0.processIdentifier == pid }) else { return }
+        let previousSelection = apps.indices.contains(selectedIndex) ? apps[selectedIndex] : nil
+        apps.remove(at: index)
         guard !apps.isEmpty else {
             cancel()
             return
         }
-        selectedIndex = min(selectedIndex, apps.count - 1)
-        if overlay.isVisible, let screen = targetScreen() {
-            overlay.show(apps: apps, selectedIndex: selectedIndex, on: screen)
-            restartDwell()
+        if let previousSelection, let newIndex = apps.firstIndex(of: previousSelection) {
+            selectedIndex = newIndex
+        } else {
+            selectedIndex = min(selectedIndex, apps.count - 1)
         }
+        windows = []
+        windowSelectedIndex = nil
+        windowsGeneration &+= 1
+        overlay.updateApps(apps, selectedIndex: selectedIndex, quitting: quittingPIDs)
+        restartDwell()
     }
 
     // MARK: Hover
@@ -314,6 +418,8 @@ final class SwitcherController {
     /// windows reveal after the configured delay.
     private func hoverApp(_ index: Int) {
         guard isSessionActive, apps.indices.contains(index), index != selectedIndex else { return }
+        // Don't let the pointer land the highlight on a dimmed, quitting app.
+        guard !quittingPIDs.contains(apps[index].processIdentifier) else { return }
         selectedIndex = index
         overlay.updateSelection(index)
         restartDwell()
@@ -356,6 +462,9 @@ final class SwitcherController {
     /// least two windows worth choosing between.
     private func revealWindows() {
         guard isSessionActive, overlay.isVisible, apps.indices.contains(selectedIndex) else { return }
+        // The selection can rest on a quitting app only when it's the last one
+        // left; don't reveal windows for an app that's on its way out.
+        guard !quittingPIDs.contains(apps[selectedIndex].processIdentifier) else { return }
         let found = WindowEnumerator.windows(forPID: apps[selectedIndex].processIdentifier)
         guard found.count >= 2 else { return }
         windows = found

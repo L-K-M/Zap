@@ -23,7 +23,8 @@ struct OverlayView: View {
 
             HStack(spacing: iconSpacing) {
                 ForEach(Array(model.apps.enumerated()), id: \.element.id) { index, app in
-                    iconCell(app, isSelected: index == model.selectedIndex)
+                    iconCell(app, isSelected: index == model.selectedIndex,
+                             isQuitting: model.quittingPIDs.contains(app.processIdentifier))
                         .contentShape(Rectangle())
                         .onTapGesture { model.onPick?(index) }
                         .onHover { hovering in
@@ -69,7 +70,7 @@ struct OverlayView: View {
         }
     }
 
-    private func iconCell(_ app: AppInfo, isSelected: Bool) -> some View {
+    private func iconCell(_ app: AppInfo, isSelected: Bool, isQuitting: Bool) -> some View {
         Image(nsImage: app.icon ?? NSImage())
             .resizable()
             .interpolation(.high)
@@ -82,6 +83,9 @@ struct OverlayView: View {
                           ? Color(hexString: preferences.highlightColorHex).opacity(preferences.highlightOpacity)
                           : Color.clear)
             )
+            // Dim apps that are quitting until their fate is confirmed.
+            .opacity(isQuitting ? 0.3 : 1)
+            .animation(.easeOut(duration: 0.15), value: isQuitting)
     }
 
     // MARK: Window list

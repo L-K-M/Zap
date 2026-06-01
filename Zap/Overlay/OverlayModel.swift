@@ -8,6 +8,11 @@ final class OverlayModel: ObservableObject {
     @Published var apps: [AppInfo] = []
     @Published var selectedIndex: Int = 0
 
+    /// Process ids the user asked to quit that we're still verifying. Their icons
+    /// render dimmed and the selection skips over them until we know whether they
+    /// actually quit (then removed) or refused (then restored to full opacity).
+    @Published var quittingPIDs: Set<pid_t> = []
+
     /// Windows of the currently-selected app, revealed after a dwell. Empty when
     /// the window list is hidden.
     @Published var windows: [WindowInfo] = []
