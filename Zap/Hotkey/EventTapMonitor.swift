@@ -102,6 +102,13 @@ final class EventTapMonitor {
         let flags = event.flags
         let commandDown = flags.contains(.maskCommand)
         let shiftDown = flags.contains(.maskShift)
+        // Only Command and (optionally) Shift may be held for our trigger. Any of
+        // Control / Option / Function present means this is some other shortcut
+        // (e.g. ⌃⌘Tab, ⌥⌘Tab) that we must not consume.
+        let foreignModifiers = flags.contains(.maskControl)
+            || flags.contains(.maskAlternate)
+            || flags.contains(.maskSecondaryFn)
+        let cleanCommand = commandDown && !foreignModifiers
 
         switch type {
         case .flagsChanged:
@@ -115,13 +122,17 @@ final class EventTapMonitor {
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
 
             // ⌘+Tab (forward) / ⌘+Shift+Tab (reverse): consume and drive switcher.
-            if commandDown && keyCode == KeyCode.tab {
+            // Require exactly Command with optional Shift — reject Control/Option/Fn
+            // so we don't steal other system shortcuts that include Tab.
+            if cleanCommand && keyCode == KeyCode.tab {
                 onCycle?(!shiftDown)
                 return nil
             }
 
-            // ⌘+` cycles backward, matching native behavior.
-            if commandDown && keyCode == KeyCode.grave {
+            // ⌘+` reverse-cycles, but ONLY while a switch session is already
+            // active. Outside a session ⌘+` is the native "cycle windows of the
+            // front app" shortcut and must be left alone.
+            if cleanCommand && keyCode == KeyCode.grave && isSwitching() {
                 onCycle?(false)
                 return nil
             }

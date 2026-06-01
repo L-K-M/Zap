@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import Combine
 
 /// Coordinates hotkey input, the app list, and the overlay window.
 ///
@@ -27,6 +28,10 @@ final class SwitcherController {
     private var usesEventTap = false
     private var isPaused = false
 
+    /// Reports the live trigger mode to the Settings UI.
+    let inputMode = InputModeReporter()
+    private var cancellables: Set<AnyCancellable> = []
+
     private var windows: [WindowInfo] = []
     private var windowSelectedIndex: Int?
 
@@ -49,18 +54,48 @@ final class SwitcherController {
         overlay.onHoverApp = { [weak self] index in self?.hoverApp(index) }
         overlay.onPickWindow = { [weak self] index in self?.pickWindow(index) }
         overlay.onHoverWindow = { [weak self] index in self?.hoverWindow(index) }
+
+        // Reconfigure live if the user toggles the alternate-hotkey preference.
+        preferences.$useAlternateHotkey
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.applyInputMode() }
+            .store(in: &cancellables)
     }
 
     // MARK: Lifecycle
 
     /// Starts input monitoring, choosing event-tap or fallback mode.
     func start() {
-        if AccessibilityAuthorizer.isTrusted {
+        applyInputMode()
+    }
+
+    /// (Re)configures the active trigger based on permission state and the
+    /// `useAlternateHotkey` preference. Safe to call repeatedly.
+    private func applyInputMode() {
+        guard !isPaused else { return }
+
+        // Tear down whatever is currently installed so we start clean.
+        eventTap.setEnabled(false)
+        forwardHotkey.unregister()
+        reverseHotkey.unregister()
+        usesEventTap = false
+
+        // The preference forces the ⌥+Tab fallback even when ⌘+Tab is available.
+        let forceFallback = preferences.useAlternateHotkey
+
+        if !forceFallback && AccessibilityAuthorizer.isTrusted {
             usesEventTap = eventTap.start()
+            if usesEventTap {
+                eventTap.setEnabled(true)
+                inputMode.update(.eventTap)
+                return
+            }
         }
-        if !usesEventTap {
-            startFallback()
-        }
+
+        // Fall back to the Carbon hotkey.
+        let registered = startFallback()
+        inputMode.update(registered ? .fallback : .unavailable)
     }
 
     func pause() {
@@ -69,15 +104,14 @@ final class SwitcherController {
         forwardHotkey.unregister()
         reverseHotkey.unregister()
         cancel()
+        inputMode.update(.paused)
     }
 
     func resume() {
         isPaused = false
-        if usesEventTap {
-            eventTap.setEnabled(true)
-        } else {
-            startFallback()
-        }
+        // Re-evaluate from scratch: if Accessibility was granted while paused (or
+        // since launch), this promotes us from fallback to the real event tap.
+        applyInputMode()
     }
 
     // MARK: Wiring
@@ -92,14 +126,20 @@ final class SwitcherController {
         eventTap.onNavigateWindows = { [weak self] down in self?.navigateWindows(down: down) }
     }
 
-    private func startFallback() {
+    @discardableResult
+    private func startFallback() -> Bool {
         // ⌥+Tab forward, ⌥+Shift+Tab reverse.
         let option = UInt32(optionKey)
         let shift = UInt32(shiftKey)
         forwardHotkey.onPressed = { [weak self] in self?.fallbackCycle(forward: true) }
         reverseHotkey.onPressed = { [weak self] in self?.fallbackCycle(forward: false) }
-        forwardHotkey.register(keyCode: KeyCode.Carbon.tab, modifiers: option)
-        reverseHotkey.register(keyCode: KeyCode.Carbon.tab, modifiers: option | shift)
+        let forwardOK = forwardHotkey.register(keyCode: KeyCode.Carbon.tab, modifiers: option)
+        let reverseOK = reverseHotkey.register(keyCode: KeyCode.Carbon.tab, modifiers: option | shift)
+        if !(forwardOK && reverseOK) {
+            NSLog("Zap: alternate hotkey registration failed (forward: \(forwardOK), reverse: \(reverseOK))")
+        }
+        // Forward cycling is the essential capability; treat that as "fallback active".
+        return forwardOK
     }
 
     // MARK: Cycling
@@ -123,9 +163,12 @@ final class SwitcherController {
         apps = provider.currentApps()
         guard !apps.isEmpty else { return }
 
-        // Pre-select the previous app (index 1) so a single press toggles the
-        // two most-recent apps, like the native switcher.
-        selectedIndex = forward ? (apps.count > 1 ? 1 : 0) : apps.count - 1
+        // Pre-select the previous app so a single press toggles the two
+        // most-recent apps, like the native switcher. Normally that's index 1,
+        // but if the frontmost app was excluded (and thus filtered out), index 0
+        // already *is* the previous visible app — selecting index 1 would skip it.
+        selectedIndex = defaultSelection(forward: forward, apps: apps,
+                                         frontmostBundleID: provider.frontmostBundleID())
         isSessionActive = true
 
         let delay = max(0, preferences.showDelayMs / 1000)
@@ -136,6 +179,25 @@ final class SwitcherController {
                 self?.presentOverlay()
             }
         }
+    }
+
+    /// Pure helper computing the initial highlighted index for a new session.
+    ///
+    /// Forward: highlight the previous app (index 1) so a tap toggles the two
+    /// MRU apps — but if the frontmost app didn't survive filtering (it's
+    /// excluded), index 0 is already the previous app, so highlight it instead.
+    /// Reverse: highlight the least-recently-used app (last index).
+    static func defaultSelection(forward: Bool, apps: [AppInfo], frontmostBundleID: String?) -> Int {
+        guard !apps.isEmpty else { return 0 }
+        guard forward else { return apps.count - 1 }
+        guard apps.count > 1 else { return 0 }
+        let frontmostSurvived = frontmostBundleID != nil
+            && apps.first?.bundleIdentifier == frontmostBundleID
+        return frontmostSurvived ? 1 : 0
+    }
+
+    private func defaultSelection(forward: Bool, apps: [AppInfo], frontmostBundleID: String?) -> Int {
+        Self.defaultSelection(forward: forward, apps: apps, frontmostBundleID: frontmostBundleID)
     }
 
     private func advanceSelection(forward: Bool) {
@@ -313,7 +375,10 @@ final class SwitcherController {
             windows.indices.contains(index)
         else { return }
 
-        WindowEnumerator.close(windows[index])
+        // Only drop the row if the close actually succeeded; otherwise the window
+        // (no close button, denied AX action, …) would vanish from the overlay
+        // while staying open on screen.
+        guard WindowEnumerator.close(windows[index]) else { return }
         windows.remove(at: index)
 
         if windows.isEmpty {
@@ -335,11 +400,16 @@ final class SwitcherController {
     // MARK: Helpers
 
     private func activate(_ info: AppInfo) {
-        guard let app = provider.runningApplication(for: info) else { return }
+        guard let app = provider.runningApplication(for: info) else {
+            NSLog("Zap: could not resolve running app for \(info.bundleIdentifier)")
+            return
+        }
         // `.activateAllWindows` raises every window of the app, not just its main
         // one — so switching to the already-frontmost app still brings all of its
         // windows forward (matching the native switcher).
-        app.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
+        if !app.activate(options: [.activateIgnoringOtherApps, .activateAllWindows]) {
+            NSLog("Zap: failed to activate \(info.bundleIdentifier)")
+        }
     }
 
     private func targetScreen() -> NSScreen? {

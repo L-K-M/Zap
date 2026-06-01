@@ -3,6 +3,7 @@ import Combine
 
 /// Shows Accessibility permission status and guidance for granting it.
 struct PermissionsView: View {
+    @ObservedObject var inputMode: InputModeReporter
     @State private var isTrusted = AccessibilityAuthorizer.isTrusted
     @State private var timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -15,7 +16,7 @@ struct PermissionsView: View {
                 VStack(alignment: .leading) {
                     Text("Accessibility")
                         .font(.headline)
-                    Text(isTrusted ? "Granted — ⌘-Tab interception is active." : "Not granted — Zap is using the ⌥-Tab fallback.")
+                    Text(statusDescription)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -46,6 +47,23 @@ struct PermissionsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .onReceive(timer) { _ in
             isTrusted = AccessibilityAuthorizer.isTrusted
+        }
+    }
+
+    /// Describes the *actual* trigger mode, not just the permission grant — the
+    /// event tap can fail to install even when Accessibility is granted.
+    private var statusDescription: String {
+        switch inputMode.mode {
+        case .eventTap:
+            return "Granted — ⌘-Tab interception is active."
+        case .fallback:
+            return isTrusted
+                ? "Using the ⌥-Tab fallback (⌘-Tab interception is off)."
+                : "Not granted — Zap is using the ⌥-Tab fallback."
+        case .unavailable:
+            return "No trigger active — ⌘-Tab interception and the ⌥-Tab fallback both failed."
+        case .paused:
+            return "Paused — Zap is not intercepting any shortcut."
         }
     }
 }

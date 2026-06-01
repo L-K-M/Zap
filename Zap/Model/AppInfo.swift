@@ -10,7 +10,10 @@ struct AppInfo: Identifiable, Equatable {
     let processIdentifier: pid_t
     let icon: NSImage?
 
-    var id: String { bundleIdentifier }
+    /// Unique per running process. Two instances of the same app share a bundle
+    /// identifier, so the pid is needed to keep SwiftUI `ForEach` IDs distinct
+    /// and to activate the correct process.
+    var id: String { "\(bundleIdentifier):\(processIdentifier)" }
 
     /// Designated initializer (also used by tests).
     init(bundleIdentifier: String, name: String, processIdentifier: pid_t, icon: NSImage? = nil) {

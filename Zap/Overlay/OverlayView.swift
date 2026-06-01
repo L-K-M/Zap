@@ -18,7 +18,7 @@ struct OverlayView: View {
                     .foregroundStyle(Color(hexString: preferences.labelColorHex))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(width: maxRowWidth)
+                    .frame(width: panelContentWidth)
             }
 
             HStack(spacing: iconSpacing) {
@@ -31,10 +31,12 @@ struct OverlayView: View {
                         }
                 }
             }
+            .modifier(HorizontallyScrollable(active: maxRowWidth > model.maxContentWidth,
+                                              width: panelContentWidth))
 
             if !model.windows.isEmpty {
                 Divider()
-                    .frame(maxWidth: maxRowWidth)
+                    .frame(maxWidth: panelContentWidth)
                 windowList
             }
         }
@@ -45,7 +47,12 @@ struct OverlayView: View {
             RoundedRectangle(cornerRadius: preferences.cornerRadius, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
         )
-        .fixedSize()
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The icon row width, capped so the panel never exceeds the screen.
+    private var panelContentWidth: CGFloat {
+        min(maxRowWidth, model.maxContentWidth)
     }
 
     private var maxRowWidth: CGFloat {
@@ -112,5 +119,21 @@ struct OverlayView: View {
                       ? Color(hexString: preferences.highlightColorHex).opacity(preferences.highlightOpacity)
                       : Color.clear)
         )
+    }
+}
+
+/// Wraps content in a horizontal `ScrollView` constrained to `width` when
+/// `active`, so a crowded icon row scrolls instead of overflowing the screen.
+private struct HorizontallyScrollable: ViewModifier {
+    let active: Bool
+    let width: CGFloat
+
+    func body(content: Content) -> some View {
+        if active && width.isFinite {
+            ScrollView(.horizontal, showsIndicators: false) { content }
+                .frame(width: width)
+        } else {
+            content
+        }
     }
 }

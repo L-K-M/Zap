@@ -134,14 +134,20 @@ final class OverlayWindowController {
 
     private func layout(keepTop: Bool) {
         guard let screen = currentScreen else { return }
+        let visible = screen.visibleFrame
+
+        // Cap how wide the icon row may grow before it scrolls, leaving a margin
+        // so the panel never butts against the screen edges.
+        let horizontalMargin: CGFloat = 40
+        model.maxContentWidth = max(120, visible.width - horizontalMargin * 2)
+
         hostingView.layoutSubtreeIfNeeded()
         let fitting = hostingView.fittingSize
         let size = NSSize(
-            width: max(fitting.width, 80),
-            height: max(fitting.height, 80)
+            width: min(max(fitting.width, 80), visible.width - horizontalMargin),
+            height: min(max(fitting.height, 80), visible.height)
         )
 
-        let visible = screen.visibleFrame
         let originY: CGFloat
         if keepTop, let top = anchorTop {
             // Grow/shrink downward from the fixed top edge.
@@ -154,7 +160,10 @@ final class OverlayWindowController {
             originY = centerY - size.height / 2
         }
 
-        let origin = NSPoint(x: visible.midX - size.width / 2, y: originY)
+        // Clamp the frame so it stays fully on the target screen.
+        let clampedX = min(max(visible.midX - size.width / 2, visible.minX), visible.maxX - size.width)
+        let clampedY = min(max(originY, visible.minY), visible.maxY - size.height)
+        let origin = NSPoint(x: clampedX, y: clampedY)
         window.setFrame(NSRect(origin: origin, size: size), display: true)
         anchorTop = origin.y + size.height
     }

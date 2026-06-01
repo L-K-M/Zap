@@ -5,7 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let preferences = Preferences.shared
     private lazy var switcher = SwitcherController(preferences: preferences)
-    private lazy var settingsWindow = SettingsWindowController(preferences: preferences)
+    private lazy var settingsWindow = SettingsWindowController(preferences: preferences, inputMode: switcher.inputMode)
 
     private var statusItem: NSStatusItem?
     private var pauseMenuItem: NSMenuItem?

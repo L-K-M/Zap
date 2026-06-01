@@ -73,7 +73,14 @@ final class CarbonHotkey {
             0,
             &hotKeyRef
         )
-        return registerStatus == noErr
+        guard registerStatus == noErr else {
+            // Roll back the installed handler so a failed registration doesn't
+            // leave a dangling event handler behind.
+            unregister()
+            NSLog("Zap: failed to register Carbon hotkey \(identifier): status \(registerStatus)")
+            return false
+        }
+        return true
     }
 
     func unregister() {

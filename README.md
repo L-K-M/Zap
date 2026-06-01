@@ -15,7 +15,7 @@ contributor/agent guidance.
 - Customizable colors, opacity, icon size, and corner radius with a live preview.
 - Menu-bar agent (no Dock icon); never appears in its own switcher.
 - Launch at login via `SMAppService`.
-- Graceful fallback to <kbd>⌥</kbd>+<kbd>Tab</kbd> when Accessibility access isn't granted.
+- Fallback to <kbd>⌥</kbd>+<kbd>Tab</kbd> when Accessibility access isn't granted; the Permissions tab reports the trigger that's actually active.
 
 ## Build & Run
 

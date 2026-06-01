@@ -26,8 +26,13 @@ final class AppListProvider {
 
     /// The current switcher list: regular apps, MRU-ordered, with exclusions removed.
     func currentApps() -> [AppInfo] {
+        // Always exclude Zap itself. While the Settings window is open the app
+        // temporarily becomes `.regular`, which would otherwise let it satisfy
+        // `AppInfo`'s activation-policy check and appear in its own switcher.
+        let ownBundleID = Bundle.main.bundleIdentifier
         let running = NSWorkspace.shared.runningApplications
             .compactMap(AppInfo.init(runningApplication:))
+            .filter { $0.bundleIdentifier != ownBundleID }
         return Self.filtered(mru.ordered(running), excluding: preferences.excludedBundleIDs)
     }
 
@@ -38,6 +43,12 @@ final class AppListProvider {
         return byBundle.first { $0.processIdentifier == info.processIdentifier }
             ?? byBundle.first
             ?? NSRunningApplication(processIdentifier: info.processIdentifier)
+    }
+
+    /// The bundle identifier of the currently frontmost application, if any.
+    /// Used to decide the initial switcher selection.
+    func frontmostBundleID() -> String? {
+        NSWorkspace.shared.frontmostApplication?.bundleIdentifier
     }
 
     /// Pure exclusion filter — exposed for unit testing.

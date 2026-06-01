@@ -76,11 +76,12 @@ The native ⌘+Tab is owned by the system. There is no public API to "reskin" it
 must **intercept the key event and suppress the system switcher**.
 
 ### Approach: `CGEventTap`
-- Install a session-level event tap (`CGEventTapCreate`) listening for `keyDown`,
-  `keyUp`, and `flagsChanged`.
+- Install a session-level event tap (`CGEventTapCreate`) listening for `keyDown`
+  and `flagsChanged`.
 - When we see <kbd>Tab</kbd> (keycode `48`) with **only** the Command flag active
   (plus optional Shift), we **consume** the event (return `nil` from the callback) so
-  the system switcher never sees it, and drive our own switcher instead.
+  the system switcher never sees it, and drive our own switcher instead. Combinations
+  that also hold Control, Option, or Fn are passed through untouched.
 - Track the Command modifier via `flagsChanged`. When Command is **released** while the
   overlay is visible, **commit** the current selection (activate that app) and hide.
 - Subsequent <kbd>Tab</kbd> presses while Command is still held advance the selection;
@@ -96,12 +97,13 @@ must **intercept the key event and suppress the system switcher**.
 |----------------------------|-----------------------------------------|
 | <kbd>Tab</kbd>             | Next app                                |
 | <kbd>⇧</kbd>+<kbd>Tab</kbd> | Previous app                            |
-| <kbd>`</kbd> (backtick)    | Previous app (matches native behavior)  |
+| <kbd>`</kbd> (backtick)    | Previous app — only while switching (matches native) |
 | Release <kbd>⌘</kbd>       | Activate selected app, hide overlay     |
-| <kbd>Esc</kbd> / <kbd>.</kbd> | Cancel, hide overlay, no switch      |
-| <kbd>Q</kbd>               | Quit selected app (optional, v1.1)      |
-| <kbd>H</kbd>               | Hide selected app (optional, v1.1)      |
-| Arrow / mouse hover        | Move selection (optional, v1.1)         |
+| <kbd>Esc</kbd>            | Cancel, hide overlay, no switch         |
+| <kbd>Q</kbd>               | Quit selected app                       |
+| <kbd>W</kbd>               | Close focused window (in the window list) |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | Move through the selected app's window list |
+| Mouse hover / click        | Move selection / pick app or window     |
 
 ### Fallback / coexistence
 - If Accessibility is **not** granted, fall back to a configurable alternate hotkey
@@ -128,7 +130,14 @@ must **intercept the key event and suppress the system switcher**.
   front. Persist nothing — rebuild from live notifications + current frontmost ordering
   on launch.
 - On show: order = MRU list; default selection = index `1` (second item) so a single
-  tap switches to the last app, matching native feel.
+  tap switches to the last app, matching native feel. When the frontmost app is
+  *excluded* it is filtered out, so the default selection becomes index `0` instead
+  (the previous visible app), preserving the toggle feel.
+- **Known limitation:** there is no public API for the system's own MRU order, so on a
+  cold launch Zap only knows the current frontmost app. Apps activated before launch
+  keep `NSWorkspace.runningApplications` order until the user activates them (which our
+  notification observer then records). The MRU order becomes accurate after the first
+  few app switches.
 
 ### Exclusions
 - Store a `Set<String>` of excluded **bundle identifiers** in `UserDefaults`.
@@ -221,29 +230,37 @@ Menu-bar `NSStatusItem` menu: *Settings…*, *Pause Zap*, *Quit*.
 Zap/
 ├── Zap.xcodeproj
 ├── Zap/
-│   ├── ZapApp.swift            # @main, app delegate, status item
+│   ├── ZapApp.swift            # @main
+│   ├── AppDelegate.swift       # app delegate, status item
 │   ├── Hotkey/
 │   │   ├── EventTapMonitor.swift
-│   │   └── CarbonHotkey.swift   # fallback alt-hotkey
+│   │   ├── CarbonHotkey.swift   # fallback alt-hotkey
+│   │   ├── AccessibilityAuthorizer.swift
+│   │   └── KeyCodes.swift
 │   ├── Switcher/
 │   │   ├── SwitcherController.swift
 │   │   ├── AppListProvider.swift
-│   │   └── MRUTracker.swift
+│   │   ├── MRUTracker.swift
+│   │   ├── WindowEnumerator.swift
+│   │   └── InputModeReporter.swift
 │   ├── Overlay/
-│   │   ├── OverlayWindow.swift
+│   │   ├── OverlayWindowController.swift
+│   │   ├── OverlayModel.swift
 │   │   ├── OverlayView.swift     # SwiftUI
 │   │   └── VisualEffectView.swift
 │   ├── Settings/
+│   │   ├── SettingsWindowController.swift
 │   │   ├── SettingsView.swift
+│   │   ├── GeneralView.swift
 │   │   ├── ExclusionsView.swift
 │   │   ├── AppearanceView.swift
 │   │   └── PermissionsView.swift
 │   ├── Model/
 │   │   ├── Preferences.swift     # UserDefaults wrapper
-│   │   └── AppInfo.swift
+│   │   ├── AppInfo.swift
+│   │   └── ColorHex.swift
 │   └── Resources/
-│       ├── Assets.xcassets
-│       └── Info.plist
+│       └── Assets.xcassets      # Info.plist is generated
 └── README.md
 ```
 

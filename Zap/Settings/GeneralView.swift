@@ -8,6 +8,11 @@ struct GeneralView: View {
         Form {
             Section {
                 Toggle("Launch Zap at login", isOn: $preferences.launchAtLogin)
+                if let error = preferences.launchAtLoginError {
+                    Text("Couldn't update login item: \(error)")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
             }
 
             Section("Timing") {
@@ -41,5 +46,6 @@ struct GeneralView: View {
         }
         .formStyle(.grouped)
         .padding()
+        .onAppear { preferences.refreshLaunchAtLoginStatus() }
     }
 }

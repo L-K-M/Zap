@@ -12,6 +12,10 @@ final class OverlayModel: ObservableObject {
     /// The highlighted window, or `nil` when the app row itself is focused.
     @Published var windowSelectedIndex: Int?
 
+    /// Maximum width the icon row may occupy before it scrolls horizontally.
+    /// Set from the target screen so the panel never runs off-screen.
+    @Published var maxContentWidth: CGFloat = .greatestFiniteMagnitude
+
     /// Called when the user clicks an icon. The argument is the app's index.
     var onPick: ((Int) -> Void)?
     /// Called when the pointer hovers an app icon. The argument is the app's index.

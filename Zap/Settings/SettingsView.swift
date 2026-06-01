@@ -3,6 +3,7 @@ import SwiftUI
 /// Root settings window content with tabs for each settings area.
 struct SettingsView: View {
     @ObservedObject var preferences: Preferences
+    @ObservedObject var inputMode: InputModeReporter
 
     var body: some View {
         TabView {
@@ -15,7 +16,7 @@ struct SettingsView: View {
             AppearanceView(preferences: preferences)
                 .tabItem { Label("Appearance", systemImage: "paintpalette") }
 
-            PermissionsView()
+            PermissionsView(inputMode: inputMode)
                 .tabItem { Label("Permissions", systemImage: "lock.shield") }
         }
         .frame(width: 520, height: 460)

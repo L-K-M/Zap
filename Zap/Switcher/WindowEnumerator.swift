@@ -36,8 +36,10 @@ enum WindowEnumerator {
 
         return axWindows.compactMap { element in
             // Keep only standard document/app windows; drop palettes, sheets, etc.
-            if let subrole = stringAttribute(element, kAXSubroleAttribute),
-               subrole != (kAXStandardWindowSubrole as String) {
+            // Require an explicit standard subrole — if the attribute is missing
+            // or unreadable, treat the window as non-standard and skip it rather
+            // than risk listing transient/utility windows.
+            guard stringAttribute(element, kAXSubroleAttribute) == (kAXStandardWindowSubrole as String) else {
                 return nil
             }
 
@@ -53,11 +55,19 @@ enum WindowEnumerator {
     /// app's main window, raises it, and activates the owning application.
     static func raise(_ window: WindowInfo, pid: pid_t) {
         if window.isMinimized {
-            AXUIElementSetAttributeValue(window.element, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+            let unminimize = AXUIElementSetAttributeValue(window.element, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+            if unminimize != .success {
+                NSLog("Zap: failed to un-minimize window (AX error \(unminimize.rawValue))")
+            }
         }
         AXUIElementSetAttributeValue(window.element, kAXMainAttribute as CFString, kCFBooleanTrue)
-        AXUIElementPerformAction(window.element, kAXRaiseAction as CFString)
-        NSRunningApplication(processIdentifier: pid)?.activate(options: [.activateIgnoringOtherApps])
+        let raise = AXUIElementPerformAction(window.element, kAXRaiseAction as CFString)
+        if raise != .success {
+            NSLog("Zap: failed to raise window (AX error \(raise.rawValue))")
+        }
+        if NSRunningApplication(processIdentifier: pid)?.activate(options: [.activateIgnoringOtherApps]) != true {
+            NSLog("Zap: failed to activate app pid \(pid) while raising window")
+        }
     }
 
     // MARK: Closing
@@ -69,11 +79,13 @@ enum WindowEnumerator {
         var button: CFTypeRef?
         guard
             AXUIElementCopyAttributeValue(window.element, kAXCloseButtonAttribute as CFString, &button) == .success,
-            let button
+            let button,
+            CFGetTypeID(button) == AXUIElementGetTypeID()
         else {
             return false
         }
-        return AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString) == .success
+        let closeButton = button as! AXUIElement // safe: type checked above
+        return AXUIElementPerformAction(closeButton, kAXPressAction as CFString) == .success
     }
 
     // MARK: Attribute helpers

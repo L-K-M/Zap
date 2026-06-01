@@ -97,7 +97,7 @@ final class Preferences: ObservableObject {
 
     @Published var launchAtLogin: Bool {
         didSet {
-            defaults.set(launchAtLogin, forKey: Key.launchAtLogin)
+            guard !isSyncingLaunchAtLogin else { return }
             applyLaunchAtLogin(launchAtLogin)
         }
     }
@@ -114,21 +114,52 @@ final class Preferences: ObservableObject {
         let excludedArray = defaults.stringArray(forKey: Key.excluded) ?? []
         excludedBundleIDs = Set(excludedArray)
 
-        backgroundColorHex = defaults.string(forKey: Key.backgroundColorHex) ?? Default.backgroundColorHex
-        highlightColorHex = defaults.string(forKey: Key.highlightColorHex) ?? Default.highlightColorHex
-        labelColorHex = defaults.string(forKey: Key.labelColorHex) ?? Default.labelColorHex
+        backgroundColorHex = Self.validColor(defaults.string(forKey: Key.backgroundColorHex), default: Default.backgroundColorHex)
+        highlightColorHex = Self.validColor(defaults.string(forKey: Key.highlightColorHex), default: Default.highlightColorHex)
+        labelColorHex = Self.validColor(defaults.string(forKey: Key.labelColorHex), default: Default.labelColorHex)
 
-        backgroundOpacity = defaults.object(forKey: Key.backgroundOpacity) as? Double ?? Default.backgroundOpacity
-        highlightOpacity = defaults.object(forKey: Key.highlightOpacity) as? Double ?? Default.highlightOpacity
-        iconSize = defaults.object(forKey: Key.iconSize) as? Double ?? Default.iconSize
-        cornerRadius = defaults.object(forKey: Key.cornerRadius) as? Double ?? Default.cornerRadius
+        backgroundOpacity = Self.clamp(defaults.object(forKey: Key.backgroundOpacity) as? Double ?? Default.backgroundOpacity, 0, 1, Default.backgroundOpacity)
+        highlightOpacity = Self.clamp(defaults.object(forKey: Key.highlightOpacity) as? Double ?? Default.highlightOpacity, 0, 1, Default.highlightOpacity)
+        iconSize = Self.clamp(defaults.object(forKey: Key.iconSize) as? Double ?? Default.iconSize, 24, 256, Default.iconSize)
+        cornerRadius = Self.clamp(defaults.object(forKey: Key.cornerRadius) as? Double ?? Default.cornerRadius, 0, 64, Default.cornerRadius)
         showAppName = defaults.object(forKey: Key.showAppName) as? Bool ?? true
-        showDelayMs = defaults.object(forKey: Key.showDelayMs) as? Double ?? Default.showDelayMs
+        showDelayMs = Self.clamp(defaults.object(forKey: Key.showDelayMs) as? Double ?? Default.showDelayMs, 0, 1000, Default.showDelayMs)
         showWindowList = defaults.object(forKey: Key.showWindowList) as? Bool ?? true
-        windowDwellMs = defaults.object(forKey: Key.windowDwellMs) as? Double ?? Default.windowDwellMs
-        launchAtLogin = defaults.object(forKey: Key.launchAtLogin) as? Bool ?? false
+        windowDwellMs = Self.clamp(defaults.object(forKey: Key.windowDwellMs) as? Double ?? Default.windowDwellMs, 50, 5000, Default.windowDwellMs)
         useAlternateHotkey = defaults.object(forKey: Key.useAlternateHotkey) as? Bool ?? false
+
+        // Seed launch-at-login from the authoritative system state rather than a
+        // possibly-stale stored value, so an external change in System Settings is
+        // reflected in the UI.
+        launchAtLogin = Self.systemLaunchAtLoginEnabled()
+            ?? (defaults.object(forKey: Key.launchAtLogin) as? Bool ?? false)
     }
+
+    // MARK: Validation helpers
+
+    /// Clamps `value` into `[lower, upper]`, falling back to `fallback` for
+    /// non-finite (NaN/inf) input from corrupted defaults.
+    private static func clamp(_ value: Double, _ lower: Double, _ upper: Double, _ fallback: Double) -> Double {
+        guard value.isFinite else { return fallback }
+        return Swift.min(Swift.max(value, lower), upper)
+    }
+
+    /// Returns `hex` if it parses to a valid color, otherwise `default`.
+    private static func validColor(_ hex: String?, default fallback: String) -> String {
+        guard let hex, NSColor(hex: hex) != nil else { return fallback }
+        return hex
+    }
+
+    /// The current login-item state from `SMAppService`, or `nil` if unavailable.
+    private static func systemLaunchAtLoginEnabled() -> Bool? {
+        guard #available(macOS 13.0, *) else { return nil }
+        switch SMAppService.mainApp.status {
+        case .enabled: return true
+        case .notRegistered, .notFound: return false
+        default: return nil
+        }
+    }
+
 
     // MARK: Exclusions
 
@@ -146,6 +177,13 @@ final class Preferences: ObservableObject {
 
     // MARK: Launch at login
 
+    /// Guards `launchAtLogin.didSet` against re-entrancy when we roll the toggle
+    /// back after a failed `SMAppService` call.
+    private var isSyncingLaunchAtLogin = false
+
+    /// The most recent launch-at-login error, surfaced to Settings.
+    @Published private(set) var launchAtLoginError: String?
+
     private func applyLaunchAtLogin(_ enabled: Bool) {
         guard #available(macOS 13.0, *) else { return }
         do {
@@ -158,8 +196,26 @@ final class Preferences: ObservableObject {
                     try SMAppService.mainApp.unregister()
                 }
             }
+            launchAtLoginError = nil
+            defaults.set(enabled, forKey: Key.launchAtLogin)
         } catch {
             NSLog("Zap: failed to update launch-at-login: \(error.localizedDescription)")
+            launchAtLoginError = error.localizedDescription
+            // Roll the toggle back to the real system state so the UI doesn't lie.
+            isSyncingLaunchAtLogin = true
+            launchAtLogin = Self.systemLaunchAtLoginEnabled() ?? !enabled
+            isSyncingLaunchAtLogin = false
+            defaults.set(launchAtLogin, forKey: Key.launchAtLogin)
         }
+    }
+
+    /// Re-reads the authoritative login-item state (e.g. when Settings appears)
+    /// so an external change in System Settings is reflected.
+    func refreshLaunchAtLoginStatus() {
+        guard let actual = Self.systemLaunchAtLoginEnabled(), actual != launchAtLogin else { return }
+        isSyncingLaunchAtLogin = true
+        launchAtLogin = actual
+        isSyncingLaunchAtLogin = false
+        defaults.set(actual, forKey: Key.launchAtLogin)
     }
 }

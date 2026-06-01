@@ -64,4 +64,36 @@ final class PreferencesTests: XCTestCase {
         XCTAssertNil(NSColor(hex: "nothex"))
         XCTAssertNil(NSColor(hex: "#12"))
     }
+
+    func testInvalidStoredColorFallsBackToDefault() {
+        defaults.set("not-a-color", forKey: "backgroundColorHex")
+        defaults.set("#GGGGGG", forKey: "highlightColorHex")
+        let prefs = Preferences(defaults: defaults)
+        XCTAssertEqual(prefs.backgroundColorHex, Preferences.Default.backgroundColorHex)
+        XCTAssertEqual(prefs.highlightColorHex, Preferences.Default.highlightColorHex)
+    }
+
+    func testOutOfRangeOpacityIsClamped() {
+        defaults.set(-2.0, forKey: "backgroundOpacity")
+        defaults.set(5.0, forKey: "highlightOpacity")
+        let prefs = Preferences(defaults: defaults)
+        XCTAssertEqual(prefs.backgroundOpacity, 0)
+        XCTAssertEqual(prefs.highlightOpacity, 1)
+    }
+
+    func testOutOfRangeIconSizeAndDelaysAreClamped() {
+        defaults.set(100_000.0, forKey: "iconSize")
+        defaults.set(-50.0, forKey: "showDelayMs")
+        defaults.set(99_999.0, forKey: "windowDwellMs")
+        let prefs = Preferences(defaults: defaults)
+        XCTAssertLessThanOrEqual(prefs.iconSize, 256)
+        XCTAssertGreaterThanOrEqual(prefs.showDelayMs, 0)
+        XCTAssertLessThanOrEqual(prefs.windowDwellMs, 5000)
+    }
+
+    func testNonFiniteValueFallsBackToDefault() {
+        defaults.set(Double.nan, forKey: "iconSize")
+        let prefs = Preferences(defaults: defaults)
+        XCTAssertEqual(prefs.iconSize, Preferences.Default.iconSize)
+    }
 }

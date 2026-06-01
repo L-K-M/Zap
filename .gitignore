@@ -68,3 +68,8 @@ fastlane/test_output
 # Misc
 *.swp
 *~
+
+# Editor / tooling metadata (local to one developer setup)
+.idea/
+.codenomad/
+.vscode/

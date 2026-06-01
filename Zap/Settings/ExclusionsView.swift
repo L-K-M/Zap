@@ -49,9 +49,37 @@ struct ExclusionsView: View {
     }
 
     private func reload() {
-        apps = NSWorkspace.shared.runningApplications
+        let running = NSWorkspace.shared.runningApplications
             .compactMap(AppInfo.init(runningApplication:))
+
+        // Include excluded apps that aren't currently running so the user can
+        // still see and re-enable them. Use a best-effort display name from the
+        // app bundle on disk, falling back to the bundle identifier.
+        let runningIDs = Set(running.map(\.bundleIdentifier))
+        let offline = preferences.excludedBundleIDs
+            .filter { !runningIDs.contains($0) }
+            .map { bundleID -> AppInfo in
+                AppInfo(bundleIdentifier: bundleID,
+                        name: Self.displayName(forBundleID: bundleID) ?? bundleID,
+                        processIdentifier: -1,
+                        icon: Self.icon(forBundleID: bundleID))
+            }
+
+        apps = (running + offline)
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    /// Resolves a human-readable name for an installed (but not running) app.
+    private static func displayName(forBundleID bundleID: String) -> String? {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
+        return FileManager.default.displayName(atPath: url.path)
+            .replacingOccurrences(of: ".app", with: "")
+    }
+
+    /// Resolves the icon for an installed (but not running) app.
+    private static func icon(forBundleID bundleID: String) -> NSImage? {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
+        return NSWorkspace.shared.icon(forFile: url.path)
     }
 
     /// "Show in switcher" = NOT excluded.

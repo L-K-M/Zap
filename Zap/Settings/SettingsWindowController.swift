@@ -9,14 +9,16 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     private var window: NSWindow?
     private let preferences: Preferences
+    private let inputMode: InputModeReporter
 
-    init(preferences: Preferences) {
+    init(preferences: Preferences, inputMode: InputModeReporter) {
         self.preferences = preferences
+        self.inputMode = inputMode
     }
 
     func show() {
         if window == nil {
-            let hosting = NSHostingController(rootView: SettingsView(preferences: preferences))
+            let hosting = NSHostingController(rootView: SettingsView(preferences: preferences, inputMode: inputMode))
             let window = NSWindow(contentViewController: hosting)
             window.title = "Zap Settings"
             window.styleMask = [.titled, .closable, .miniaturizable]
