@@ -41,6 +41,7 @@ final class SwitcherController {
         self.provider = AppListProvider(preferences: preferences)
         self.overlay = OverlayWindowController(preferences: preferences)
         wireEventTap()
+        overlay.onPick = { [weak self] index in self?.pick(index) }
     }
 
     // MARK: Lifecycle
@@ -160,6 +161,13 @@ final class SwitcherController {
 
     private func cancel() {
         endSession()
+    }
+
+    /// Handles a click on an app icon: select it and switch immediately.
+    private func pick(_ index: Int) {
+        guard isSessionActive, apps.indices.contains(index) else { return }
+        selectedIndex = index
+        commit()
     }
 
     private func endSession() {

@@ -23,6 +23,11 @@ struct OverlayView: View {
             HStack(spacing: iconSpacing) {
                 ForEach(Array(model.apps.enumerated()), id: \.element.id) { index, app in
                     iconCell(app, isSelected: index == model.selectedIndex)
+                        .contentShape(Rectangle())
+                        .onTapGesture { model.onPick?(index) }
+                        .onHover { hovering in
+                            if hovering { model.selectedIndex = index }
+                        }
                 }
             }
         }

@@ -1,18 +1,30 @@
 import AppKit
 import SwiftUI
 
+/// An `NSHostingView` that accepts the first mouse click even when its window is
+/// not key, so a click on the (background-app) overlay registers immediately.
+private final class OverlayHostingView: NSHostingView<OverlayView> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 /// Owns the borderless overlay window and keeps it positioned and sized to the
 /// SwiftUI content. Shows across all Spaces and over fullscreen apps.
 final class OverlayWindowController {
 
     let model = OverlayModel()
     private let window: NSWindow
-    private let hostingView: NSHostingView<OverlayView>
+    private let hostingView: OverlayHostingView
 
     private(set) var isVisible = false
 
+    /// Invoked when the user clicks an app icon. Argument is the app's index.
+    var onPick: ((Int) -> Void)? {
+        get { model.onPick }
+        set { model.onPick = newValue }
+    }
+
     init(preferences: Preferences) {
-        hostingView = NSHostingView(rootView: OverlayView(model: model, preferences: preferences))
+        hostingView = OverlayHostingView(rootView: OverlayView(model: model, preferences: preferences))
 
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
@@ -24,7 +36,7 @@ final class OverlayWindowController {
         window.backgroundColor = .clear
         window.hasShadow = true
         window.level = .popUpMenu
-        window.ignoresMouseEvents = true
+        window.ignoresMouseEvents = false
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         window.contentView = hostingView

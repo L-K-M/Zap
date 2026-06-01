@@ -25,7 +25,7 @@ struct AppearanceView: View {
 
                 Section("Layout") {
                     sliderRow("Icon size", value: $preferences.iconSize, range: 48...128, step: 4)
-                    sliderRow("Corner radius", value: $preferences.cornerRadius, range: 0...32, step: 1)
+                    sliderRow("Corner radius", value: $preferences.cornerRadius, range: 0...64, step: 1)
                     Toggle("Show app name", isOn: $preferences.showAppName)
                 }
 
