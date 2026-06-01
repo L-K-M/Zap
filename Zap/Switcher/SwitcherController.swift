@@ -27,8 +27,12 @@ final class SwitcherController {
     private var usesEventTap = false
     private var isPaused = false
 
+    private var windows: [WindowInfo] = []
+    private var windowSelectedIndex: Int?
+
     private var showTimer: Timer?
     private var autoCommitTimer: Timer?
+    private var dwellTimer: Timer?
 
     /// Auto-commit delay used only in fallback mode.
     private let autoCommitInterval: TimeInterval = 0.8
@@ -42,6 +46,9 @@ final class SwitcherController {
         self.overlay = OverlayWindowController(preferences: preferences)
         wireEventTap()
         overlay.onPick = { [weak self] index in self?.pick(index) }
+        overlay.onHoverApp = { [weak self] index in self?.hoverApp(index) }
+        overlay.onPickWindow = { [weak self] index in self?.pickWindow(index) }
+        overlay.onHoverWindow = { [weak self] index in self?.hoverWindow(index) }
     }
 
     // MARK: Lifecycle
@@ -81,6 +88,7 @@ final class SwitcherController {
         eventTap.onCommit = { [weak self] in self?.commit() }
         eventTap.onCancel = { [weak self] in self?.cancel() }
         eventTap.onQuitSelected = { [weak self] in self?.quitSelected() }
+        eventTap.onNavigateWindows = { [weak self] down in self?.navigateWindows(down: down) }
     }
 
     private func startFallback() {
@@ -136,6 +144,7 @@ final class SwitcherController {
 
         if overlay.isVisible {
             overlay.updateSelection(selectedIndex)
+            restartDwell()
         } else {
             // User is actively cycling — show the overlay now instead of waiting.
             presentOverlay()
@@ -147,15 +156,22 @@ final class SwitcherController {
         showTimer = nil
         guard isSessionActive, !apps.isEmpty, let screen = targetScreen() else { return }
         overlay.show(apps: apps, selectedIndex: selectedIndex, on: screen)
+        restartDwell()
     }
 
     // MARK: Commit / cancel
 
     private func commit() {
-        let target = isSessionActive && apps.indices.contains(selectedIndex) ? apps[selectedIndex] : nil
+        let targetApp = isSessionActive && apps.indices.contains(selectedIndex) ? apps[selectedIndex] : nil
+        let targetWindow: WindowInfo? = {
+            guard let index = windowSelectedIndex, windows.indices.contains(index) else { return nil }
+            return windows[index]
+        }()
         endSession()
-        if let target {
-            activate(target)
+        if let targetWindow, let targetApp {
+            WindowEnumerator.raise(targetWindow, pid: targetApp.processIdentifier)
+        } else if let targetApp {
+            activate(targetApp)
         }
     }
 
@@ -167,21 +183,32 @@ final class SwitcherController {
     private func pick(_ index: Int) {
         guard isSessionActive, apps.indices.contains(index) else { return }
         selectedIndex = index
+        windowSelectedIndex = nil
         commit()
     }
 
     private func endSession() {
         showTimer?.invalidate(); showTimer = nil
         autoCommitTimer?.invalidate(); autoCommitTimer = nil
+        dwellTimer?.invalidate(); dwellTimer = nil
         isSessionActive = false
+        windows = []
+        windowSelectedIndex = nil
         overlay.hide()
     }
 
     private func quitSelected() {
         guard isSessionActive, apps.indices.contains(selectedIndex) else { return }
-        provider.runningApplication(for: apps[selectedIndex])?.terminate()
+        let victim = apps[selectedIndex]
+        provider.runningApplication(for: victim)?.terminate()
 
-        apps = provider.currentApps()
+        // `terminate()` is asynchronous, so the app can still appear in the live
+        // running list for a moment. Drop it explicitly so the overlay updates
+        // right away and a later commit (on ⌘ release) doesn't re-activate — and
+        // thereby cancel the quit of — the app we just asked to quit.
+        apps = provider.currentApps().filter { $0.processIdentifier != victim.processIdentifier }
+        windows = []
+        windowSelectedIndex = nil
         guard !apps.isEmpty else {
             cancel()
             return
@@ -189,7 +216,85 @@ final class SwitcherController {
         selectedIndex = min(selectedIndex, apps.count - 1)
         if overlay.isVisible, let screen = targetScreen() {
             overlay.show(apps: apps, selectedIndex: selectedIndex, on: screen)
+            restartDwell()
         }
+    }
+
+    // MARK: Hover
+
+    /// Moves the selection to the hovered app and restarts the dwell timer so its
+    /// windows reveal after the configured delay.
+    private func hoverApp(_ index: Int) {
+        guard isSessionActive, apps.indices.contains(index), index != selectedIndex else { return }
+        selectedIndex = index
+        overlay.updateSelection(index)
+        restartDwell()
+    }
+
+    private func hoverWindow(_ index: Int) {
+        guard windows.indices.contains(index) else { return }
+        windowSelectedIndex = index
+        overlay.updateWindowSelection(index)
+    }
+
+    // MARK: Window list
+
+    /// (Re)starts the dwell timer that reveals the selected app's windows. Clears
+    /// any currently-shown window list first.
+    private func restartDwell() {
+        dwellTimer?.invalidate(); dwellTimer = nil
+        clearWindows()
+        guard
+            preferences.showWindowList,
+            AccessibilityAuthorizer.isTrusted,
+            overlay.isVisible
+        else { return }
+
+        let interval = max(0.1, preferences.windowDwellMs / 1000)
+        dwellTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            self?.revealWindows()
+        }
+    }
+
+    private func clearWindows() {
+        guard !windows.isEmpty else { return }
+        windows = []
+        windowSelectedIndex = nil
+        overlay.clearWindows()
+    }
+
+    /// Enumerates the selected app's windows and reveals the list when it has at
+    /// least two windows worth choosing between.
+    private func revealWindows() {
+        guard isSessionActive, overlay.isVisible, apps.indices.contains(selectedIndex) else { return }
+        let found = WindowEnumerator.windows(forPID: apps[selectedIndex].processIdentifier)
+        guard found.count >= 2 else { return }
+        windows = found
+        windowSelectedIndex = nil
+        overlay.setWindows(found, selected: nil)
+    }
+
+    /// Moves through the revealed window list. Down advances; Up moves back and,
+    /// from the first window, returns focus to the app row.
+    private func navigateWindows(down: Bool) {
+        guard !windows.isEmpty else { return }
+        let count = windows.count
+        if down {
+            let next = (windowSelectedIndex ?? -1) + 1
+            windowSelectedIndex = min(next, count - 1)
+        } else if let current = windowSelectedIndex {
+            windowSelectedIndex = current == 0 ? nil : current - 1
+        } else {
+            windowSelectedIndex = nil
+        }
+        overlay.updateWindowSelection(windowSelectedIndex)
+    }
+
+    /// Handles a click on a window row: select it and switch immediately.
+    private func pickWindow(_ index: Int) {
+        guard isSessionActive, windows.indices.contains(index) else { return }
+        windowSelectedIndex = index
+        commit()
     }
 
     private func scheduleAutoCommit() {
@@ -203,7 +308,10 @@ final class SwitcherController {
 
     private func activate(_ info: AppInfo) {
         guard let app = provider.runningApplication(for: info) else { return }
-        app.activate(options: [.activateIgnoringOtherApps])
+        // `.activateAllWindows` raises every window of the app, not just its main
+        // one — so switching to the already-frontmost app still brings all of its
+        // windows forward (matching the native switcher).
+        app.activate(options: [.activateIgnoringOtherApps, .activateAllWindows])
     }
 
     private func targetScreen() -> NSScreen? {

@@ -26,9 +26,15 @@ struct OverlayView: View {
                         .contentShape(Rectangle())
                         .onTapGesture { model.onPick?(index) }
                         .onHover { hovering in
-                            if hovering { model.selectedIndex = index }
+                            if hovering { model.onHoverApp?(index) }
                         }
                 }
+            }
+
+            if !model.windows.isEmpty {
+                Divider()
+                    .frame(maxWidth: maxRowWidth)
+                windowList
             }
         }
         .padding(outerPadding)
@@ -68,5 +74,42 @@ struct OverlayView: View {
                           ? Color(hexString: preferences.highlightColorHex).opacity(preferences.highlightOpacity)
                           : Color.clear)
             )
+    }
+
+    // MARK: Window list
+
+    private var windowList: some View {
+        VStack(spacing: 4) {
+            ForEach(Array(model.windows.enumerated()), id: \.element.id) { index, window in
+                windowRow(window, isSelected: index == model.windowSelectedIndex)
+                    .contentShape(Rectangle())
+                    .onTapGesture { model.onPickWindow?(index) }
+                    .onHover { hovering in
+                        if hovering { model.onHoverWindow?(index) }
+                    }
+            }
+        }
+    }
+
+    private func windowRow(_ window: WindowInfo, isSelected: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: window.isMinimized ? "macwindow.badge.minus" : "macwindow")
+                .foregroundStyle(Color(hexString: preferences.labelColorHex).opacity(0.8))
+            Text(window.title.isEmpty ? "Untitled" : window.title)
+                .font(.system(size: 13))
+                .foregroundStyle(Color(hexString: preferences.labelColorHex))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: 360, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isSelected
+                      ? Color(hexString: preferences.highlightColorHex).opacity(preferences.highlightOpacity)
+                      : Color.clear)
+        )
     }
 }

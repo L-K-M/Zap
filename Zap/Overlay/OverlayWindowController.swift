@@ -17,10 +17,34 @@ final class OverlayWindowController {
 
     private(set) var isVisible = false
 
+    /// The screen the overlay is currently anchored to.
+    private var currentScreen: NSScreen?
+    /// The window's top edge (AppKit coordinates). Kept fixed as the panel grows
+    /// downward when the window list appears, so the switcher row doesn't jump.
+    private var anchorTop: CGFloat?
+
     /// Invoked when the user clicks an app icon. Argument is the app's index.
     var onPick: ((Int) -> Void)? {
         get { model.onPick }
         set { model.onPick = newValue }
+    }
+
+    /// Invoked when the pointer hovers an app icon. Argument is the app's index.
+    var onHoverApp: ((Int) -> Void)? {
+        get { model.onHoverApp }
+        set { model.onHoverApp = newValue }
+    }
+
+    /// Invoked when the user clicks a window row. Argument is the window's index.
+    var onPickWindow: ((Int) -> Void)? {
+        get { model.onPickWindow }
+        set { model.onPickWindow = newValue }
+    }
+
+    /// Invoked when the pointer hovers a window row. Argument is the window's index.
+    var onHoverWindow: ((Int) -> Void)? {
+        get { model.onHoverWindow }
+        set { model.onHoverWindow = newValue }
     }
 
     init(preferences: Preferences) {
@@ -47,8 +71,11 @@ final class OverlayWindowController {
     func show(apps: [AppInfo], selectedIndex: Int, on screen: NSScreen) {
         model.apps = apps
         model.selectedIndex = selectedIndex
+        model.windows = []
+        model.windowSelectedIndex = nil
 
-        resizeToFit(on: screen)
+        currentScreen = screen
+        layout(keepTop: false)
         window.orderFrontRegardless()
         isVisible = true
     }
@@ -57,17 +84,43 @@ final class OverlayWindowController {
         model.selectedIndex = index
     }
 
+    // MARK: Window list
+
+    /// Replaces the window list and re-lays-out the panel keeping its top fixed.
+    func setWindows(_ windows: [WindowInfo], selected: Int?) {
+        model.windows = windows
+        model.windowSelectedIndex = selected
+        layout(keepTop: true)
+    }
+
+    func updateWindowSelection(_ index: Int?) {
+        model.windowSelectedIndex = index
+    }
+
+    /// Removes the window list (if shown) and shrinks the panel back.
+    func clearWindows() {
+        guard !model.windows.isEmpty else { return }
+        model.windows = []
+        model.windowSelectedIndex = nil
+        layout(keepTop: true)
+    }
+
     func hide() {
         guard isVisible else { return }
         window.orderOut(nil)
         isVisible = false
         model.apps = []
         model.selectedIndex = 0
+        model.windows = []
+        model.windowSelectedIndex = nil
+        anchorTop = nil
+        currentScreen = nil
     }
 
     // MARK: Layout
 
-    private func resizeToFit(on screen: NSScreen) {
+    private func layout(keepTop: Bool) {
+        guard let screen = currentScreen else { return }
         hostingView.layoutSubtreeIfNeeded()
         let fitting = hostingView.fittingSize
         let size = NSSize(
@@ -76,10 +129,20 @@ final class OverlayWindowController {
         )
 
         let visible = screen.visibleFrame
-        let origin = NSPoint(
-            x: visible.midX - size.width / 2,
-            y: visible.midY - size.height / 2
-        )
+        let originY: CGFloat
+        if keepTop, let top = anchorTop {
+            // Grow/shrink downward from the fixed top edge.
+            originY = top - size.height
+        } else {
+            // Position the panel about two-thirds up the screen; in AppKit
+            // coordinates y grows upward, so 2/3 of the height from the bottom
+            // places the window's center above the midline.
+            let centerY = visible.minY + visible.height * (2.0 / 3.0)
+            originY = centerY - size.height / 2
+        }
+
+        let origin = NSPoint(x: visible.midX - size.width / 2, y: originY)
         window.setFrame(NSRect(origin: origin, size: size), display: true)
+        anchorTop = origin.y + size.height
     }
 }

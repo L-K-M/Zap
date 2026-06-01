@@ -17,6 +17,10 @@ final class EventTapMonitor {
     var onCancel: (() -> Void)?
     /// Called when the user presses ⌘Q / ⌘W on the selection (optional handlers).
     var onQuitSelected: (() -> Void)?
+    /// Called when the user presses Down/Up to move through the window list.
+    /// `down == true` moves toward the next window; `false` moves back up
+    /// (eventually returning focus to the app row).
+    var onNavigateWindows: ((_ down: Bool) -> Void)?
     /// Whether a switch session is currently active (overlay shown or pending).
     /// Drives commit/cancel behavior.
     var isSwitching: () -> Bool = { false }
@@ -132,6 +136,12 @@ final class EventTapMonitor {
             case KeyCode.q, KeyCode.w:
                 // Quit the highlighted app (Command is still held here).
                 onQuitSelected?()
+                return nil
+            case KeyCode.arrowDown:
+                onNavigateWindows?(true)
+                return nil
+            case KeyCode.arrowUp:
+                onNavigateWindows?(false)
                 return nil
             default:
                 // Swallow other keys so they don't leak to the front app mid-switch.

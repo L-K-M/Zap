@@ -23,6 +23,7 @@ final class Preferences: ObservableObject {
         static let iconSize = 80.0
         static let cornerRadius = 18.0
         static let showDelayMs = 150.0
+        static let windowDwellMs = 400.0
     }
 
     private enum Key {
@@ -36,6 +37,8 @@ final class Preferences: ObservableObject {
         static let cornerRadius = "cornerRadius"
         static let showAppName = "showAppName"
         static let showDelayMs = "showDelayMs"
+        static let showWindowList = "showWindowList"
+        static let windowDwellMs = "windowDwellMs"
         static let launchAtLogin = "launchAtLogin"
         static let useAlternateHotkey = "useAlternateHotkey"
     }
@@ -82,6 +85,16 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(showDelayMs, forKey: Key.showDelayMs) }
     }
 
+    /// Whether dwelling on an app reveals its windows below the switcher.
+    @Published var showWindowList: Bool {
+        didSet { defaults.set(showWindowList, forKey: Key.showWindowList) }
+    }
+
+    /// How long the selection must rest on an app before its windows appear.
+    @Published var windowDwellMs: Double {
+        didSet { defaults.set(windowDwellMs, forKey: Key.windowDwellMs) }
+    }
+
     @Published var launchAtLogin: Bool {
         didSet {
             defaults.set(launchAtLogin, forKey: Key.launchAtLogin)
@@ -111,6 +124,8 @@ final class Preferences: ObservableObject {
         cornerRadius = defaults.object(forKey: Key.cornerRadius) as? Double ?? Default.cornerRadius
         showAppName = defaults.object(forKey: Key.showAppName) as? Bool ?? true
         showDelayMs = defaults.object(forKey: Key.showDelayMs) as? Double ?? Default.showDelayMs
+        showWindowList = defaults.object(forKey: Key.showWindowList) as? Bool ?? true
+        windowDwellMs = defaults.object(forKey: Key.windowDwellMs) as? Double ?? Default.windowDwellMs
         launchAtLogin = defaults.object(forKey: Key.launchAtLogin) as? Bool ?? false
         useAlternateHotkey = defaults.object(forKey: Key.useAlternateHotkey) as? Bool ?? false
     }

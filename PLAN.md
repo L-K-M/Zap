@@ -14,9 +14,10 @@ switch to and **customize basic colors**.
 - Exclude a user-defined set of apps from the switcher.
 - Customize a few colors (background, selection highlight, optional text/label).
 - Be fast: appear instantly on keypress, no perceptible lag.
+- Reveal the selected app's windows after a configurable dwell, and let the user
+  switch directly to a window with <kbd>↑</kbd>/<kbd>↓</kbd> or a click.
 
 ### Non-Goals (v1)
-- Window-level switching (only app-level, like the native switcher).
 - Per-app actions beyond activate/quit/hide.
 - App Store distribution (see §9 — the event tap makes this impractical).
 - Themes/skins beyond a handful of color settings.
