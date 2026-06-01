@@ -49,6 +49,8 @@ final class OverlayWindowController {
 
     init(preferences: Preferences) {
         hostingView = OverlayHostingView(rootView: OverlayView(model: model, preferences: preferences))
+        hostingView.translatesAutoresizingMaskIntoConstraints = true
+        hostingView.autoresizingMask = [.width, .height]
 
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
@@ -63,7 +65,18 @@ final class OverlayWindowController {
         window.ignoresMouseEvents = false
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
-        window.contentView = hostingView
+
+        // Host the SwiftUI view inside a plain container rather than using it as
+        // the window's `contentView` directly. As a `contentView`, an
+        // `NSHostingView` drives the window's size from its content and resizes
+        // it from the bottom-left origin — which shoved the panel rightward when
+        // the window list appeared. A plain container has no intrinsic size, so
+        // the window frame is controlled solely by `layout(keepTop:)`.
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
+        container.autoresizesSubviews = true
+        hostingView.frame = container.bounds
+        container.addSubview(hostingView)
+        window.contentView = container
     }
 
     // MARK: Presentation

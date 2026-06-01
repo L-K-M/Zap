@@ -17,7 +17,8 @@ struct OverlayView: View {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Color(hexString: preferences.labelColorHex))
                     .lineLimit(1)
-                    .frame(maxWidth: maxRowWidth)
+                    .truncationMode(.tail)
+                    .frame(width: maxRowWidth)
             }
 
             HStack(spacing: iconSpacing) {
