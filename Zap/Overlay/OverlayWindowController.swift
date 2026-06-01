@@ -86,6 +86,7 @@ final class OverlayWindowController {
         model.selectedIndex = selectedIndex
         model.windows = []
         model.windowSelectedIndex = nil
+        model.windowThumbnails = [:]
 
         currentScreen = screen
         layout(keepTop: false)
@@ -103,6 +104,7 @@ final class OverlayWindowController {
     func setWindows(_ windows: [WindowInfo], selected: Int?) {
         model.windows = windows
         model.windowSelectedIndex = selected
+        model.windowThumbnails = [:]
         layout(keepTop: true)
     }
 
@@ -110,11 +112,19 @@ final class OverlayWindowController {
         model.windowSelectedIndex = index
     }
 
+    /// Stores a captured preview for `windowID`. Ignored if that window is no
+    /// longer listed, so a late-arriving capture can't repopulate a stale row.
+    func setWindowThumbnail(_ image: NSImage, for windowID: CGWindowID) {
+        guard model.windows.contains(where: { $0.cgWindowID == windowID }) else { return }
+        model.windowThumbnails[windowID] = image
+    }
+
     /// Removes the window list (if shown) and shrinks the panel back.
     func clearWindows() {
         guard !model.windows.isEmpty else { return }
         model.windows = []
         model.windowSelectedIndex = nil
+        model.windowThumbnails = [:]
         layout(keepTop: true)
     }
 
@@ -126,6 +136,7 @@ final class OverlayWindowController {
         model.selectedIndex = 0
         model.windows = []
         model.windowSelectedIndex = nil
+        model.windowThumbnails = [:]
         anchorTop = nil
         currentScreen = nil
     }

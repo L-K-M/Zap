@@ -7,8 +7,8 @@ struct OverlayView: View {
     @ObservedObject var model: OverlayModel
     @ObservedObject var preferences: Preferences
 
-    private var outerPadding: CGFloat { 20 }
     private var iconSpacing: CGFloat { 12 }
+    private var outerPadding: CGFloat { preferences.contentPadding }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -77,7 +77,7 @@ struct OverlayView: View {
             .frame(width: preferences.iconSize, height: preferences.iconSize)
             .padding(8)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: preferences.highlightCornerRadius, style: .continuous)
                     .fill(isSelected
                           ? Color(hexString: preferences.highlightColorHex).opacity(preferences.highlightOpacity)
                           : Color.clear)
@@ -101,8 +101,7 @@ struct OverlayView: View {
 
     private func windowRow(_ window: WindowInfo, isSelected: Bool) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: window.isMinimized ? "macwindow.badge.minus" : "macwindow")
-                .foregroundStyle(Color(hexString: preferences.labelColorHex).opacity(0.8))
+            windowLeading(window)
             Text(window.title.isEmpty ? "Untitled" : window.title)
                 .font(.system(size: 13))
                 .foregroundStyle(Color(hexString: preferences.labelColorHex))
@@ -112,7 +111,7 @@ struct OverlayView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .frame(maxWidth: 360, alignment: .leading)
+        .frame(maxWidth: preferences.showWindowPreviews ? 420 : 360, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(isSelected
@@ -120,6 +119,42 @@ struct OverlayView: View {
                       : Color.clear)
         )
     }
+
+    /// The leading element of a window row: a captured preview when previews are
+    /// enabled and available, otherwise the window/minimized glyph. When previews
+    /// are on, the placeholder occupies the same footprint so rows don't reflow as
+    /// thumbnails stream in.
+    @ViewBuilder
+    private func windowLeading(_ window: WindowInfo) -> some View {
+        if preferences.showWindowPreviews,
+           let id = window.cgWindowID,
+           let image = model.windowThumbnails[id] {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.medium)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: WindowPreviewMetrics.rowWidth, height: WindowPreviewMetrics.rowHeight)
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                )
+        } else {
+            Image(systemName: window.isMinimized ? "macwindow.badge.minus" : "macwindow")
+                .foregroundStyle(Color(hexString: preferences.labelColorHex).opacity(0.8))
+                .frame(width: preferences.showWindowPreviews ? WindowPreviewMetrics.rowWidth : nil,
+                       height: preferences.showWindowPreviews ? WindowPreviewMetrics.rowHeight : nil)
+        }
+    }
+}
+
+/// Shared sizing for window previews: `maxDimension` bounds the captured image
+/// (see `WindowThumbnailProvider`), while the row dimensions fix the on-screen
+/// thumbnail footprint.
+enum WindowPreviewMetrics {
+    static let maxDimension: CGFloat = 160
+    static let rowWidth: CGFloat = 120
+    static let rowHeight: CGFloat = 72
 }
 
 /// Wraps content in a horizontal `ScrollView` constrained to `width` when

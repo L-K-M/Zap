@@ -3,6 +3,7 @@ import SwiftUI
 /// General preferences: launch at login, the show delay, and the fallback hotkey.
 struct GeneralView: View {
     @ObservedObject var preferences: Preferences
+    @State private var screenRecordingGranted = ScreenRecordingAuthorizer.isGranted
 
     var body: some View {
         Form {
@@ -35,6 +36,12 @@ struct GeneralView: View {
                         .foregroundStyle(.secondary)
                 }
                 .disabled(!preferences.showWindowList)
+
+                Toggle("Show a preview of each window", isOn: $preferences.showWindowPreviews)
+                    .disabled(!preferences.showWindowList)
+                if preferences.showWindowPreviews {
+                    windowPreviewHint
+                }
             }
 
             Section("Trigger") {
@@ -46,6 +53,36 @@ struct GeneralView: View {
         }
         .formStyle(.grouped)
         .padding()
-        .onAppear { preferences.refreshLaunchAtLoginStatus() }
+        .onAppear {
+            preferences.refreshLaunchAtLoginStatus()
+            screenRecordingGranted = ScreenRecordingAuthorizer.isGranted
+        }
+    }
+
+    /// Guidance shown when previews are enabled, nudging the user to grant Screen
+    /// Recording (a separate permission from Accessibility) when it's missing.
+    @ViewBuilder
+    private var windowPreviewHint: some View {
+        if screenRecordingGranted {
+            Text("Window previews need Screen Recording permission, which is granted.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Window previews need Screen Recording permission. Until it's granted, rows show an icon instead.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                HStack {
+                    Button("Grant Screen Recording…") {
+                        ScreenRecordingAuthorizer.request()
+                        screenRecordingGranted = ScreenRecordingAuthorizer.isGranted
+                    }
+                    Button("Open System Settings") {
+                        ScreenRecordingAuthorizer.openSystemSettings()
+                    }
+                }
+                .font(.caption)
+            }
+        }
     }
 }

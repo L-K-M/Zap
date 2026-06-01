@@ -4,14 +4,15 @@ A fast, customizable macOS app switcher — a drop-in replacement for the native
 <kbd>⌘</kbd>+<kbd>Tab</kbd> switcher that lets you **exclude apps** you never switch
 to and **customize the colors** of the switcher.
 
-See [`PLAN.md`](PLAN.md) for the full design and [`AGENTS.md`](AGENTS.md) for
-contributor/agent guidance.
+![Screenshot](screenshot.png)
 
 ## Features
 
 - Intercepts the real <kbd>⌘</kbd>+<kbd>Tab</kbd> (and <kbd>⌘</kbd>+<kbd>⇧</kbd>+<kbd>Tab</kbd> / <kbd>⌘</kbd>+<kbd>`</kbd> to reverse).
 - Native-feeling MRU ordering (single tap toggles the two most-recent apps).
 - Per-app exclusions — hide apps you never switch to.
+- Dwell on an app to list its windows; switch straight to one with <kbd>↑</kbd>/<kbd>↓</kbd> or a click.
+- Optional small live preview of each window in that list (needs Screen Recording permission; off by default).
 - Customizable colors, opacity, icon size, and corner radius with a live preview.
 - Menu-bar agent (no Dock icon); never appears in its own switcher.
 - Launch at login via `SMAppService`.

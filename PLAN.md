@@ -16,6 +16,8 @@ switch to and **customize basic colors**.
 - Be fast: appear instantly on keypress, no perceptible lag.
 - Reveal the selected app's windows after a configurable dwell, and let the user
   switch directly to a window with <kbd>↑</kbd>/<kbd>↓</kbd> or a click.
+- Optionally show a small live preview of each window in that list (requires the
+  separate Screen Recording permission; off by default).
 
 ### Non-Goals (v1)
 - Per-app actions beyond activate/quit/hide.
@@ -112,6 +114,19 @@ must **intercept the key event and suppress the system switcher**.
 - Optionally suggest the user disable native ⌘+Tab is **not** required — our tap
   suppresses it while Zap is active.
 
+### Window previews (optional)
+- Each window row can show a small still capture of the window. Disabled by
+  default; enabling it requires the separate **Screen Recording** permission
+  (`CGPreflightScreenCaptureAccess` / `CGRequestScreenCaptureAccess`).
+- The `CGWindowID` for an AX window element is resolved via the private
+  `_AXUIElementGetWindow` SPI (no public bridge exists). Treated as best-effort —
+  a `nil` ID just means "no preview", never a failure.
+- Capture runs off the hot path in `WindowThumbnailProvider` (an `actor`):
+  ScreenCaptureKit's `SCScreenshotManager` on macOS 14+, falling back to the
+  deprecated `CGWindowListCreateImage` on macOS 13. Results are downscaled and
+  held in a bounded, TTL-bounded `LRUImageCache`. Minimized/off-screen windows
+  have no backing store and keep the placeholder glyph.
+
 ---
 
 ## 4. App List, Ordering & Exclusions
@@ -193,11 +208,13 @@ shows the overlay with current values.
 
 A standard SwiftUI window opened from the menu-bar item, with tabs:
 
-1. **General** — launch at login (`SMAppService`), show-delay, alternate hotkey.
+1. **General** — launch at login (`SMAppService`), show-delay, window dwell +
+   previews toggle, alternate hotkey.
 2. **Exclusions** — searchable list of apps with include/exclude toggles.
 3. **Appearance** — the color/size controls from §6 with live preview.
-4. **Permissions** — Accessibility status + button to open the relevant System Settings
-   pane; guidance text.
+4. **Permissions** — Accessibility status (required) and Screen Recording status
+   (optional, for window previews) + buttons to open the relevant System Settings
+   panes; guidance text.
 
 Menu-bar `NSStatusItem` menu: *Settings…*, *Pause Zap*, *Quit*.
 
@@ -236,12 +253,15 @@ Zap/
 │   │   ├── EventTapMonitor.swift
 │   │   ├── CarbonHotkey.swift   # fallback alt-hotkey
 │   │   ├── AccessibilityAuthorizer.swift
+│   │   ├── ScreenRecordingAuthorizer.swift  # gates window previews
 │   │   └── KeyCodes.swift
 │   ├── Switcher/
 │   │   ├── SwitcherController.swift
 │   │   ├── AppListProvider.swift
 │   │   ├── MRUTracker.swift
 │   │   ├── WindowEnumerator.swift
+│   │   ├── WindowThumbnailProvider.swift    # async window capture (actor)
+│   │   ├── LRUImageCache.swift              # bounded TTL preview cache
 │   │   └── InputModeReporter.swift
 │   ├── Overlay/
 │   │   ├── OverlayWindowController.swift

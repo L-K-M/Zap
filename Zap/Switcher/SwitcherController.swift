@@ -35,6 +35,12 @@ final class SwitcherController {
     private var windows: [WindowInfo] = []
     private var windowSelectedIndex: Int?
 
+    /// Captures window previews off the hot path. A monotonically-increasing
+    /// generation token lets late async captures bail when the window list has
+    /// since changed or closed.
+    private let thumbnails = WindowThumbnailProvider()
+    private var windowsGeneration = 0
+
     private var showTimer: Timer?
     private var autoCommitTimer: Timer?
     private var dwellTimer: Timer?
@@ -60,6 +66,17 @@ final class SwitcherController {
             .dropFirst()
             .removeDuplicates()
             .sink { [weak self] _ in self?.applyInputMode() }
+            .store(in: &cancellables)
+
+        // Free cached previews when the user turns the feature off.
+        preferences.$showWindowPreviews
+            .dropFirst()
+            .removeDuplicates()
+            .filter { !$0 }
+            .sink { [weak self] _ in
+                guard let self else { return }
+                Task { [thumbnails = self.thumbnails] in await thumbnails.clear() }
+            }
             .store(in: &cancellables)
     }
 
@@ -257,6 +274,7 @@ final class SwitcherController {
         isSessionActive = false
         windows = []
         windowSelectedIndex = nil
+        windowsGeneration &+= 1
         overlay.hide()
     }
 
@@ -278,6 +296,7 @@ final class SwitcherController {
         apps = provider.currentApps().filter { $0.processIdentifier != victim.processIdentifier }
         windows = []
         windowSelectedIndex = nil
+        windowsGeneration &+= 1
         guard !apps.isEmpty else {
             cancel()
             return
@@ -329,6 +348,7 @@ final class SwitcherController {
         guard !windows.isEmpty else { return }
         windows = []
         windowSelectedIndex = nil
+        windowsGeneration &+= 1
         overlay.clearWindows()
     }
 
@@ -341,6 +361,31 @@ final class SwitcherController {
         windows = found
         windowSelectedIndex = nil
         overlay.setWindows(found, selected: nil)
+        loadThumbnails()
+    }
+
+    /// Kicks off asynchronous preview capture for the visible windows when the
+    /// feature is enabled and Screen Recording is granted. Each capture is applied
+    /// on the main actor and discarded if the window list changed meanwhile.
+    private func loadThumbnails() {
+        guard preferences.showWindowPreviews, ScreenRecordingAuthorizer.isGranted else { return }
+
+        windowsGeneration &+= 1
+        let generation = windowsGeneration
+        // Minimized/off-screen windows have no backing store to capture.
+        let ids = windows.compactMap { $0.isMinimized ? nil : $0.cgWindowID }
+        guard !ids.isEmpty else { return }
+
+        let maxDimension = WindowPreviewMetrics.maxDimension
+        Task { [weak self, thumbnails = thumbnails] in
+            for id in ids {
+                guard let image = await thumbnails.thumbnail(for: id, maxDimension: maxDimension) else { continue }
+                await MainActor.run {
+                    guard let self, self.windowsGeneration == generation else { return }
+                    self.overlay.setWindowThumbnail(image, for: id)
+                }
+            }
+        }
     }
 
     /// Moves through the revealed window list. Down advances; Up moves back and,
@@ -403,6 +448,11 @@ final class SwitcherController {
         guard let app = provider.runningApplication(for: info) else {
             NSLog("Zap: could not resolve running app for \(info.bundleIdentifier)")
             return
+        }
+        // A hidden app (⌘H) won't reappear from `activate` alone — its windows
+        // stay hidden — so explicitly unhide it first.
+        if app.isHidden {
+            app.unhide()
         }
         // `.activateAllWindows` raises every window of the app, not just its main
         // one — so switching to the already-frontmost app still brings all of its

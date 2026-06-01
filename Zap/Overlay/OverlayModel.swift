@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import CoreGraphics
 
 /// Observable state shared between the switcher and the overlay view. Updating
 /// `selectedIndex` only moves the highlight — it does not rebuild the window.
@@ -11,6 +13,11 @@ final class OverlayModel: ObservableObject {
     @Published var windows: [WindowInfo] = []
     /// The highlighted window, or `nil` when the app row itself is focused.
     @Published var windowSelectedIndex: Int?
+
+    /// Captured previews keyed by `CGWindowID`, populated asynchronously after the
+    /// window list appears. A missing entry means "not (yet) available" — the row
+    /// falls back to its placeholder glyph.
+    @Published var windowThumbnails: [CGWindowID: NSImage] = [:]
 
     /// Maximum width the icon row may occupy before it scrolls horizontally.
     /// Set from the target screen so the panel never runs off-screen.

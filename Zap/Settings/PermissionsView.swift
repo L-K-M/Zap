@@ -5,48 +5,93 @@ import Combine
 struct PermissionsView: View {
     @ObservedObject var inputMode: InputModeReporter
     @State private var isTrusted = AccessibilityAuthorizer.isTrusted
+    @State private var isScreenRecordingGranted = ScreenRecordingAuthorizer.isGranted
     @State private var timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 10) {
+                    Image(systemName: isTrusted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(isTrusted ? .green : .orange)
+                        .font(.title2)
+                    VStack(alignment: .leading) {
+                        Text("Accessibility")
+                            .font(.headline)
+                        Text(statusDescription)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Text("""
+                Zap needs Accessibility access to intercept ⌘-Tab and replace the system \
+                switcher. Without it, Zap still works via the ⌥-Tab fallback, but cannot \
+                override the native ⌘-Tab.
+                """)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+                HStack {
+                    Button("Request Access") { AccessibilityAuthorizer.prompt() }
+                    Button("Open System Settings") { AccessibilityAuthorizer.openSystemSettings() }
+                }
+
+                if !isTrusted {
+                    Text("After granting access, quit and relaunch Zap to enable ⌘-Tab.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+
+                screenRecordingSection
+            }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .onReceive(timer) { _ in
+            isTrusted = AccessibilityAuthorizer.isTrusted
+            isScreenRecordingGranted = ScreenRecordingAuthorizer.isGranted
+        }
+    }
+
+    /// Optional Screen Recording grant — only window previews need it, so its
+    /// absence is shown neutrally rather than as a warning.
+    private var screenRecordingSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Image(systemName: isTrusted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                    .foregroundStyle(isTrusted ? .green : .orange)
+                Image(systemName: isScreenRecordingGranted ? "checkmark.circle.fill" : "circle.dashed")
+                    .foregroundStyle(isScreenRecordingGranted ? .green : .secondary)
                     .font(.title2)
                 VStack(alignment: .leading) {
-                    Text("Accessibility")
+                    Text("Screen Recording")
                         .font(.headline)
-                    Text(statusDescription)
+                    Text(isScreenRecordingGranted
+                         ? "Granted — window previews can be captured."
+                         : "Optional — needed only to show window previews.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
             }
 
             Text("""
-            Zap needs Accessibility access to intercept ⌘-Tab and replace the system \
-            switcher. Without it, Zap still works via the ⌥-Tab fallback, but cannot \
-            override the native ⌘-Tab.
+            Zap uses Screen Recording only to render the optional preview of each \
+            window in the switcher. Everything else works without it.
             """)
             .font(.callout)
             .foregroundStyle(.secondary)
 
             HStack {
-                Button("Request Access") { AccessibilityAuthorizer.prompt() }
-                Button("Open System Settings") { AccessibilityAuthorizer.openSystemSettings() }
+                Button("Request Access") { ScreenRecordingAuthorizer.request() }
+                Button("Open System Settings") { ScreenRecordingAuthorizer.openSystemSettings() }
             }
 
-            if !isTrusted {
-                Text("After granting access, quit and relaunch Zap to enable ⌘-Tab.")
+            if !isScreenRecordingGranted {
+                Text("After granting access, quit and relaunch Zap for previews to start.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-
-            Spacer()
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .onReceive(timer) { _ in
-            isTrusted = AccessibilityAuthorizer.isTrusted
         }
     }
 

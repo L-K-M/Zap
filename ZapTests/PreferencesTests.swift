@@ -25,7 +25,18 @@ final class PreferencesTests: XCTestCase {
         XCTAssertTrue(prefs.excludedBundleIDs.isEmpty)
         XCTAssertEqual(prefs.backgroundColorHex, Preferences.Default.backgroundColorHex)
         XCTAssertEqual(prefs.iconSize, Preferences.Default.iconSize)
+        XCTAssertEqual(prefs.highlightCornerRadius, Preferences.Default.highlightCornerRadius)
+        XCTAssertEqual(prefs.contentPadding, Preferences.Default.contentPadding)
         XCTAssertTrue(prefs.showAppName)
+        XCTAssertFalse(prefs.showWindowPreviews)
+    }
+
+    func testShowWindowPreviewsRoundTrip() {
+        let prefs = Preferences(defaults: defaults)
+        prefs.showWindowPreviews = true
+
+        let reloaded = Preferences(defaults: defaults)
+        XCTAssertTrue(reloaded.showWindowPreviews)
     }
 
     func testExclusionsRoundTrip() {
@@ -89,6 +100,14 @@ final class PreferencesTests: XCTestCase {
         XCTAssertLessThanOrEqual(prefs.iconSize, 256)
         XCTAssertGreaterThanOrEqual(prefs.showDelayMs, 0)
         XCTAssertLessThanOrEqual(prefs.windowDwellMs, 5000)
+    }
+
+    func testOutOfRangeLayoutValuesAreClamped() {
+        defaults.set(-10.0, forKey: "contentPadding")
+        defaults.set(9_999.0, forKey: "highlightCornerRadius")
+        let prefs = Preferences(defaults: defaults)
+        XCTAssertGreaterThanOrEqual(prefs.contentPadding, 0)
+        XCTAssertLessThanOrEqual(prefs.highlightCornerRadius, 64)
     }
 
     func testNonFiniteValueFallsBackToDefault() {

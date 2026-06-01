@@ -25,7 +25,9 @@ struct AppearanceView: View {
 
                 Section("Layout") {
                     sliderRow("Icon size", value: $preferences.iconSize, range: 48...128, step: 4)
-                    sliderRow("Corner radius", value: $preferences.cornerRadius, range: 0...64, step: 1)
+                    sliderRow("Panel corner radius", value: $preferences.cornerRadius, range: 0...64, step: 1)
+                    sliderRow("Highlight corner radius", value: $preferences.highlightCornerRadius, range: 0...64, step: 1)
+                    sliderRow("Icon padding", value: $preferences.contentPadding, range: 0...60, step: 1)
                     Toggle("Show app name", isOn: $preferences.showAppName)
                 }
 
@@ -97,6 +99,8 @@ struct AppearanceView: View {
         preferences.highlightOpacity = Preferences.Default.highlightOpacity
         preferences.iconSize = Preferences.Default.iconSize
         preferences.cornerRadius = Preferences.Default.cornerRadius
+        preferences.highlightCornerRadius = Preferences.Default.highlightCornerRadius
+        preferences.contentPadding = Preferences.Default.contentPadding
         preferences.showAppName = true
     }
 }

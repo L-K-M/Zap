@@ -22,6 +22,8 @@ final class Preferences: ObservableObject {
         static let highlightOpacity = 0.85
         static let iconSize = 80.0
         static let cornerRadius = 18.0
+        static let highlightCornerRadius = 14.0
+        static let contentPadding = 20.0
         static let showDelayMs = 150.0
         static let windowDwellMs = 400.0
     }
@@ -35,9 +37,12 @@ final class Preferences: ObservableObject {
         static let highlightOpacity = "highlightOpacity"
         static let iconSize = "iconSize"
         static let cornerRadius = "cornerRadius"
+        static let highlightCornerRadius = "highlightCornerRadius"
+        static let contentPadding = "contentPadding"
         static let showAppName = "showAppName"
         static let showDelayMs = "showDelayMs"
         static let showWindowList = "showWindowList"
+        static let showWindowPreviews = "showWindowPreviews"
         static let windowDwellMs = "windowDwellMs"
         static let launchAtLogin = "launchAtLogin"
         static let useAlternateHotkey = "useAlternateHotkey"
@@ -77,6 +82,16 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(cornerRadius, forKey: Key.cornerRadius) }
     }
 
+    /// Corner radius of the selection highlight behind the focused icon.
+    @Published var highlightCornerRadius: Double {
+        didSet { defaults.set(highlightCornerRadius, forKey: Key.highlightCornerRadius) }
+    }
+
+    /// Padding between the panel's background edge and its icon row.
+    @Published var contentPadding: Double {
+        didSet { defaults.set(contentPadding, forKey: Key.contentPadding) }
+    }
+
     @Published var showAppName: Bool {
         didSet { defaults.set(showAppName, forKey: Key.showAppName) }
     }
@@ -88,6 +103,12 @@ final class Preferences: ObservableObject {
     /// Whether dwelling on an app reveals its windows below the switcher.
     @Published var showWindowList: Bool {
         didSet { defaults.set(showWindowList, forKey: Key.showWindowList) }
+    }
+
+    /// Whether each window row shows a small live preview of the window. Requires
+    /// Screen Recording permission; off by default since it's an extra grant.
+    @Published var showWindowPreviews: Bool {
+        didSet { defaults.set(showWindowPreviews, forKey: Key.showWindowPreviews) }
     }
 
     /// How long the selection must rest on an app before its windows appear.
@@ -122,9 +143,12 @@ final class Preferences: ObservableObject {
         highlightOpacity = Self.clamp(defaults.object(forKey: Key.highlightOpacity) as? Double ?? Default.highlightOpacity, 0, 1, Default.highlightOpacity)
         iconSize = Self.clamp(defaults.object(forKey: Key.iconSize) as? Double ?? Default.iconSize, 24, 256, Default.iconSize)
         cornerRadius = Self.clamp(defaults.object(forKey: Key.cornerRadius) as? Double ?? Default.cornerRadius, 0, 64, Default.cornerRadius)
+        highlightCornerRadius = Self.clamp(defaults.object(forKey: Key.highlightCornerRadius) as? Double ?? Default.highlightCornerRadius, 0, 64, Default.highlightCornerRadius)
+        contentPadding = Self.clamp(defaults.object(forKey: Key.contentPadding) as? Double ?? Default.contentPadding, 0, 60, Default.contentPadding)
         showAppName = defaults.object(forKey: Key.showAppName) as? Bool ?? true
         showDelayMs = Self.clamp(defaults.object(forKey: Key.showDelayMs) as? Double ?? Default.showDelayMs, 0, 1000, Default.showDelayMs)
         showWindowList = defaults.object(forKey: Key.showWindowList) as? Bool ?? true
+        showWindowPreviews = defaults.object(forKey: Key.showWindowPreviews) as? Bool ?? false
         windowDwellMs = Self.clamp(defaults.object(forKey: Key.windowDwellMs) as? Double ?? Default.windowDwellMs, 50, 5000, Default.windowDwellMs)
         useAlternateHotkey = defaults.object(forKey: Key.useAlternateHotkey) as? Bool ?? false
 

@@ -1,5 +1,18 @@
 import ApplicationServices
 import AppKit
+import CoreGraphics
+
+/// Private Accessibility SPI that yields the `CGWindowID` backing an AX window
+/// element. There is no public way to bridge an `AXUIElement` to the window ID
+/// that screen-capture APIs require, so we rely on this long-standing symbol.
+///
+/// Notes:
+/// - Fine for Developer ID + notarization (notarization checks signing/malware,
+///   not API surface), but would block an App Store submission.
+/// - Treated as best-effort: callers must tolerate a `nil` window ID, so a future
+///   OS change that removes the symbol degrades to "no preview", not a crash.
+@_silgen_name("_AXUIElementGetWindow")
+private func _AXUIElementGetWindow(_ element: AXUIElement, _ identifier: UnsafeMutablePointer<CGWindowID>) -> AXError
 
 /// A lightweight snapshot of one of an application's windows, paired with the
 /// live Accessibility element used to raise it.
@@ -8,6 +21,9 @@ struct WindowInfo: Identifiable, Equatable {
     let title: String
     let isMinimized: Bool
     let element: AXUIElement
+    /// The Quartz window ID, used to capture a preview. `nil` when the SPI is
+    /// unavailable, so previews are best-effort and never required.
+    let cgWindowID: CGWindowID?
 
     static func == (lhs: WindowInfo, rhs: WindowInfo) -> Bool {
         lhs.id == rhs.id
@@ -45,8 +61,16 @@ enum WindowEnumerator {
 
             let title = stringAttribute(element, kAXTitleAttribute) ?? ""
             let minimized = boolAttribute(element, kAXMinimizedAttribute) ?? false
-            return WindowInfo(title: title, isMinimized: minimized, element: element)
+            return WindowInfo(title: title, isMinimized: minimized, element: element,
+                              cgWindowID: windowID(of: element))
         }
+    }
+
+    /// Resolves the `CGWindowID` for an AX window element via the private SPI,
+    /// returning `nil` on failure so previews stay strictly optional.
+    private static func windowID(of element: AXUIElement) -> CGWindowID? {
+        var id = CGWindowID(0)
+        return _AXUIElementGetWindow(element, &id) == .success ? id : nil
     }
 
     // MARK: Raising
@@ -54,6 +78,13 @@ enum WindowEnumerator {
     /// Brings `window` to the front: un-minimizes it if needed, makes it the
     /// app's main window, raises it, and activates the owning application.
     static func raise(_ window: WindowInfo, pid: pid_t) {
+        let runningApp = NSRunningApplication(processIdentifier: pid)
+
+        // A hidden app (⌘H) keeps all its windows hidden; unhide before raising
+        // or the AX raise has nothing visible to bring forward.
+        if runningApp?.isHidden == true {
+            runningApp?.unhide()
+        }
         if window.isMinimized {
             let unminimize = AXUIElementSetAttributeValue(window.element, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
             if unminimize != .success {
@@ -65,7 +96,7 @@ enum WindowEnumerator {
         if raise != .success {
             NSLog("Zap: failed to raise window (AX error \(raise.rawValue))")
         }
-        if NSRunningApplication(processIdentifier: pid)?.activate(options: [.activateIgnoringOtherApps]) != true {
+        if runningApp?.activate(options: [.activateIgnoringOtherApps]) != true {
             NSLog("Zap: failed to activate app pid \(pid) while raising window")
         }
     }
