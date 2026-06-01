@@ -19,6 +19,6 @@ struct SettingsView: View {
             PermissionsView(inputMode: inputMode)
                 .tabItem { Label("Permissions", systemImage: "lock.shield") }
         }
-        .frame(width: 520, height: 460)
+        .frame(minWidth: 520, minHeight: 460)
     }
 }

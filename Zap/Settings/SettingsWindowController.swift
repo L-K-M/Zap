@@ -19,12 +19,22 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     func show() {
         if window == nil {
             let hosting = NSHostingController(rootView: SettingsView(preferences: preferences, inputMode: inputMode))
+            // Only let the SwiftUI content drive the window's *minimum* size; the
+            // user is free to make it larger. Without this the hosting controller
+            // pins min == max, which both blocks resizing and leaves the fixed-size
+            // content padded inside a resizable frame.
+            hosting.sizingOptions = [.minSize]
+
             let window = NSWindow(contentViewController: hosting)
             window.title = "Zap Settings"
-            window.styleMask = [.titled, .closable, .miniaturizable]
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.setContentSize(NSSize(width: 520, height: 460))
             window.isReleasedWhenClosed = false
             window.delegate = self
             window.center()
+            // Set the autosave name last so a previously-saved frame, if any, wins
+            // over the centered default position.
+            window.setFrameAutosaveName("ZapSettingsWindow")
             self.window = window
         }
 

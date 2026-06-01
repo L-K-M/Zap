@@ -52,7 +52,7 @@ struct GeneralView: View {
             }
         }
         .formStyle(.grouped)
-        .padding()
+        .scrollContentBackground(.hidden)
         .onAppear {
             preferences.refreshLaunchAtLoginStatus()
             screenRecordingGranted = ScreenRecordingAuthorizer.isGranted

@@ -96,8 +96,31 @@ enum WindowEnumerator {
         if raise != .success {
             NSLog("Zap: failed to raise window (AX error \(raise.rawValue))")
         }
-        if runningApp?.activate(options: [.activateIgnoringOtherApps]) != true {
+        if let runningApp, !activate(runningApp) {
             NSLog("Zap: failed to activate app pid \(pid) while raising window")
+        }
+    }
+
+    // MARK: Activation
+
+    /// Activates `app`, correctly handing activation over from Zap.
+    ///
+    /// macOS 14 introduced *cooperative activation*: once Zap has been the active
+    /// app (which happens the moment the Settings window opens via
+    /// `NSApp.activate`), it becomes the activation "owner", and the legacy
+    /// `activate(options:)` on another app is silently ignored — so committing a
+    /// switch appears to do nothing until Zap is relaunched. `activate(from:)`
+    /// yields ownership to the target, so the switch always takes effect.
+    @discardableResult
+    static func activate(_ app: NSRunningApplication, allWindows: Bool = false) -> Bool {
+        if #available(macOS 14.0, *) {
+            var options: NSApplication.ActivationOptions = []
+            if allWindows { options.insert(.activateAllWindows) }
+            return app.activate(from: .current, options: options)
+        } else {
+            var options: NSApplication.ActivationOptions = [.activateIgnoringOtherApps]
+            if allWindows { options.insert(.activateAllWindows) }
+            return app.activate(options: options)
         }
     }
 

@@ -565,8 +565,10 @@ final class SwitcherController {
         }
         // `.activateAllWindows` raises every window of the app, not just its main
         // one — so switching to the already-frontmost app still brings all of its
-        // windows forward (matching the native switcher).
-        if !app.activate(options: [.activateIgnoringOtherApps, .activateAllWindows]) {
+        // windows forward (matching the native switcher). `WindowEnumerator.activate`
+        // hands activation over cooperatively so the switch works even after Zap
+        // has been the active app (e.g. once Settings has been opened).
+        if !WindowEnumerator.activate(app, allWindows: true) {
             NSLog("Zap: failed to activate \(info.bundleIdentifier)")
         }
     }

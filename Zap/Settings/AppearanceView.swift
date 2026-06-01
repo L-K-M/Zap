@@ -10,7 +10,7 @@ struct AppearanceView: View {
             preview
                 .frame(maxWidth: .infinity)
                 .frame(height: 150)
-                .background(checkerboard)
+                .background(previewBackground)
 
             Divider()
 
@@ -36,6 +36,7 @@ struct AppearanceView: View {
                 }
             }
             .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
         }
     }
 
@@ -44,7 +45,7 @@ struct AppearanceView: View {
     private var preview: some View {
         let model = OverlayModel()
         model.apps = previewApps
-        model.selectedIndex = 1
+        model.selectedIndex = 0
         return OverlayView(model: model, preferences: preferences)
             .scaleEffect(0.7)
     }
@@ -61,8 +62,10 @@ struct AppearanceView: View {
         }
     }
 
-    private var checkerboard: some View {
-        Color(nsColor: .windowBackgroundColor)
+    /// Clear so the preview sits on the same backdrop as the form below it,
+    /// avoiding a visible seam where the two areas meet.
+    private var previewBackground: some View {
+        Color.clear
     }
 
     // MARK: Rows
