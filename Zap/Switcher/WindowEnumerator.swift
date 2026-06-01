@@ -60,6 +60,22 @@ enum WindowEnumerator {
         NSRunningApplication(processIdentifier: pid)?.activate(options: [.activateIgnoringOtherApps])
     }
 
+    // MARK: Closing
+
+    /// Closes `window` by pressing its close button. Returns `false` when the
+    /// window exposes no close button (so the caller can leave it in the list).
+    @discardableResult
+    static func close(_ window: WindowInfo) -> Bool {
+        var button: CFTypeRef?
+        guard
+            AXUIElementCopyAttributeValue(window.element, kAXCloseButtonAttribute as CFString, &button) == .success,
+            let button
+        else {
+            return false
+        }
+        return AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString) == .success
+    }
+
     // MARK: Attribute helpers
 
     private static func stringAttribute(_ element: AXUIElement, _ attribute: String) -> String? {

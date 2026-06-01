@@ -15,8 +15,10 @@ final class EventTapMonitor {
     var onCommit: (() -> Void)?
     /// Called when the user cancels (Escape) while the overlay is visible.
     var onCancel: (() -> Void)?
-    /// Called when the user presses ⌘Q / ⌘W on the selection (optional handlers).
+    /// Called when the user presses ⌘Q on the selection (optional handler).
     var onQuitSelected: (() -> Void)?
+    /// Called when the user presses ⌘W with a window focused in the window list.
+    var onCloseWindow: (() -> Void)?
     /// Called when the user presses Down/Up to move through the window list.
     /// `down == true` moves toward the next window; `false` moves back up
     /// (eventually returning focus to the app row).
@@ -133,9 +135,13 @@ final class EventTapMonitor {
             case KeyCode.escape:
                 onCancel?()
                 return nil
-            case KeyCode.q, KeyCode.w:
+            case KeyCode.q:
                 // Quit the highlighted app (Command is still held here).
                 onQuitSelected?()
+                return nil
+            case KeyCode.w:
+                // Close the focused window in the window list (if any).
+                onCloseWindow?()
                 return nil
             case KeyCode.arrowDown:
                 onNavigateWindows?(true)

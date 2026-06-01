@@ -88,6 +88,7 @@ final class SwitcherController {
         eventTap.onCommit = { [weak self] in self?.commit() }
         eventTap.onCancel = { [weak self] in self?.cancel() }
         eventTap.onQuitSelected = { [weak self] in self?.quitSelected() }
+        eventTap.onCloseWindow = { [weak self] in self?.closeFocusedWindow() }
         eventTap.onNavigateWindows = { [weak self] down in self?.navigateWindows(down: down) }
     }
 
@@ -200,6 +201,12 @@ final class SwitcherController {
     private func quitSelected() {
         guard isSessionActive, apps.indices.contains(selectedIndex) else { return }
         let victim = apps[selectedIndex]
+
+        // The Finder can't meaningfully be quit — it relaunches immediately — so
+        // leave it in place rather than terminating it and dropping it from the
+        // list only to have it reappear.
+        guard victim.bundleIdentifier != "com.apple.finder" else { return }
+
         provider.runningApplication(for: victim)?.terminate()
 
         // `terminate()` is asynchronous, so the app can still appear in the live
@@ -295,6 +302,27 @@ final class SwitcherController {
         guard isSessionActive, windows.indices.contains(index) else { return }
         windowSelectedIndex = index
         commit()
+    }
+
+    /// Closes the focused window (⌘W in the window list) and keeps the list in
+    /// sync, advancing the highlight to the next remaining window.
+    private func closeFocusedWindow() {
+        guard
+            isSessionActive,
+            let index = windowSelectedIndex,
+            windows.indices.contains(index)
+        else { return }
+
+        WindowEnumerator.close(windows[index])
+        windows.remove(at: index)
+
+        if windows.isEmpty {
+            windowSelectedIndex = nil
+            overlay.clearWindows()
+        } else {
+            windowSelectedIndex = min(index, windows.count - 1)
+            overlay.setWindows(windows, selected: windowSelectedIndex)
+        }
     }
 
     private func scheduleAutoCommit() {
