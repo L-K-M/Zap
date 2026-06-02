@@ -1,0 +1,43 @@
+import SwiftUI
+
+/// An 80s-flavored corner decoration for the switcher panel — e.g. the Sinclair
+/// ZX Spectrum's diagonal rainbow stripes. Drawn as a small set of parallel
+/// diagonal bars hugging the panel's top corner (see `PanelDecoration`).
+enum DecorationStyle: String, CaseIterable, Identifiable {
+    case none
+    case zxSpectrum
+    case appleRainbow
+    case vaporwave
+    case sunset
+    case love
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .none: return "None"
+        case .zxSpectrum: return "ZX Spectrum"
+        case .appleRainbow: return "Apple rainbow"
+        case .vaporwave: return "Vaporwave"
+        case .sunset: return "Sunset"
+        case .love: return "Love"
+        }
+    }
+
+    /// Stripe colors, ordered from the one nearest the corner inward. Empty for
+    /// `.none`.
+    var colors: [Color] {
+        hexes.map { Color(hexString: $0) }
+    }
+
+    private var hexes: [String] {
+        switch self {
+        case .none: return []
+        case .zxSpectrum: return ["#D52B1E", "#FFD500", "#00A651", "#00AEEF"]
+        case .appleRainbow: return ["#E03A3E", "#F5821F", "#FDB827", "#61BB46", "#009DDC", "#963D97"]
+        case .vaporwave: return ["#FF6AD5", "#C774E8", "#AD8CFF", "#8795E8", "#94D0FF"]
+        case .sunset: return ["#FF512F", "#F09819", "#FFD200"]
+        case .love: return ["#E40303", "#FF8C00", "#FFED00", "#008026", "#004DFF", "#750787"]
+        }
+    }
+}

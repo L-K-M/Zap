@@ -67,28 +67,36 @@ struct OverlayView: View {
             VisualEffectBlur()
             backgroundFill
                 .opacity(preferences.backgroundOpacity)
+            if preferences.decorationStyle != .none {
+                PanelDecoration(style: preferences.decorationStyle,
+                                position: preferences.decorationPosition,
+                                cornerRadius: preferences.cornerRadius,
+                                thickness: preferences.decorationSize)
+                    .opacity(preferences.decorationOpacity)
+            }
         }
     }
 
     /// The tint behind the blur: either a solid color or a gradient.
     ///
     /// The gradient line is pinned to a fixed reference rect (`headerWidth` ×
-    /// `headerHeight`, the always-present name + icon row) anchored at the panel's
+    /// `headerHeight`, the always-present name + icon row) centered at the panel's
     /// top-center, then converted to `UnitPoint`s against the *current* panel size.
     /// Because the panel grows downward from a fixed top edge and widens from its
     /// center (see `OverlayWindowController`), pinning the line this way keeps the
     /// gradient's appearance over the icon row identical no matter how the panel
     /// resizes while open — any growth area simply extends the edge colors (which
-    /// `LinearGradient` clamps to). This holds for every `GradientDirection`.
+    /// `LinearGradient` clamps to). This holds for every gradient angle.
     @ViewBuilder
     private var backgroundFill: some View {
         if preferences.useGradientBackground {
             GeometryReader { geo in
+                let points = gradientPoints(in: geo.size)
                 LinearGradient(
                     colors: [Color(hexString: preferences.backgroundColorHex),
                              Color(hexString: preferences.gradientColorHex)],
-                    startPoint: gradientPoint(preferences.gradientDirection.start, in: geo.size),
-                    endPoint: gradientPoint(preferences.gradientDirection.end, in: geo.size)
+                    startPoint: points.start,
+                    endPoint: points.end
                 )
             }
         } else {
@@ -96,14 +104,24 @@ struct OverlayView: View {
         }
     }
 
-    /// Maps a top-center–anchored reference `offset` (x: fraction of `headerWidth`
-    /// in `[-0.5, 0.5]`, y: fraction of `headerHeight` in `[0, 1]`) to a
-    /// `UnitPoint` in the current panel `size`.
-    private func gradientPoint(_ offset: CGPoint, in size: CGSize) -> UnitPoint {
-        guard size.width > 0, size.height > 0 else { return .center }
-        let absX = size.width / 2 + offset.x * headerWidth
-        let absY = offset.y * headerHeight
-        return UnitPoint(x: absX / size.width, y: absY / size.height)
+    /// Gradient line endpoints (as `UnitPoint`s in the current panel `size`) for
+    /// `preferences.gradientAngle`, pinned so the line spans the top-center
+    /// reference rect along the chosen direction regardless of panel size.
+    private func gradientPoints(in size: CGSize) -> (start: UnitPoint, end: UnitPoint) {
+        guard size.width > 0, size.height > 0 else { return (.top, .bottom) }
+        let radians = preferences.gradientAngle * .pi / 180
+        // Screen y grows downward, so (sin, cos) puts 0° at top→bottom.
+        let dx = sin(radians)
+        let dy = cos(radians)
+        let centerX = size.width / 2
+        let centerY = headerHeight / 2
+        // Extent of the reference rect projected onto the gradient direction, so
+        // the line spans corner-to-corner of the header for any angle.
+        let halfExtent = headerWidth / 2 * abs(dx) + headerHeight / 2 * abs(dy)
+        let start = CGPoint(x: centerX - dx * halfExtent, y: centerY - dy * halfExtent)
+        let end = CGPoint(x: centerX + dx * halfExtent, y: centerY + dy * halfExtent)
+        return (UnitPoint(x: start.x / size.width, y: start.y / size.height),
+                UnitPoint(x: end.x / size.width, y: end.y / size.height))
     }
 
     /// Width of the panel's always-visible header (icon row + outer padding),

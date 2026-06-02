@@ -35,25 +35,74 @@ final class PreferencesTests: XCTestCase {
         let prefs = Preferences(defaults: defaults)
         XCTAssertFalse(prefs.useGradientBackground)
         XCTAssertEqual(prefs.gradientColorHex, Preferences.Default.gradientColorHex)
-        XCTAssertEqual(prefs.gradientDirection, Preferences.Default.gradientDirection)
+        XCTAssertEqual(prefs.gradientAngle, Preferences.Default.gradientAngle)
     }
 
     func testGradientBackgroundRoundTrip() {
         let prefs = Preferences(defaults: defaults)
         prefs.useGradientBackground = true
         prefs.gradientColorHex = "#445566"
-        prefs.gradientDirection = .leadingToTrailing
+        prefs.gradientAngle = 135
 
         let reloaded = Preferences(defaults: defaults)
         XCTAssertTrue(reloaded.useGradientBackground)
         XCTAssertEqual(reloaded.gradientColorHex, "#445566")
-        XCTAssertEqual(reloaded.gradientDirection, .leadingToTrailing)
+        XCTAssertEqual(reloaded.gradientAngle, 135)
     }
 
-    func testInvalidStoredGradientDirectionFallsBackToDefault() {
-        defaults.set("sideways", forKey: "gradientDirection")
+    func testGradientAngleIsNormalizedIntoRange() {
+        defaults.set(450.0, forKey: "gradientAngle")
+        XCTAssertEqual(Preferences(defaults: defaults).gradientAngle, 90)
+
+        defaults.set(-90.0, forKey: "gradientAngle")
+        XCTAssertEqual(Preferences(defaults: defaults).gradientAngle, 270)
+
+        defaults.set(Double.nan, forKey: "gradientAngle")
+        XCTAssertEqual(Preferences(defaults: defaults).gradientAngle, 0)
+    }
+
+    func testDecorationDefaults() {
         let prefs = Preferences(defaults: defaults)
-        XCTAssertEqual(prefs.gradientDirection, Preferences.Default.gradientDirection)
+        XCTAssertEqual(prefs.decorationStyle, .none)
+        XCTAssertEqual(prefs.decorationPosition, Preferences.Default.decorationPosition)
+        XCTAssertEqual(prefs.decorationOpacity, Preferences.Default.decorationOpacity)
+        XCTAssertEqual(prefs.decorationSize, Preferences.Default.decorationSize)
+    }
+
+    func testDecorationRoundTrip() {
+        let prefs = Preferences(defaults: defaults)
+        prefs.decorationStyle = .zxSpectrum
+        prefs.decorationPosition = .topLeading
+        prefs.decorationOpacity = 0.5
+        prefs.decorationSize = 18
+
+        let reloaded = Preferences(defaults: defaults)
+        XCTAssertEqual(reloaded.decorationStyle, .zxSpectrum)
+        XCTAssertEqual(reloaded.decorationPosition, .topLeading)
+        XCTAssertEqual(reloaded.decorationOpacity, 0.5)
+        XCTAssertEqual(reloaded.decorationSize, 18)
+    }
+
+    func testOutOfRangeDecorationOpacityIsClamped() {
+        defaults.set(3.0, forKey: "decorationOpacity")
+        XCTAssertEqual(Preferences(defaults: defaults).decorationOpacity, 1)
+        defaults.set(-1.0, forKey: "decorationOpacity")
+        XCTAssertEqual(Preferences(defaults: defaults).decorationOpacity, 0)
+    }
+
+    func testOutOfRangeDecorationSizeIsClamped() {
+        defaults.set(500.0, forKey: "decorationSize")
+        XCTAssertLessThanOrEqual(Preferences(defaults: defaults).decorationSize, 30)
+        defaults.set(0.0, forKey: "decorationSize")
+        XCTAssertGreaterThanOrEqual(Preferences(defaults: defaults).decorationSize, 4)
+    }
+
+    func testInvalidStoredDecorationFallsBackToDefault() {
+        defaults.set("disco-ball", forKey: "decorationStyle")
+        defaults.set("middle", forKey: "decorationPosition")
+        let prefs = Preferences(defaults: defaults)
+        XCTAssertEqual(prefs.decorationStyle, Preferences.Default.decorationStyle)
+        XCTAssertEqual(prefs.decorationPosition, Preferences.Default.decorationPosition)
     }
 
     func testInvalidStoredGradientColorFallsBackToDefault() {

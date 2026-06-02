@@ -20,10 +20,13 @@ struct AppearanceView: View {
                     Toggle("Gradient background", isOn: $preferences.useGradientBackground)
                     if preferences.useGradientBackground {
                         ColorPicker("Gradient end", selection: colorBinding(\.gradientColorHex), supportsOpacity: false)
-                        Picker("Gradient direction", selection: $preferences.gradientDirection) {
-                            ForEach(GradientDirection.allCases) { direction in
-                                Text(direction.label).tag(direction)
-                            }
+                        HStack {
+                            Text("Gradient direction")
+                            Spacer()
+                            Text("\(Int(preferences.gradientAngle.rounded()))°")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                            AngleDial(angleDegrees: $preferences.gradientAngle)
                         }
                     }
                     sliderRow("Background opacity", value: $preferences.backgroundOpacity, range: 0...1)
@@ -38,6 +41,23 @@ struct AppearanceView: View {
                     sliderRow("Highlight corner radius", value: $preferences.highlightCornerRadius, range: 0...64, step: 1)
                     sliderRow("Icon padding", value: $preferences.contentPadding, range: 0...60, step: 1)
                     Toggle("Show app name", isOn: $preferences.showAppName)
+                }
+
+                Section("Decoration") {
+                    Picker("Style", selection: $preferences.decorationStyle) {
+                        ForEach(DecorationStyle.allCases) { style in
+                            Text(style.label).tag(style)
+                        }
+                    }
+                    if preferences.decorationStyle != .none {
+                        Picker("Position", selection: $preferences.decorationPosition) {
+                            ForEach(DecorationPosition.allCases) { position in
+                                Text(position.label).tag(position)
+                            }
+                        }
+                        sliderRow("Band size", value: $preferences.decorationSize, range: 4...30, step: 1)
+                        sliderRow("Opacity", value: $preferences.decorationOpacity, range: 0...1)
+                    }
                 }
 
                 Section {
@@ -107,7 +127,11 @@ struct AppearanceView: View {
         preferences.backgroundColorHex = Preferences.Default.backgroundColorHex
         preferences.useGradientBackground = Preferences.Default.useGradientBackground
         preferences.gradientColorHex = Preferences.Default.gradientColorHex
-        preferences.gradientDirection = Preferences.Default.gradientDirection
+        preferences.gradientAngle = Preferences.Default.gradientAngle
+        preferences.decorationStyle = Preferences.Default.decorationStyle
+        preferences.decorationPosition = Preferences.Default.decorationPosition
+        preferences.decorationOpacity = Preferences.Default.decorationOpacity
+        preferences.decorationSize = Preferences.Default.decorationSize
         preferences.highlightColorHex = Preferences.Default.highlightColorHex
         preferences.labelColorHex = Preferences.Default.labelColorHex
         preferences.backgroundOpacity = Preferences.Default.backgroundOpacity

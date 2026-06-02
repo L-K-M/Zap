@@ -18,7 +18,11 @@ final class Preferences: ObservableObject {
         static let backgroundColorHex = "#1C1C1E"
         static let useGradientBackground = false
         static let gradientColorHex = "#3A3A3C"
-        static let gradientDirection = GradientDirection.topToBottom
+        static let gradientAngle = 0.0
+        static let decorationStyle = DecorationStyle.none
+        static let decorationPosition = DecorationPosition.topTrailing
+        static let decorationOpacity = 1.0
+        static let decorationSize = 10.0
         static let highlightColorHex = "#0A84FF"
         static let labelColorHex = "#FFFFFF"
         static let backgroundOpacity = 0.55
@@ -36,7 +40,11 @@ final class Preferences: ObservableObject {
         static let backgroundColorHex = "backgroundColorHex"
         static let useGradientBackground = "useGradientBackground"
         static let gradientColorHex = "gradientColorHex"
-        static let gradientDirection = "gradientDirection"
+        static let gradientAngle = "gradientAngle"
+        static let decorationStyle = "decorationStyle"
+        static let decorationPosition = "decorationPosition"
+        static let decorationOpacity = "decorationOpacity"
+        static let decorationSize = "decorationSize"
         static let highlightColorHex = "highlightColorHex"
         static let labelColorHex = "labelColorHex"
         static let backgroundOpacity = "backgroundOpacity"
@@ -78,9 +86,29 @@ final class Preferences: ObservableObject {
     }
 
     /// The direction the background gradient runs when `useGradientBackground`
-    /// is on.
-    @Published var gradientDirection: GradientDirection {
-        didSet { defaults.set(gradientDirection.rawValue, forKey: Key.gradientDirection) }
+    /// is on, in degrees clockwise from straight down (0° = top→bottom).
+    @Published var gradientAngle: Double {
+        didSet { defaults.set(gradientAngle, forKey: Key.gradientAngle) }
+    }
+
+    /// An optional retro corner decoration drawn on the panel.
+    @Published var decorationStyle: DecorationStyle {
+        didSet { defaults.set(decorationStyle.rawValue, forKey: Key.decorationStyle) }
+    }
+
+    /// Which top corner `decorationStyle` is drawn in.
+    @Published var decorationPosition: DecorationPosition {
+        didSet { defaults.set(decorationPosition.rawValue, forKey: Key.decorationPosition) }
+    }
+
+    /// Opacity of the corner decoration.
+    @Published var decorationOpacity: Double {
+        didSet { defaults.set(decorationOpacity, forKey: Key.decorationOpacity) }
+    }
+
+    /// Thickness of each band in the corner decoration.
+    @Published var decorationSize: Double {
+        didSet { defaults.set(decorationSize, forKey: Key.decorationSize) }
     }
 
     @Published var highlightColorHex: String {
@@ -163,7 +191,11 @@ final class Preferences: ObservableObject {
         backgroundColorHex = Self.validColor(defaults.string(forKey: Key.backgroundColorHex), default: Default.backgroundColorHex)
         useGradientBackground = defaults.object(forKey: Key.useGradientBackground) as? Bool ?? Default.useGradientBackground
         gradientColorHex = Self.validColor(defaults.string(forKey: Key.gradientColorHex), default: Default.gradientColorHex)
-        gradientDirection = GradientDirection(rawValue: defaults.string(forKey: Key.gradientDirection) ?? "") ?? Default.gradientDirection
+        gradientAngle = Self.normalizeAngle(defaults.object(forKey: Key.gradientAngle) as? Double ?? Default.gradientAngle)
+        decorationStyle = DecorationStyle(rawValue: defaults.string(forKey: Key.decorationStyle) ?? "") ?? Default.decorationStyle
+        decorationPosition = DecorationPosition(rawValue: defaults.string(forKey: Key.decorationPosition) ?? "") ?? Default.decorationPosition
+        decorationOpacity = Self.clamp(defaults.object(forKey: Key.decorationOpacity) as? Double ?? Default.decorationOpacity, 0, 1, Default.decorationOpacity)
+        decorationSize = Self.clamp(defaults.object(forKey: Key.decorationSize) as? Double ?? Default.decorationSize, 4, 30, Default.decorationSize)
         highlightColorHex = Self.validColor(defaults.string(forKey: Key.highlightColorHex), default: Default.highlightColorHex)
         labelColorHex = Self.validColor(defaults.string(forKey: Key.labelColorHex), default: Default.labelColorHex)
 
@@ -200,6 +232,14 @@ final class Preferences: ObservableObject {
     private static func validColor(_ hex: String?, default fallback: String) -> String {
         guard let hex, NSColor(hex: hex) != nil else { return fallback }
         return hex
+    }
+
+    /// Wraps an angle (degrees) into `[0, 360)`, falling back to `0` for
+    /// non-finite input from corrupted defaults.
+    private static func normalizeAngle(_ value: Double) -> Double {
+        guard value.isFinite else { return 0 }
+        let remainder = value.truncatingRemainder(dividingBy: 360)
+        return remainder < 0 ? remainder + 360 : remainder
     }
 
     /// The current login-item state from `SMAppService`, or `nil` if unavailable.
