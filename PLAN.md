@@ -172,7 +172,13 @@ A borderless, transparent, floating window mimicking the native look.
   any Space. Ignores mouse events except when hover-selection is enabled.
 - **Content (SwiftUI hosted in an `NSHostingView`):**
   - Rounded-rect panel with an `NSVisualEffectView` (blur) background, tinted by the
-    user's chosen background color/opacity.
+    user's chosen background color/opacity. Optionally a gradient: the tint runs from
+    the background color to a second color in a configurable direction (top/bottom,
+    left/right, or either diagonal). The gradient line is pinned to a fixed
+    top-center–anchored "header" reference rect (name + icon row) and converted to
+    unit points against the current panel size, so it does **not** restretch when the
+    window list grows the panel — the always-visible icon row keeps a constant
+    appearance for every direction.
   - Horizontal row of app icons (~64–128px), wrapping or scrolling if many.
   - Selection highlight: rounded rectangle behind the selected icon using the user's
     highlight color.

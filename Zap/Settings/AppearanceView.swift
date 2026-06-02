@@ -17,6 +17,15 @@ struct AppearanceView: View {
             Form {
                 Section("Colors") {
                     ColorPicker("Background", selection: colorBinding(\.backgroundColorHex), supportsOpacity: false)
+                    Toggle("Gradient background", isOn: $preferences.useGradientBackground)
+                    if preferences.useGradientBackground {
+                        ColorPicker("Gradient end", selection: colorBinding(\.gradientColorHex), supportsOpacity: false)
+                        Picker("Gradient direction", selection: $preferences.gradientDirection) {
+                            ForEach(GradientDirection.allCases) { direction in
+                                Text(direction.label).tag(direction)
+                            }
+                        }
+                    }
                     sliderRow("Background opacity", value: $preferences.backgroundOpacity, range: 0...1)
                     ColorPicker("Highlight", selection: colorBinding(\.highlightColorHex), supportsOpacity: false)
                     sliderRow("Highlight opacity", value: $preferences.highlightOpacity, range: 0...1)
@@ -96,6 +105,9 @@ struct AppearanceView: View {
 
     private func resetDefaults() {
         preferences.backgroundColorHex = Preferences.Default.backgroundColorHex
+        preferences.useGradientBackground = Preferences.Default.useGradientBackground
+        preferences.gradientColorHex = Preferences.Default.gradientColorHex
+        preferences.gradientDirection = Preferences.Default.gradientDirection
         preferences.highlightColorHex = Preferences.Default.highlightColorHex
         preferences.labelColorHex = Preferences.Default.labelColorHex
         preferences.backgroundOpacity = Preferences.Default.backgroundOpacity

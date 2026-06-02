@@ -16,6 +16,9 @@ final class Preferences: ObservableObject {
 
     enum Default {
         static let backgroundColorHex = "#1C1C1E"
+        static let useGradientBackground = false
+        static let gradientColorHex = "#3A3A3C"
+        static let gradientDirection = GradientDirection.topToBottom
         static let highlightColorHex = "#0A84FF"
         static let labelColorHex = "#FFFFFF"
         static let backgroundOpacity = 0.55
@@ -31,6 +34,9 @@ final class Preferences: ObservableObject {
     private enum Key {
         static let excluded = "excludedBundleIDs"
         static let backgroundColorHex = "backgroundColorHex"
+        static let useGradientBackground = "useGradientBackground"
+        static let gradientColorHex = "gradientColorHex"
+        static let gradientDirection = "gradientDirection"
         static let highlightColorHex = "highlightColorHex"
         static let labelColorHex = "labelColorHex"
         static let backgroundOpacity = "backgroundOpacity"
@@ -56,6 +62,25 @@ final class Preferences: ObservableObject {
 
     @Published var backgroundColorHex: String {
         didSet { defaults.set(backgroundColorHex, forKey: Key.backgroundColorHex) }
+    }
+
+    /// Whether the panel background is a vertical gradient (from
+    /// `backgroundColorHex` at the top to `gradientColorHex` at the bottom)
+    /// rather than a single solid color.
+    @Published var useGradientBackground: Bool {
+        didSet { defaults.set(useGradientBackground, forKey: Key.useGradientBackground) }
+    }
+
+    /// The bottom color of the background gradient when `useGradientBackground`
+    /// is on.
+    @Published var gradientColorHex: String {
+        didSet { defaults.set(gradientColorHex, forKey: Key.gradientColorHex) }
+    }
+
+    /// The direction the background gradient runs when `useGradientBackground`
+    /// is on.
+    @Published var gradientDirection: GradientDirection {
+        didSet { defaults.set(gradientDirection.rawValue, forKey: Key.gradientDirection) }
     }
 
     @Published var highlightColorHex: String {
@@ -136,6 +161,9 @@ final class Preferences: ObservableObject {
         excludedBundleIDs = Set(excludedArray)
 
         backgroundColorHex = Self.validColor(defaults.string(forKey: Key.backgroundColorHex), default: Default.backgroundColorHex)
+        useGradientBackground = defaults.object(forKey: Key.useGradientBackground) as? Bool ?? Default.useGradientBackground
+        gradientColorHex = Self.validColor(defaults.string(forKey: Key.gradientColorHex), default: Default.gradientColorHex)
+        gradientDirection = GradientDirection(rawValue: defaults.string(forKey: Key.gradientDirection) ?? "") ?? Default.gradientDirection
         highlightColorHex = Self.validColor(defaults.string(forKey: Key.highlightColorHex), default: Default.highlightColorHex)
         labelColorHex = Self.validColor(defaults.string(forKey: Key.labelColorHex), default: Default.labelColorHex)
 

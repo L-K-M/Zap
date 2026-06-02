@@ -65,10 +65,63 @@ struct OverlayView: View {
     private var panelBackground: some View {
         ZStack {
             VisualEffectBlur()
-            Color(hexString: preferences.backgroundColorHex)
+            backgroundFill
                 .opacity(preferences.backgroundOpacity)
         }
     }
+
+    /// The tint behind the blur: either a solid color or a gradient.
+    ///
+    /// The gradient line is pinned to a fixed reference rect (`headerWidth` ×
+    /// `headerHeight`, the always-present name + icon row) anchored at the panel's
+    /// top-center, then converted to `UnitPoint`s against the *current* panel size.
+    /// Because the panel grows downward from a fixed top edge and widens from its
+    /// center (see `OverlayWindowController`), pinning the line this way keeps the
+    /// gradient's appearance over the icon row identical no matter how the panel
+    /// resizes while open — any growth area simply extends the edge colors (which
+    /// `LinearGradient` clamps to). This holds for every `GradientDirection`.
+    @ViewBuilder
+    private var backgroundFill: some View {
+        if preferences.useGradientBackground {
+            GeometryReader { geo in
+                LinearGradient(
+                    colors: [Color(hexString: preferences.backgroundColorHex),
+                             Color(hexString: preferences.gradientColorHex)],
+                    startPoint: gradientPoint(preferences.gradientDirection.start, in: geo.size),
+                    endPoint: gradientPoint(preferences.gradientDirection.end, in: geo.size)
+                )
+            }
+        } else {
+            Color(hexString: preferences.backgroundColorHex)
+        }
+    }
+
+    /// Maps a top-center–anchored reference `offset` (x: fraction of `headerWidth`
+    /// in `[-0.5, 0.5]`, y: fraction of `headerHeight` in `[0, 1]`) to a
+    /// `UnitPoint` in the current panel `size`.
+    private func gradientPoint(_ offset: CGPoint, in size: CGSize) -> UnitPoint {
+        guard size.width > 0, size.height > 0 else { return .center }
+        let absX = size.width / 2 + offset.x * headerWidth
+        let absY = offset.y * headerHeight
+        return UnitPoint(x: absX / size.width, y: absY / size.height)
+    }
+
+    /// Width of the panel's always-visible header (icon row + outer padding),
+    /// the horizontal span the gradient line is pinned to.
+    private var headerWidth: CGFloat {
+        panelContentWidth + outerPadding * 2
+    }
+
+    /// Height of the panel's always-visible header (outer padding + optional app
+    /// name + icon row), the vertical span the gradient line is pinned to.
+    private var headerHeight: CGFloat {
+        let iconCell = preferences.iconSize + 16  // icon image + its 8pt padding
+        let nameBlock: CGFloat = preferences.showAppName ? (nameLineHeight + vStackSpacing) : 0
+        return outerPadding * 2 + iconCell + nameBlock
+    }
+
+    private var nameLineHeight: CGFloat { 20 }
+    private var vStackSpacing: CGFloat { 10 }
 
     private func iconCell(_ app: AppInfo, isSelected: Bool, isQuitting: Bool) -> some View {
         Image(nsImage: app.icon ?? NSImage())

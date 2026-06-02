@@ -31,6 +31,37 @@ final class PreferencesTests: XCTestCase {
         XCTAssertFalse(prefs.showWindowPreviews)
     }
 
+    func testGradientBackgroundDefaults() {
+        let prefs = Preferences(defaults: defaults)
+        XCTAssertFalse(prefs.useGradientBackground)
+        XCTAssertEqual(prefs.gradientColorHex, Preferences.Default.gradientColorHex)
+        XCTAssertEqual(prefs.gradientDirection, Preferences.Default.gradientDirection)
+    }
+
+    func testGradientBackgroundRoundTrip() {
+        let prefs = Preferences(defaults: defaults)
+        prefs.useGradientBackground = true
+        prefs.gradientColorHex = "#445566"
+        prefs.gradientDirection = .leadingToTrailing
+
+        let reloaded = Preferences(defaults: defaults)
+        XCTAssertTrue(reloaded.useGradientBackground)
+        XCTAssertEqual(reloaded.gradientColorHex, "#445566")
+        XCTAssertEqual(reloaded.gradientDirection, .leadingToTrailing)
+    }
+
+    func testInvalidStoredGradientDirectionFallsBackToDefault() {
+        defaults.set("sideways", forKey: "gradientDirection")
+        let prefs = Preferences(defaults: defaults)
+        XCTAssertEqual(prefs.gradientDirection, Preferences.Default.gradientDirection)
+    }
+
+    func testInvalidStoredGradientColorFallsBackToDefault() {
+        defaults.set("not-a-color", forKey: "gradientColorHex")
+        let prefs = Preferences(defaults: defaults)
+        XCTAssertEqual(prefs.gradientColorHex, Preferences.Default.gradientColorHex)
+    }
+
     func testShowWindowPreviewsRoundTrip() {
         let prefs = Preferences(defaults: defaults)
         prefs.showWindowPreviews = true
