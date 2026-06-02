@@ -12,8 +12,15 @@ private final class OverlayHostingView: NSHostingView<OverlayView> {
 final class OverlayWindowController {
 
     let model = OverlayModel()
-    private let window: NSWindow
-    private let hostingView: OverlayHostingView
+    private let preferences: Preferences
+    private var window: NSWindow
+    private var hostingView: OverlayHostingView
+    private var windowCreatedAt = Date()
+
+    /// Borderless transparent windows can occasionally stop drawing after long
+    /// compositor uptime / activation-policy churn. Recycle while hidden so the
+    /// next presentation starts from a fresh WindowServer/SwiftUI host.
+    private let maximumWindowAge: TimeInterval = 30 * 60
 
     private(set) var isVisible = false
 
@@ -48,11 +55,18 @@ final class OverlayWindowController {
     }
 
     init(preferences: Preferences) {
-        hostingView = OverlayHostingView(rootView: OverlayView(model: model, preferences: preferences))
+        self.preferences = preferences
+        let created = Self.makeWindow(model: model, preferences: preferences)
+        window = created.window
+        hostingView = created.hostingView
+    }
+
+    private static func makeWindow(model: OverlayModel, preferences: Preferences) -> (window: NSWindow, hostingView: OverlayHostingView) {
+        let hostingView = OverlayHostingView(rootView: OverlayView(model: model, preferences: preferences))
         hostingView.translatesAutoresizingMaskIntoConstraints = true
         hostingView.autoresizingMask = [.width, .height]
 
-        window = NSWindow(
+        let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
             styleMask: .borderless,
             backing: .buffered,
@@ -62,8 +76,10 @@ final class OverlayWindowController {
         window.backgroundColor = .clear
         window.hasShadow = true
         window.level = .popUpMenu
+        window.canHide = false
         window.ignoresMouseEvents = false
         window.isReleasedWhenClosed = false
+        window.isRestorable = false
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
 
         // Host the SwiftUI view inside a plain container rather than using it as
@@ -77,11 +93,15 @@ final class OverlayWindowController {
         hostingView.frame = container.bounds
         container.addSubview(hostingView)
         window.contentView = container
+        return (window, hostingView)
     }
 
     // MARK: Presentation
 
     func show(apps: [AppInfo], selectedIndex: Int, on screen: NSScreen) {
+        refreshWindowIfNeeded()
+        resetWindowPresentationState()
+
         model.apps = apps
         model.selectedIndex = selectedIndex
         model.quittingPIDs = []
@@ -90,8 +110,12 @@ final class OverlayWindowController {
         model.windowThumbnails = [:]
 
         currentScreen = screen
+        // Reassigning the root view is cheap (the model stays the same) and nudges
+        // SwiftUI/AppKit to rebuild a host that may have stopped drawing while idle.
+        hostingView.rootView = OverlayView(model: model, preferences: preferences)
         layout(keepTop: false)
         window.orderFrontRegardless()
+        forceDisplay()
         isVisible = true
     }
 
@@ -116,6 +140,7 @@ final class OverlayWindowController {
         model.windowSelectedIndex = nil
         model.windowThumbnails = [:]
         layout(keepTop: true)
+        forceDisplay()
     }
 
     // MARK: Window list
@@ -126,6 +151,7 @@ final class OverlayWindowController {
         model.windowSelectedIndex = selected
         model.windowThumbnails = [:]
         layout(keepTop: true)
+        forceDisplay()
     }
 
     func updateWindowSelection(_ index: Int?) {
@@ -146,6 +172,7 @@ final class OverlayWindowController {
         model.windowSelectedIndex = nil
         model.windowThumbnails = [:]
         layout(keepTop: true)
+        forceDisplay()
     }
 
     func hide() {
@@ -162,6 +189,38 @@ final class OverlayWindowController {
         currentScreen = nil
     }
 
+    private func refreshWindowIfNeeded() {
+        let agedOut = Date().timeIntervalSince(windowCreatedAt) > maximumWindowAge
+        let disconnected = window.contentView == nil || hostingView.window !== window
+        guard !isVisible, agedOut || disconnected else { return }
+        NSLog("Zap: recycling overlay window (agedOut: \(agedOut), disconnected: \(disconnected))")
+        window.orderOut(nil)
+        let created = Self.makeWindow(model: model, preferences: preferences)
+        window = created.window
+        hostingView = created.hostingView
+        windowCreatedAt = Date()
+    }
+
+    private func resetWindowPresentationState() {
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.alphaValue = 1
+        window.level = .popUpMenu
+        window.canHide = false
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        window.ignoresMouseEvents = false
+        window.contentView?.isHidden = false
+        hostingView.isHidden = false
+        hostingView.alphaValue = 1
+    }
+
+    private func forceDisplay() {
+        hostingView.needsLayout = true
+        hostingView.needsDisplay = true
+        window.contentView?.needsDisplay = true
+        window.displayIfNeeded()
+    }
+
     // MARK: Layout
 
     private func layout(keepTop: Bool) {
@@ -176,8 +235,8 @@ final class OverlayWindowController {
         hostingView.layoutSubtreeIfNeeded()
         let fitting = hostingView.fittingSize
         let size = NSSize(
-            width: min(max(fitting.width, 80), visible.width - horizontalMargin),
-            height: min(max(fitting.height, 80), visible.height)
+            width: min(max(safeDimension(fitting.width, fallback: 80), 80), visible.width - horizontalMargin),
+            height: min(max(safeDimension(fitting.height, fallback: 80), 80), visible.height)
         )
 
         let originY: CGFloat
@@ -197,6 +256,11 @@ final class OverlayWindowController {
         let clampedY = min(max(originY, visible.minY), visible.maxY - size.height)
         let origin = NSPoint(x: clampedX, y: clampedY)
         window.setFrame(NSRect(origin: origin, size: size), display: true)
+        hostingView.frame = window.contentView?.bounds ?? NSRect(origin: .zero, size: size)
         anchorTop = origin.y + size.height
+    }
+
+    private func safeDimension(_ value: CGFloat, fallback: CGFloat) -> CGFloat {
+        value.isFinite && value > 0 ? value : fallback
     }
 }
