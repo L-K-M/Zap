@@ -8,6 +8,7 @@ final class AppListProvider {
 
     private let preferences: Preferences
     private let mru = MRUTracker()
+    private let ownBundleID = Bundle.main.bundleIdentifier
     private var activationObserver: NSObjectProtocol?
 
     init(preferences: Preferences) {
@@ -29,10 +30,9 @@ final class AppListProvider {
         // Always exclude Zap itself. While the Settings window is open the app
         // temporarily becomes `.regular`, which would otherwise let it satisfy
         // `AppInfo`'s activation-policy check and appear in its own switcher.
-        let ownBundleID = Bundle.main.bundleIdentifier
         let running = NSWorkspace.shared.runningApplications
             .compactMap(AppInfo.init(runningApplication:))
-            .filter { $0.bundleIdentifier != ownBundleID }
+            .filter { !isOwnBundleID($0.bundleIdentifier) }
         return Self.filtered(mru.ordered(running), excluding: preferences.excludedBundleIDs)
     }
 
@@ -48,7 +48,8 @@ final class AppListProvider {
     /// The bundle identifier of the currently frontmost application, if any.
     /// Used to decide the initial switcher selection.
     func frontmostBundleID() -> String? {
-        NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        return bundleID.flatMap { isOwnBundleID($0) ? nil : $0 }
     }
 
     /// Pure exclusion filter — exposed for unit testing.
@@ -59,9 +60,15 @@ final class AppListProvider {
     // MARK: Private
 
     private func seedMRU() {
-        if let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier {
+        if let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+           !isOwnBundleID(front) {
             mru.recordActivation(bundleID: front)
         }
+    }
+
+    private func isOwnBundleID(_ bundleID: String) -> Bool {
+        guard let ownBundleID else { return false }
+        return ownBundleID == bundleID
     }
 
     private func observeActivations() {
@@ -71,10 +78,12 @@ final class AppListProvider {
             queue: .main
         ) { [weak self] note in
             guard
+                let self,
                 let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                let bundleID = app.bundleIdentifier
+                let bundleID = app.bundleIdentifier,
+                !isOwnBundleID(bundleID)
             else { return }
-            self?.mru.recordActivation(bundleID: bundleID)
+            mru.recordActivation(bundleID: bundleID)
         }
     }
 }

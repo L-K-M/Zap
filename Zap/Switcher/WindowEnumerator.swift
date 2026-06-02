@@ -106,21 +106,43 @@ enum WindowEnumerator {
     /// Activates `app`, correctly handing activation over from Zap.
     ///
     /// macOS 14 introduced *cooperative activation*: once Zap has been the active
-    /// app (which happens the moment the Settings window opens via
-    /// `NSApp.activate`), it becomes the activation "owner", and the legacy
-    /// `activate(options:)` on another app is silently ignored — so committing a
-    /// switch appears to do nothing until Zap is relaunched. `activate(from:)`
-    /// yields ownership to the target, so the switch always takes effect.
+    /// app (which happens the moment the Settings window opens via `NSApp.activate`),
+    /// it becomes part of the activation context. Hand off explicitly using Apple's
+    /// documented sequence: the currently-active app yields to the target, then the
+    /// target requests activation. A short verification retry covers silent no-ops
+    /// where the activation request was accepted but not honored on that run-loop
+    /// turn (seen after interacting with Settings/color controls).
     @discardableResult
     static func activate(_ app: NSRunningApplication, allWindows: Bool = false) -> Bool {
+        let activated = requestActivation(of: app, allWindows: allWindows)
+        if activated {
+            verifyActivation(of: app, allWindows: allWindows, remainingRetries: 2)
+        }
+        return activated
+    }
+
+    @discardableResult
+    private static func requestActivation(of app: NSRunningApplication, allWindows: Bool) -> Bool {
         if #available(macOS 14.0, *) {
-            var options: NSApplication.ActivationOptions = []
+            var options: NSApplication.ActivationOptions = [.activateIgnoringOtherApps]
             if allWindows { options.insert(.activateAllWindows) }
-            return app.activate(from: .current, options: options)
+            NSApp.yieldActivation(to: app)
+            return app.activate(options: options)
         } else {
             var options: NSApplication.ActivationOptions = [.activateIgnoringOtherApps]
             if allWindows { options.insert(.activateAllWindows) }
             return app.activate(options: options)
+        }
+    }
+
+    private static func verifyActivation(of app: NSRunningApplication, allWindows: Bool, remainingRetries: Int) {
+        guard remainingRetries > 0 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            guard !app.isTerminated else { return }
+            let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            guard frontmostPID != app.processIdentifier else { return }
+            requestActivation(of: app, allWindows: allWindows)
+            verifyActivation(of: app, allWindows: allWindows, remainingRetries: remainingRetries - 1)
         }
     }
 

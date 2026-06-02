@@ -133,17 +133,19 @@ must **intercept the key event and suppress the system switcher**.
 
 ### Source of apps
 - `NSWorkspace.shared.runningApplications`, filtered to
-  `activationPolicy == .regular` (apps that normally appear in the switcher/Dock).
+  `activationPolicy == .regular` (apps that normally appear in the switcher/Dock),
+  with Zap itself explicitly excluded because Settings temporarily makes Zap a
+  regular app.
 - Each gives an `NSRunningApplication`: `bundleIdentifier`, `localizedName`, `icon`,
-  `processIdentifier`, and `activate(options:)`.
+  `processIdentifier`, and activation APIs.
 
 ### Most-Recently-Used (MRU) ordering
 - The native switcher lists apps in MRU order with the previously-active app
   pre-selected (so a quick ⌘+Tab tap toggles between the two most recent apps).
 - Maintain our own MRU list by observing
   `NSWorkspace.didActivateApplicationNotification` and moving the activated app to the
-  front. Persist nothing — rebuild from live notifications + current frontmost ordering
-  on launch.
+  front, ignoring Zap's own activations while Settings is open. Persist nothing —
+  rebuild from live notifications + current frontmost ordering on launch.
 - On show: order = MRU list; default selection = index `1` (second item) so a single
   tap switches to the last app, matching native feel. When the frontmost app is
   *excluded* it is filtered out, so the default selection becomes index `0` instead
@@ -305,7 +307,8 @@ Zap/
 3. **Overlay** ✅ — borderless window rendering the icon row + highlight.
 4. **Event tap** ✅ — intercept ⌘+Tab, suppress system switcher, drive selection,
    commit on ⌘ release; Accessibility permission flow + tap re-enable.
-5. **Activation** ✅ — `activate(options:)` the selected app; MRU toggle feel.
+5. **Activation** ✅ — cooperatively yield to and activate the selected app; MRU
+   toggle feel.
 6. **Exclusions** ✅ — Settings UI + `UserDefaults` filtering.
 7. **Appearance** ✅ — color/size settings + live preview applied to overlay.
 8. **Polish** ✅ — show-delay, reverse cycling, Esc cancel, launch-at-login,
