@@ -428,6 +428,11 @@ final class OverlayWindowController {
     private func layout(keepTop: Bool) -> Bool {
         guard let screen = currentScreen else { return false }
         let visible = screen.visibleFrame
+        // Position on the current screen, but *size* to fit the most constrained
+        // screen the panel appears on. When mirroring onto all displays that's the
+        // smallest of them, so a panel sized for a large main display doesn't spill
+        // off a smaller mirrored one.
+        let fittingBounds = layoutBounds(current: visible)
 
         // Cap how wide the icon row may grow before it scrolls. Leave a margin so
         // the panel never butts against the screen edges, and reserve room for the
@@ -435,7 +440,7 @@ final class OverlayWindowController {
         // after the padded panel has already overflowed, clipping the last icons at
         // the screen edge.
         let horizontalMargin: CGFloat = 40
-        let maxPanelWidth = visible.width - horizontalMargin
+        let maxPanelWidth = fittingBounds.width - horizontalMargin
         model.maxContentWidth = max(120, maxPanelWidth - preferences.contentPadding * 2)
 
         hostingView.layoutSubtreeIfNeeded()
@@ -457,7 +462,7 @@ final class OverlayWindowController {
 
         let size = NSSize(
             width: min(max(safeDimension(fitting.width, fallback: 80), 80), maxPanelWidth),
-            height: min(max(safeDimension(fitting.height, fallback: 80), 80), visible.height)
+            height: min(max(safeDimension(fitting.height, fallback: 80), 80), fittingBounds.height)
         )
 
         let originY: CGFloat
@@ -511,5 +516,22 @@ final class OverlayWindowController {
 
     private func safeDimension(_ value: CGFloat, fallback: CGFloat) -> CGFloat {
         value.isFinite && value > 0 ? value : fallback
+    }
+
+    /// The screen bounds to size the panel within: the smallest of all displays when
+    /// mirroring (so one size fits every screen), otherwise `current`.
+    private func layoutBounds(current: NSRect) -> CGSize {
+        Self.panelFittingBounds(allScreens: preferences.showOnAllScreens,
+                                screens: NSScreen.screens.map { $0.visibleFrame.size },
+                                current: current.size)
+    }
+
+    /// Pure size selection: the smallest of `screens` when `allScreens` is on (and
+    /// any exist), otherwise `current`. Extracted so the "fit the smallest display"
+    /// rule can be unit-tested without real screens.
+    static func panelFittingBounds(allScreens: Bool, screens: [CGSize], current: CGSize) -> CGSize {
+        let candidates = (allScreens && !screens.isEmpty) ? screens : [current]
+        return CGSize(width: candidates.map(\.width).min() ?? current.width,
+                      height: candidates.map(\.height).min() ?? current.height)
     }
 }
