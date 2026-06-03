@@ -1,4 +1,4 @@
-# Zap
+# Zap.app
 
 A fast, customizable macOS app switcher — a drop-in replacement for the native
 <kbd>⌘</kbd>+<kbd>Tab</kbd> switcher that lets you **exclude apps** you never switch
