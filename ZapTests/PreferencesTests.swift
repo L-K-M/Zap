@@ -126,6 +126,13 @@ final class PreferencesTests: XCTestCase {
         XCTAssertFalse(Preferences(defaults: defaults).closeOnClickOutside)
     }
 
+    func testShowOnAllScreensDefaultsOffAndRoundTrips() {
+        XCTAssertFalse(Preferences(defaults: defaults).showOnAllScreens)
+
+        Preferences(defaults: defaults).showOnAllScreens = true
+        XCTAssertTrue(Preferences(defaults: defaults).showOnAllScreens)
+    }
+
     func testExclusionsRoundTrip() {
         let prefs = Preferences(defaults: defaults)
         prefs.setExcluded(true, bundleID: "com.apple.Safari")

@@ -83,6 +83,7 @@ final class SwitcherController {
         overlay.onHoverWindow = { [weak self] index in self?.hoverWindow(index) }
         // A click outside the panel dismisses the session (when the user enables it).
         overlay.onClickOutside = { [weak self] in self?.cancel() }
+        overlay.onDropFiles = { [weak self] index, urls in self?.openFiles(urls, withAppAt: index) }
 
         // Reconfigure live if the user toggles the alternate-hotkey preference.
         preferences.$useAlternateHotkey
@@ -320,6 +321,27 @@ final class SwitcherController {
         selectedIndex = index
         windowSelectedIndex = nil
         commit()
+    }
+
+    /// Handles files dropped on an app icon: open them with that app (activating it),
+    /// then dismiss — like dropping onto an app in the Dock.
+    private func openFiles(_ urls: [URL], withAppAt index: Int) {
+        guard isSessionActive, apps.indices.contains(index) else { return }
+        let target = apps[index]
+        // Don't hand files to an app that's on its way out.
+        guard !quittingPIDs.contains(target.processIdentifier) else { return }
+        endSession()
+
+        guard !urls.isEmpty,
+              let runningApp = provider.runningApplication(for: target),
+              let appURL = runningApp.bundleURL else { return }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.open(urls, withApplicationAt: appURL, configuration: configuration) { _, error in
+            if let error {
+                NSLog("Zap: failed to open \(urls.count) file(s) with \(target.bundleIdentifier): \(error.localizedDescription)")
+            }
+        }
     }
 
     private func endSession() {

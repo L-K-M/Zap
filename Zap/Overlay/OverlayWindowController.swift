@@ -48,6 +48,12 @@ final class OverlayWindowController {
     /// outside it, when `preferences.closeOnClickOutside` is on.
     private var clickOutsideMonitors: [Any] = []
 
+    /// Extra windows mirroring the panel onto the other screens, when
+    /// `preferences.showOnAllScreens` is on. They host the same `model`, so they
+    /// render identically and stay interactive (clicks/hover/drops work on any of
+    /// them). Empty otherwise — leaving the single-screen path untouched.
+    private var mirrorWindows: [NSWindow] = []
+
     /// Invoked when the user clicks outside the panel (and the setting is enabled).
     var onClickOutside: (() -> Void)?
 
@@ -73,6 +79,12 @@ final class OverlayWindowController {
     var onHoverWindow: ((Int) -> Void)? {
         get { model.onHoverWindow }
         set { model.onHoverWindow = newValue }
+    }
+
+    /// Invoked when files are dropped on an app icon. Arguments: index and file URLs.
+    var onDropFiles: ((Int, [URL]) -> Void)? {
+        get { model.onDropFiles }
+        set { model.onDropFiles = newValue }
     }
 
     init(preferences: Preferences) {
@@ -136,6 +148,7 @@ final class OverlayWindowController {
         model.windows = []
         model.windowSelectedIndex = nil
         model.windowThumbnails = [:]
+        model.dropTargetIndex = nil
 
         currentScreen = screen
         // Reassigning the root view is cheap (the model stays the same) and nudges
@@ -148,11 +161,12 @@ final class OverlayWindowController {
         // `layout` has set `maxContentWidth`, so the scroll geometry is now known:
         // centre the initial selection before the first frame is shown.
         scrollToCenter(on: selectedIndex, animated: false)
+        isVisible = true
         if committed {
             window.orderFrontRegardless()
             forceDisplay()
+            syncMirrors()
         }
-        isVisible = true
     }
 
     /// Moves the highlight via keyboard navigation, which also scrolls to bring the
@@ -189,6 +203,7 @@ final class OverlayWindowController {
         layout(keepTop: true)
         scrollToCenter(on: selectedIndex, animated: false)
         forceDisplay()
+        syncMirrors()
     }
 
     // MARK: Window list
@@ -200,6 +215,7 @@ final class OverlayWindowController {
         model.windowThumbnails = [:]
         layout(keepTop: true)
         forceDisplay()
+        syncMirrors()
     }
 
     func updateWindowSelection(_ index: Int?) {
@@ -221,15 +237,18 @@ final class OverlayWindowController {
         model.windowThumbnails = [:]
         layout(keepTop: true)
         forceDisplay()
+        syncMirrors()
     }
 
     func hide() {
         guard isVisible else { return }
         cancelLayoutRetry()
+        teardownMirrors()
         window.orderOut(nil)
         isVisible = false
         model.apps = []
         model.selectedIndex = 0
+        model.dropTargetIndex = nil
         model.scrollOffset = 0
         model.quittingPIDs = []
         model.windows = []
@@ -302,7 +321,7 @@ final class OverlayWindowController {
     /// directly — taking the edge fade with it — and consume the event.
     private func installScrollMonitor() {
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            guard let self, self.isVisible, event.window === self.window else { return event }
+            guard let self, self.isVisible, self.isOverlayWindow(event.window) else { return event }
             return self.handleScroll(event) ? nil : event
         }
     }
@@ -342,7 +361,7 @@ final class OverlayWindowController {
             self?.dismissIfClickedOutside()
         }
         let local = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
-            if let self, event.window !== self.window {
+            if let self, !self.isOverlayWindow(event.window) {
                 self.dismissIfClickedOutside()
             }
             return event
@@ -353,6 +372,50 @@ final class OverlayWindowController {
     private func dismissIfClickedOutside() {
         guard isVisible, preferences.closeOnClickOutside else { return }
         onClickOutside?()
+    }
+
+    // MARK: Mirror windows (show on all screens)
+
+    /// Whether `candidate` is the primary overlay window or one of its mirrors.
+    private func isOverlayWindow(_ candidate: NSWindow?) -> Bool {
+        guard let candidate else { return false }
+        return candidate === window || mirrorWindows.contains { $0 === candidate }
+    }
+
+    /// Brings the panel up on the other screens (when `showOnAllScreens` is on), or
+    /// tears the mirrors down. Each mirror hosts the same `model`, so it renders and
+    /// behaves identically; they're sized to the primary window and placed two-thirds
+    /// up their own screen. Idempotent — safe to call after every (re)layout.
+    private func syncMirrors() {
+        let others: [NSScreen]
+        if isVisible, preferences.showOnAllScreens, let primary = currentScreen {
+            others = NSScreen.screens.filter { $0 !== primary }
+        } else {
+            others = []
+        }
+
+        // Rebuild only when the set of mirrored screens changes (rare); otherwise
+        // just reposition the existing mirrors below.
+        if mirrorWindows.count != others.count {
+            teardownMirrors()
+            mirrorWindows = others.map { _ in Self.makeWindow(model: model, preferences: preferences).window }
+        }
+        guard !mirrorWindows.isEmpty else { return }
+
+        let size = window.frame.size
+        for (mirror, screen) in zip(mirrorWindows, others) {
+            let visible = screen.visibleFrame
+            let centerY = visible.minY + visible.height * (2.0 / 3.0)
+            let originX = min(max(visible.midX - size.width / 2, visible.minX), visible.maxX - size.width)
+            let originY = min(max(centerY - size.height / 2, visible.minY), visible.maxY - size.height)
+            mirror.setFrame(NSRect(origin: NSPoint(x: originX, y: originY), size: size), display: true)
+            mirror.orderFrontRegardless()
+        }
+    }
+
+    private func teardownMirrors() {
+        mirrorWindows.forEach { $0.orderOut(nil) }
+        mirrorWindows.removeAll()
     }
 
     // MARK: Layout
@@ -434,6 +497,7 @@ final class OverlayWindowController {
                 self.window.orderFrontRegardless()
             }
             self.forceDisplay()
+            self.syncMirrors()
         }
         layoutRetryWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60.0, execute: work)

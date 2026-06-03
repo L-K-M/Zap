@@ -35,6 +35,9 @@ final class OverlayModel: ObservableObject {
     /// Set from the target screen so the panel never runs off-screen.
     @Published var maxContentWidth: CGFloat = .greatestFiniteMagnitude
 
+    /// The icon a file drag is currently hovering over, highlighted as a drop target.
+    @Published var dropTargetIndex: Int?
+
     /// Called when the user clicks an icon. The argument is the app's index.
     var onPick: ((Int) -> Void)?
     /// Called when the pointer hovers an app icon. The argument is the app's index.
@@ -43,6 +46,9 @@ final class OverlayModel: ObservableObject {
     var onPickWindow: ((Int) -> Void)?
     /// Called when the pointer hovers a window row. The argument is the window's index.
     var onHoverWindow: ((Int) -> Void)?
+    /// Called when files are dropped on an app icon. Arguments: the app's index and
+    /// the dropped file URLs.
+    var onDropFiles: ((Int, [URL]) -> Void)?
 
     var selectedApp: AppInfo? {
         apps.indices.contains(selectedIndex) ? apps[selectedIndex] : nil

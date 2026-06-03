@@ -24,11 +24,23 @@ struct OverlayView: View {
             HStack(spacing: iconSpacing) {
                 ForEach(Array(model.apps.enumerated()), id: \.element.id) { index, app in
                     iconCell(app, isSelected: index == model.selectedIndex,
-                             isQuitting: model.quittingPIDs.contains(app.processIdentifier))
+                             isQuitting: model.quittingPIDs.contains(app.processIdentifier),
+                             isDropTarget: index == model.dropTargetIndex)
                         .contentShape(Rectangle())
                         .onTapGesture { model.onPick?(index) }
                         .onHover { hovering in
                             if hovering { model.onHoverApp?(index) }
+                        }
+                        // Let the user drop files onto an app to open them with it.
+                        .dropDestination(for: URL.self) { urls, _ in
+                            model.onDropFiles?(index, urls)
+                            return true
+                        } isTargeted: { targeted in
+                            if targeted {
+                                model.dropTargetIndex = index
+                            } else if model.dropTargetIndex == index {
+                                model.dropTargetIndex = nil
+                            }
                         }
                 }
             }
@@ -159,7 +171,7 @@ struct OverlayView: View {
     private var nameLineHeight: CGFloat { 20 }
     private var vStackSpacing: CGFloat { 10 }
 
-    private func iconCell(_ app: AppInfo, isSelected: Bool, isQuitting: Bool) -> some View {
+    private func iconCell(_ app: AppInfo, isSelected: Bool, isQuitting: Bool, isDropTarget: Bool) -> some View {
         Image(nsImage: app.icon ?? NSImage())
             .resizable()
             .interpolation(.high)
@@ -172,6 +184,13 @@ struct OverlayView: View {
                           ? Color(hexString: preferences.highlightColorHex).opacity(preferences.highlightOpacity)
                           : Color.clear)
             )
+            // Accent ring while a file drag hovers this icon, marking the drop target.
+            .overlay(
+                RoundedRectangle(cornerRadius: preferences.highlightCornerRadius, style: .continuous)
+                    .strokeBorder(Color(hexString: preferences.highlightColorHex),
+                                  lineWidth: isDropTarget ? 3 : 0)
+            )
+            .animation(.easeOut(duration: 0.12), value: isDropTarget)
             // Dim apps that are quitting until their fate is confirmed.
             .opacity(isQuitting ? 0.3 : 1)
             .animation(.easeOut(duration: 0.15), value: isQuitting)

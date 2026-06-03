@@ -57,6 +57,13 @@ struct GeneralView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section("Displays") {
+                Toggle("Show the switcher on all displays", isOn: $preferences.showOnAllScreens)
+                Text("When off, the switcher appears only on the display with the pointer. When on, the same panel is mirrored onto every display.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)

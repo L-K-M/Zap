@@ -61,6 +61,7 @@ final class Preferences: ObservableObject {
         static let launchAtLogin = "launchAtLogin"
         static let useAlternateHotkey = "useAlternateHotkey"
         static let closeOnClickOutside = "closeOnClickOutside"
+        static let showOnAllScreens = "showOnAllScreens"
     }
 
     // MARK: Stored settings
@@ -186,6 +187,12 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(closeOnClickOutside, forKey: Key.closeOnClickOutside) }
     }
 
+    /// Whether the switcher panel is mirrored onto every screen at once, rather than
+    /// shown only on the screen with the pointer.
+    @Published var showOnAllScreens: Bool {
+        didSet { defaults.set(showOnAllScreens, forKey: Key.showOnAllScreens) }
+    }
+
     // MARK: Init
 
     init(defaults: UserDefaults = .standard) {
@@ -218,6 +225,7 @@ final class Preferences: ObservableObject {
         windowDwellMs = Self.clamp(defaults.object(forKey: Key.windowDwellMs) as? Double ?? Default.windowDwellMs, 50, 5000, Default.windowDwellMs)
         useAlternateHotkey = defaults.object(forKey: Key.useAlternateHotkey) as? Bool ?? false
         closeOnClickOutside = defaults.object(forKey: Key.closeOnClickOutside) as? Bool ?? true
+        showOnAllScreens = defaults.object(forKey: Key.showOnAllScreens) as? Bool ?? false
 
         // Seed launch-at-login from the authoritative system state rather than a
         // possibly-stale stored value, so an external change in System Settings is
