@@ -14,15 +14,15 @@ final class EdgeFadeTests: XCTestCase {
 
     func testRowThatFitsHasNoFade() {
         // 3 icons (312pt) inside a 1000pt viewport — nothing is hidden.
-        let fade = EdgeFade.forIconRow(selectedIndex: 1, count: 3, cellWidth: 96,
+        let fade = EdgeFade.forIconRow(centeredIndex: 1, count: 3, cellWidth: 96,
                                        spacing: 12, viewport: 1000, fadeWidth: 80)
         XCTAssertEqual(fade, .none)
     }
 
     func testEmptyOrDegenerateInputsHaveNoFade() {
-        XCTAssertEqual(EdgeFade.forIconRow(selectedIndex: 0, count: 0, cellWidth: 96,
+        XCTAssertEqual(EdgeFade.forIconRow(centeredIndex: 0, count: 0, cellWidth: 96,
                                            spacing: 12, viewport: 1000, fadeWidth: 80), .none)
-        XCTAssertEqual(EdgeFade.forIconRow(selectedIndex: 0, count: 5, cellWidth: 96,
+        XCTAssertEqual(EdgeFade.forIconRow(centeredIndex: 0, count: 5, cellWidth: 96,
                                            spacing: 12, viewport: 0, fadeWidth: 80), .none)
     }
 
@@ -30,7 +30,7 @@ final class EdgeFadeTests: XCTestCase {
 
     func testFirstSelectionFadesOnlyTheRight() {
         // Scrolled hard left: nothing hidden on the left, everything spills right.
-        let fade = EdgeFade.forIconRow(selectedIndex: 0, count: 20, cellWidth: 96,
+        let fade = EdgeFade.forIconRow(centeredIndex: 0, count: 20, cellWidth: 96,
                                        spacing: 12, viewport: 1000, fadeWidth: 80)
         XCTAssertEqual(fade.leading, 0, accuracy: accuracy)
         XCTAssertEqual(fade.trailing, 1, accuracy: accuracy)
@@ -39,14 +39,14 @@ final class EdgeFadeTests: XCTestCase {
     func testLastSelectionFadesOnlyTheLeft() {
         // Scrolled hard right: nothing hidden on the right — the side that used to
         // keep fading. This is the case the user reported.
-        let fade = EdgeFade.forIconRow(selectedIndex: 19, count: 20, cellWidth: 96,
+        let fade = EdgeFade.forIconRow(centeredIndex: 19, count: 20, cellWidth: 96,
                                        spacing: 12, viewport: 1000, fadeWidth: 80)
         XCTAssertEqual(fade.leading, 1, accuracy: accuracy)
         XCTAssertEqual(fade.trailing, 0, accuracy: accuracy)
     }
 
     func testMiddleSelectionFadesBothEdges() {
-        let fade = EdgeFade.forIconRow(selectedIndex: 10, count: 20, cellWidth: 96,
+        let fade = EdgeFade.forIconRow(centeredIndex: 10, count: 20, cellWidth: 96,
                                        spacing: 12, viewport: 1000, fadeWidth: 80)
         XCTAssertGreaterThan(fade.leading, 0)
         XCTAssertGreaterThan(fade.trailing, 0)
@@ -58,7 +58,7 @@ final class EdgeFadeTests: XCTestCase {
     /// The selected centre, clamped to that 48pt range, yields predictable fades.
     func testPartialFadeRampValues() {
         func fade(_ index: Int) -> EdgeFade {
-            EdgeFade.forIconRow(selectedIndex: index, count: 5, cellWidth: 96,
+            EdgeFade.forIconRow(centeredIndex: index, count: 5, cellWidth: 96,
                                 spacing: 12, viewport: 480, fadeWidth: 80)
         }
         // index 0 → scrolled 0/48:  no left fade, 48/80 of a right fade.
@@ -76,7 +76,7 @@ final class EdgeFadeTests: XCTestCase {
 
     func testFadeShiftsFromRightToLeftAsSelectionAdvances() {
         let fades = (0..<20).map {
-            EdgeFade.forIconRow(selectedIndex: $0, count: 20, cellWidth: 96,
+            EdgeFade.forIconRow(centeredIndex: $0, count: 20, cellWidth: 96,
                                 spacing: 12, viewport: 1000, fadeWidth: 80)
         }
         for (a, b) in zip(fades, fades.dropFirst()) {
@@ -88,14 +88,14 @@ final class EdgeFadeTests: XCTestCase {
     // MARK: Ramp width
 
     func testRampInsetIsFadeWidthOverViewport() {
-        let fade = EdgeFade.forIconRow(selectedIndex: 0, count: 20, cellWidth: 96,
+        let fade = EdgeFade.forIconRow(centeredIndex: 0, count: 20, cellWidth: 96,
                                        spacing: 12, viewport: 480, fadeWidth: 80)
         XCTAssertEqual(fade.inset, 80.0 / 480.0, accuracy: accuracy)
     }
 
     func testRampIsClampedToAThirdOfTheViewport() {
         // An absurd fade width can't exceed a third of the viewport.
-        let fade = EdgeFade.forIconRow(selectedIndex: 0, count: 5, cellWidth: 96,
+        let fade = EdgeFade.forIconRow(centeredIndex: 0, count: 5, cellWidth: 96,
                                        spacing: 12, viewport: 480, fadeWidth: 10_000)
         XCTAssertEqual(fade.inset, 1.0 / 3.0, accuracy: accuracy)
         // ramp = 160, so index 0's right fade is 48/160.
@@ -105,15 +105,15 @@ final class EdgeFadeTests: XCTestCase {
     // MARK: Out-of-range selection
 
     func testSelectionIndexIsClampedIntoRange() {
-        let past = EdgeFade.forIconRow(selectedIndex: 99, count: 5, cellWidth: 96,
+        let past = EdgeFade.forIconRow(centeredIndex: 99, count: 5, cellWidth: 96,
                                        spacing: 12, viewport: 480, fadeWidth: 80)
-        let last = EdgeFade.forIconRow(selectedIndex: 4, count: 5, cellWidth: 96,
+        let last = EdgeFade.forIconRow(centeredIndex: 4, count: 5, cellWidth: 96,
                                        spacing: 12, viewport: 480, fadeWidth: 80)
         XCTAssertEqual(past, last)
 
-        let negative = EdgeFade.forIconRow(selectedIndex: -3, count: 5, cellWidth: 96,
+        let negative = EdgeFade.forIconRow(centeredIndex: -3, count: 5, cellWidth: 96,
                                            spacing: 12, viewport: 480, fadeWidth: 80)
-        let first = EdgeFade.forIconRow(selectedIndex: 0, count: 5, cellWidth: 96,
+        let first = EdgeFade.forIconRow(centeredIndex: 0, count: 5, cellWidth: 96,
                                         spacing: 12, viewport: 480, fadeWidth: 80)
         XCTAssertEqual(negative, first)
     }

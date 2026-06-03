@@ -40,6 +40,11 @@ final class OverlayWindowController {
     private var layoutRetryCount = 0
     private let maxLayoutRetries = 10
 
+    /// Local monitor that turns scroll-wheel / trackpad input over the overlay into
+    /// row scrolling, plus the sub-icon remainder it carries between events.
+    private var scrollMonitor: Any?
+    private var scrollAccumulator: CGFloat = 0
+
     /// Invoked when the user clicks an app icon. Argument is the app's index.
     var onPick: ((Int) -> Void)? {
         get { model.onPick }
@@ -69,6 +74,11 @@ final class OverlayWindowController {
         let created = Self.makeWindow(model: model, preferences: preferences)
         window = created.window
         hostingView = created.hostingView
+        installScrollMonitor()
+    }
+
+    deinit {
+        if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
     }
 
     private static func makeWindow(model: OverlayModel, preferences: Preferences) -> (window: NSWindow, hostingView: OverlayHostingView) {
@@ -114,6 +124,7 @@ final class OverlayWindowController {
 
         model.apps = apps
         model.selectedIndex = selectedIndex
+        model.scrollAnchorIndex = selectedIndex
         model.quittingPIDs = []
         model.windows = []
         model.windowSelectedIndex = nil
@@ -133,7 +144,17 @@ final class OverlayWindowController {
         isVisible = true
     }
 
+    /// Moves the highlight via keyboard navigation, which also re-anchors the scroll
+    /// so the selection is brought into view and centred.
     func updateSelection(_ index: Int) {
+        model.selectedIndex = index
+        model.scrollAnchorIndex = index
+    }
+
+    /// Moves the highlight to follow the pointer. Deliberately leaves the scroll
+    /// anchor put: hovering should not scroll the row (that would slide icons out
+    /// from under the cursor and make the middle ones unclickable).
+    func updateHover(_ index: Int) {
         model.selectedIndex = index
     }
 
@@ -142,6 +163,7 @@ final class OverlayWindowController {
     func setQuitting(_ pids: Set<pid_t>, selectedIndex: Int) {
         model.quittingPIDs = pids
         model.selectedIndex = selectedIndex
+        model.scrollAnchorIndex = selectedIndex
     }
 
     /// Replaces the app row (e.g. once a quit is confirmed and the icon is
@@ -149,6 +171,7 @@ final class OverlayWindowController {
     func updateApps(_ apps: [AppInfo], selectedIndex: Int, quitting: Set<pid_t>) {
         model.apps = apps
         model.selectedIndex = selectedIndex
+        model.scrollAnchorIndex = selectedIndex
         model.quittingPIDs = quitting
         model.windows = []
         model.windowSelectedIndex = nil
@@ -192,10 +215,12 @@ final class OverlayWindowController {
     func hide() {
         guard isVisible else { return }
         cancelLayoutRetry()
+        scrollAccumulator = 0
         window.orderOut(nil)
         isVisible = false
         model.apps = []
         model.selectedIndex = 0
+        model.scrollAnchorIndex = 0
         model.quittingPIDs = []
         model.windows = []
         model.windowSelectedIndex = nil
@@ -234,6 +259,51 @@ final class OverlayWindowController {
         hostingView.needsDisplay = true
         window.contentView?.needsDisplay = true
         window.displayIfNeeded()
+    }
+
+    // MARK: Scrolling
+
+    /// Watches for scroll-wheel / trackpad input over the overlay and translates it
+    /// into row scrolling. A local monitor sees the event before the inner SwiftUI
+    /// `ScrollView` (which a vertical mouse wheel wouldn't drive anyway), so we can
+    /// move the keyboard-style scroll anchor — taking the auto-scroll and edge fade
+    /// with it — and consume the event so nothing scrolls the row twice.
+    private func installScrollMonitor() {
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self, self.isVisible, event.window === self.window else { return event }
+            return self.handleScroll(event) ? nil : event
+        }
+    }
+
+    /// Advances the scroll anchor by however many whole icons the gesture covers.
+    /// Returns whether the scroll was consumed (only when the row actually overflows).
+    private func handleScroll(_ event: NSEvent) -> Bool {
+        guard isVisible else { return false }
+        let count = model.apps.count
+        guard count > 1 else { return false }
+
+        // Only scroll when the row is wider than the panel — matches the overlay's
+        // own overflow/scroll condition (`maxRowWidth > maxContentWidth`).
+        let cellWidth = preferences.iconSize + 16
+        let spacing: CGFloat = 12 // matches OverlayView.iconSpacing
+        let contentWidth = CGFloat(count) * cellWidth + CGFloat(count - 1) * spacing
+        guard contentWidth > model.maxContentWidth else { return false }
+
+        // Trackpad swipes are horizontal and per-pixel; a mouse wheel is vertical and
+        // per-line. Take the dominant axis and normalise so a notch ≈ one icon.
+        let raw = abs(event.scrollingDeltaX) >= abs(event.scrollingDeltaY)
+            ? event.scrollingDeltaX
+            : event.scrollingDeltaY
+        let pointsPerIcon: CGFloat = event.hasPreciseScrollingDeltas ? 60 : 1
+        let step = ScrollWheelStepper.steps(raw: raw, pointsPerIcon: pointsPerIcon,
+                                            accumulator: &scrollAccumulator)
+        if event.phase == .ended || event.momentumPhase == .ended { scrollAccumulator = 0 }
+
+        if step != 0 {
+            let next = min(max(model.scrollAnchorIndex + step, 0), count - 1)
+            if next != model.scrollAnchorIndex { model.scrollAnchorIndex = next }
+        }
+        return true
     }
 
     // MARK: Layout

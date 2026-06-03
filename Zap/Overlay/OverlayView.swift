@@ -36,7 +36,7 @@ struct OverlayView: View {
             .modifier(HorizontallyScrollable(active: maxRowWidth > model.maxContentWidth,
                                               width: panelContentWidth,
                                               fade: iconRowFade,
-                                              scrollTarget: model.selectedApp?.id))
+                                              scrollTarget: model.scrollAnchorID))
 
             if !model.windows.isEmpty {
                 Divider()
@@ -68,9 +68,11 @@ struct OverlayView: View {
     }
 
     /// Edge-fade amounts for the (possibly scrolled) icon row, fading only the
-    /// side(s) with content hidden past the edge. See `EdgeFade.forIconRow`.
+    /// side(s) with content hidden past the edge. Anchored to the scroll position
+    /// (`scrollAnchorIndex`), not the highlight, so it stays put while hovering.
+    /// See `EdgeFade.forIconRow`.
     private var iconRowFade: EdgeFade {
-        EdgeFade.forIconRow(selectedIndex: model.selectedIndex,
+        EdgeFade.forIconRow(centeredIndex: model.scrollAnchorIndex,
                             count: model.apps.count,
                             cellWidth: cellWidth,
                             spacing: iconSpacing,
@@ -258,17 +260,19 @@ struct EdgeFade: Equatable {
 
     static let none = EdgeFade(leading: 0, trailing: 0, inset: 0)
 
-    /// Edge fade for an icon row that auto-scrolls to centre `selectedIndex` and
+    /// Edge fade for an icon row that auto-scrolls to centre `centeredIndex` and
     /// clamps at both ends — so the scroll offset, and thus how much is hidden on
-    /// each side, is fully determined by the selection and geometry. Pure function
+    /// each side, is fully determined by that index and the geometry. Pure function
     /// (no SwiftUI/AppKit state) so the edge behaviour can be unit-tested.
     ///
+    /// - `centeredIndex`: the icon the row is scrolled to centre on (the scroll
+    ///   anchor, which the keyboard drives — not the hover highlight).
     /// - `cellWidth`: footprint of one icon (image + padding).
     /// - `spacing`: gap between icons.
     /// - `viewport`: visible width of the scrolling row.
     /// - `fadeWidth`: desired ramp width in points (clamped to ≤ a third of the
     ///   viewport). Returns `.none` when the row fits and nothing is hidden.
-    static func forIconRow(selectedIndex: Int,
+    static func forIconRow(centeredIndex: Int,
                            count: Int,
                            cellWidth: CGFloat,
                            spacing: CGFloat,
@@ -279,9 +283,9 @@ struct EdgeFade: Equatable {
         let maxScroll = max(0, contentWidth - viewport)
         guard maxScroll > 0 else { return .none }
 
-        let index = min(max(selectedIndex, 0), count - 1)
-        let selectedCentre = CGFloat(index) * (cellWidth + spacing) + cellWidth / 2
-        let scrolled = min(max(selectedCentre - viewport / 2, 0), maxScroll)
+        let index = min(max(centeredIndex, 0), count - 1)
+        let iconCentre = CGFloat(index) * (cellWidth + spacing) + cellWidth / 2
+        let scrolled = min(max(iconCentre - viewport / 2, 0), maxScroll)
         let ramp = min(max(fadeWidth, 1), viewport / 3)
         return EdgeFade(
             leading: min(1, scrolled / ramp),               // content hidden to the left
@@ -294,13 +298,14 @@ struct EdgeFade: Equatable {
 /// Wraps content in a horizontal `ScrollView` constrained to `width` when
 /// `active`, so a crowded icon row scrolls instead of overflowing the screen.
 ///
-/// While scrolling, the row follows the selection — `scrollTarget` is the id of
-/// the highlighted icon — so cycling past the visible edge keeps the current app
-/// on screen instead of leaving it scrolled out of view. The icons also fade to
-/// transparent at an edge that has content scrolled past it (per `fade`), so the
-/// cutoff reads as a deliberate soft edge rather than a hard clip. The fade shows
-/// only where there's hidden content: a first/last icon resting flush against an
-/// edge stays fully crisp.
+/// While scrolling, the row follows the keyboard's scroll anchor — `scrollTarget`
+/// is its app id — so cycling past the visible edge keeps the current app on screen
+/// instead of leaving it scrolled out of view. Hover deliberately doesn't move the
+/// anchor, so pointing at an icon never scrolls it out from under the cursor. The
+/// icons also fade to transparent at an edge that has content scrolled past it (per
+/// `fade`), so the cutoff reads as a deliberate soft edge rather than a hard clip.
+/// The fade shows only where there's hidden content: a first/last icon resting flush
+/// against an edge stays fully crisp.
 private struct HorizontallyScrollable: ViewModifier {
     let active: Bool
     let width: CGFloat

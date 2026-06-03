@@ -425,7 +425,7 @@ final class SwitcherController {
         // Don't let the pointer land the highlight on a dimmed, quitting app.
         guard !quittingPIDs.contains(apps[index].processIdentifier) else { return }
         selectedIndex = index
-        overlay.updateSelection(index)
+        overlay.updateHover(index)
         restartDwell()
     }
 
