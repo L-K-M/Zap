@@ -2,7 +2,7 @@
 
 A fast, customizable macOS app switcher — a drop-in replacement for the native
 <kbd>⌘</kbd>+<kbd>Tab</kbd> switcher that lets you **exclude apps** you never switch
-to and **customize the colors** of the switcher.
+to, switch **directoy do individual screens**, and **customize the appearance** of the switcher.
 
 ![Screencast](zap-video.gif)
 
