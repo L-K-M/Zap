@@ -41,9 +41,15 @@ final class OverlayWindowController {
     private let maxLayoutRetries = 10
 
     /// Local monitor that turns scroll-wheel / trackpad input over the overlay into
-    /// row scrolling, plus the sub-icon remainder it carries between events.
+    /// continuous row scrolling.
     private var scrollMonitor: Any?
-    private var scrollAccumulator: CGFloat = 0
+
+    /// Monitors (local + global) that dismiss the overlay when the user clicks
+    /// outside it, when `preferences.closeOnClickOutside` is on.
+    private var clickOutsideMonitors: [Any] = []
+
+    /// Invoked when the user clicks outside the panel (and the setting is enabled).
+    var onClickOutside: (() -> Void)?
 
     /// Invoked when the user clicks an app icon. Argument is the app's index.
     var onPick: ((Int) -> Void)? {
@@ -75,10 +81,12 @@ final class OverlayWindowController {
         window = created.window
         hostingView = created.hostingView
         installScrollMonitor()
+        installClickOutsideMonitor()
     }
 
     deinit {
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
+        clickOutsideMonitors.forEach { NSEvent.removeMonitor($0) }
     }
 
     private static func makeWindow(model: OverlayModel, preferences: Preferences) -> (window: NSWindow, hostingView: OverlayHostingView) {
@@ -124,7 +132,6 @@ final class OverlayWindowController {
 
         model.apps = apps
         model.selectedIndex = selectedIndex
-        model.scrollAnchorIndex = selectedIndex
         model.quittingPIDs = []
         model.windows = []
         model.windowSelectedIndex = nil
@@ -137,22 +144,26 @@ final class OverlayWindowController {
         // Size first, reveal second. If the host can't be measured yet, `layout`
         // returns false and schedules a retry that reveals the window once it can be
         // sized correctly — so we never flash the 80×80 "small square".
-        if layout(keepTop: false) {
+        let committed = layout(keepTop: false)
+        // `layout` has set `maxContentWidth`, so the scroll geometry is now known:
+        // centre the initial selection before the first frame is shown.
+        scrollToCenter(on: selectedIndex, animated: false)
+        if committed {
             window.orderFrontRegardless()
             forceDisplay()
         }
         isVisible = true
     }
 
-    /// Moves the highlight via keyboard navigation, which also re-anchors the scroll
-    /// so the selection is brought into view and centred.
+    /// Moves the highlight via keyboard navigation, which also scrolls to bring the
+    /// selection into view, centred.
     func updateSelection(_ index: Int) {
         model.selectedIndex = index
-        model.scrollAnchorIndex = index
+        scrollToCenter(on: index, animated: true)
     }
 
     /// Moves the highlight to follow the pointer. Deliberately leaves the scroll
-    /// anchor put: hovering should not scroll the row (that would slide icons out
+    /// position put: hovering should not scroll the row (that would slide icons out
     /// from under the cursor and make the middle ones unclickable).
     func updateHover(_ index: Int) {
         model.selectedIndex = index
@@ -163,7 +174,7 @@ final class OverlayWindowController {
     func setQuitting(_ pids: Set<pid_t>, selectedIndex: Int) {
         model.quittingPIDs = pids
         model.selectedIndex = selectedIndex
-        model.scrollAnchorIndex = selectedIndex
+        scrollToCenter(on: selectedIndex, animated: false)
     }
 
     /// Replaces the app row (e.g. once a quit is confirmed and the icon is
@@ -171,12 +182,12 @@ final class OverlayWindowController {
     func updateApps(_ apps: [AppInfo], selectedIndex: Int, quitting: Set<pid_t>) {
         model.apps = apps
         model.selectedIndex = selectedIndex
-        model.scrollAnchorIndex = selectedIndex
         model.quittingPIDs = quitting
         model.windows = []
         model.windowSelectedIndex = nil
         model.windowThumbnails = [:]
         layout(keepTop: true)
+        scrollToCenter(on: selectedIndex, animated: false)
         forceDisplay()
     }
 
@@ -215,12 +226,11 @@ final class OverlayWindowController {
     func hide() {
         guard isVisible else { return }
         cancelLayoutRetry()
-        scrollAccumulator = 0
         window.orderOut(nil)
         isVisible = false
         model.apps = []
         model.selectedIndex = 0
-        model.scrollAnchorIndex = 0
+        model.scrollOffset = 0
         model.quittingPIDs = []
         model.windows = []
         model.windowSelectedIndex = nil
@@ -263,11 +273,33 @@ final class OverlayWindowController {
 
     // MARK: Scrolling
 
-    /// Watches for scroll-wheel / trackpad input over the overlay and translates it
-    /// into row scrolling. A local monitor sees the event before the inner SwiftUI
-    /// `ScrollView` (which a vertical mouse wheel wouldn't drive anyway), so we can
-    /// move the keyboard-style scroll anchor — taking the auto-scroll and edge fade
-    /// with it — and consume the event so nothing scrolls the row twice.
+    /// Geometry of the icon row, mirroring `OverlayView`: the viewport is the row's
+    /// natural width capped at `maxContentWidth` (which `layout` keeps current).
+    private func iconRowGeometry() -> IconRowGeometry {
+        let cellWidth = preferences.iconSize + 16
+        let spacing: CGFloat = 12 // matches OverlayView.iconSpacing
+        let count = model.apps.count
+        let contentWidth = count > 0 ? CGFloat(count) * cellWidth + CGFloat(count - 1) * spacing : 0
+        return IconRowGeometry(count: count, cellWidth: cellWidth, spacing: spacing,
+                               viewport: min(contentWidth, model.maxContentWidth))
+    }
+
+    /// Scrolls so `index` is centred (clamped at the ends). Animated for keyboard
+    /// cycling; instant for presentation and list changes.
+    private func scrollToCenter(on index: Int, animated: Bool) {
+        let target = iconRowGeometry().centeredOffset(forIndex: index)
+        guard target != model.scrollOffset else { return }
+        if animated {
+            withAnimation(.easeOut(duration: 0.18)) { model.scrollOffset = target }
+        } else {
+            model.scrollOffset = target
+        }
+    }
+
+    /// Watches for scroll-wheel / trackpad input over the overlay and scrolls the row
+    /// continuously. A local monitor sees the event before the row would (a vertical
+    /// mouse wheel wouldn't drive a horizontal scroller anyway), so we move the offset
+    /// directly — taking the edge fade with it — and consume the event.
     private func installScrollMonitor() {
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self, self.isVisible, event.window === self.window else { return event }
@@ -275,35 +307,52 @@ final class OverlayWindowController {
         }
     }
 
-    /// Advances the scroll anchor by however many whole icons the gesture covers.
-    /// Returns whether the scroll was consumed (only when the row actually overflows).
+    /// Moves the scroll offset by the gesture's delta. Returns whether the scroll was
+    /// consumed (only when the row actually overflows).
     private func handleScroll(_ event: NSEvent) -> Bool {
         guard isVisible else { return false }
-        let count = model.apps.count
-        guard count > 1 else { return false }
-
-        // Only scroll when the row is wider than the panel — matches the overlay's
-        // own overflow/scroll condition (`maxRowWidth > maxContentWidth`).
-        let cellWidth = preferences.iconSize + 16
-        let spacing: CGFloat = 12 // matches OverlayView.iconSpacing
-        let contentWidth = CGFloat(count) * cellWidth + CGFloat(count - 1) * spacing
-        guard contentWidth > model.maxContentWidth else { return false }
+        let geometry = iconRowGeometry()
+        guard geometry.overflows else { return false }
 
         // Trackpad swipes are horizontal and per-pixel; a mouse wheel is vertical and
-        // per-line. Take the dominant axis and normalise so a notch ≈ one icon.
+        // per-line, so scale lines up to points. Take the dominant axis so both work.
         let raw = abs(event.scrollingDeltaX) >= abs(event.scrollingDeltaY)
             ? event.scrollingDeltaX
             : event.scrollingDeltaY
-        let pointsPerIcon: CGFloat = event.hasPreciseScrollingDeltas ? 60 : 1
-        let step = ScrollWheelStepper.steps(raw: raw, pointsPerIcon: pointsPerIcon,
-                                            accumulator: &scrollAccumulator)
-        if event.phase == .ended || event.momentumPhase == .ended { scrollAccumulator = 0 }
-
-        if step != 0 {
-            let next = min(max(model.scrollAnchorIndex + step, 0), count - 1)
-            if next != model.scrollAnchorIndex { model.scrollAnchorIndex = next }
+        let pointsPerLine: CGFloat = 16
+        let delta = event.hasPreciseScrollingDeltas ? raw : raw * pointsPerLine
+        // A downward / leftward gesture advances toward later icons. (Flip the sign
+        // here if it feels inverted on your pointer settings.)
+        if delta != 0 {
+            model.scrollOffset = geometry.clamp(model.scrollOffset - delta)
         }
         return true
+    }
+
+    // MARK: Click-outside dismissal
+
+    /// Dismisses the overlay when the user clicks away from it. A global monitor
+    /// catches clicks in other apps (always "outside"); a local monitor catches
+    /// clicks in Zap's own windows and dismisses only those that miss the panel — so
+    /// clicking an icon still selects, and clicking the panel's padding doesn't
+    /// dismiss. Neither consumes the click; it proceeds to whatever it landed on.
+    private func installClickOutsideMonitor() {
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        let global = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
+            self?.dismissIfClickedOutside()
+        }
+        let local = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            if let self, event.window !== self.window {
+                self.dismissIfClickedOutside()
+            }
+            return event
+        }
+        clickOutsideMonitors = [global, local].compactMap { $0 }
+    }
+
+    private func dismissIfClickedOutside() {
+        guard isVisible, preferences.closeOnClickOutside else { return }
+        onClickOutside?()
     }
 
     // MARK: Layout

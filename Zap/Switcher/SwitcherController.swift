@@ -81,6 +81,8 @@ final class SwitcherController {
         overlay.onHoverApp = { [weak self] index in self?.hoverApp(index) }
         overlay.onPickWindow = { [weak self] index in self?.pickWindow(index) }
         overlay.onHoverWindow = { [weak self] index in self?.hoverWindow(index) }
+        // A click outside the panel dismisses the session (when the user enables it).
+        overlay.onClickOutside = { [weak self] in self?.cancel() }
 
         // Reconfigure live if the user toggles the alternate-hotkey preference.
         preferences.$useAlternateHotkey

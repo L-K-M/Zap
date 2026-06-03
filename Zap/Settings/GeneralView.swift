@@ -50,6 +50,13 @@ struct GeneralView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section("Dismissing") {
+                Toggle("Close the switcher when you click outside it", isOn: $preferences.closeOnClickOutside)
+                Text("A click anywhere outside the panel dismisses the switcher without switching apps.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)

@@ -119,6 +119,13 @@ final class PreferencesTests: XCTestCase {
         XCTAssertTrue(reloaded.showWindowPreviews)
     }
 
+    func testCloseOnClickOutsideDefaultsOnAndRoundTrips() {
+        XCTAssertTrue(Preferences(defaults: defaults).closeOnClickOutside)
+
+        Preferences(defaults: defaults).closeOnClickOutside = false
+        XCTAssertFalse(Preferences(defaults: defaults).closeOnClickOutside)
+    }
+
     func testExclusionsRoundTrip() {
         let prefs = Preferences(defaults: defaults)
         prefs.setExcluded(true, bundleID: "com.apple.Safari")

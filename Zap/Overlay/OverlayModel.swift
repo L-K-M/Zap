@@ -8,11 +8,12 @@ final class OverlayModel: ObservableObject {
     @Published var apps: [AppInfo] = []
     @Published var selectedIndex: Int = 0
 
-    /// Index the scrolling row is anchored to. Driven by keyboard navigation and the
-    /// initial presentation — never by mouse hover — so pointing at an icon merely
-    /// highlights it instead of scrolling it out from under the cursor. Also drives
-    /// the edge fade, which must track the real scroll position, not the highlight.
-    @Published var scrollAnchorIndex: Int = 0
+    /// Horizontal scroll position of the icon row, in points. Driven continuously by
+    /// the scroll wheel and animated by keyboard navigation (which centres the
+    /// selection) — never by mouse hover, so pointing at an icon merely highlights it
+    /// instead of scrolling it out from under the cursor. Also drives the edge fade,
+    /// which tracks the real scroll position rather than the highlight.
+    @Published var scrollOffset: CGFloat = 0
 
     /// Process ids the user asked to quit that we're still verifying. Their icons
     /// render dimmed and the selection skips over them until we know whether they
@@ -45,10 +46,5 @@ final class OverlayModel: ObservableObject {
 
     var selectedApp: AppInfo? {
         apps.indices.contains(selectedIndex) ? apps[selectedIndex] : nil
-    }
-
-    /// Identity of the scroll-anchor app, used to drive the row's auto-scroll.
-    var scrollAnchorID: String? {
-        apps.indices.contains(scrollAnchorIndex) ? apps[scrollAnchorIndex].id : nil
     }
 }

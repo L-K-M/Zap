@@ -30,13 +30,12 @@ struct OverlayView: View {
                         .onHover { hovering in
                             if hovering { model.onHoverApp?(index) }
                         }
-                        .id(app.id)
                 }
             }
-            .modifier(HorizontallyScrollable(active: maxRowWidth > model.maxContentWidth,
-                                              width: panelContentWidth,
-                                              fade: iconRowFade,
-                                              scrollTarget: model.scrollAnchorID))
+            .modifier(HorizontallyScrollable(active: iconRowGeometry.overflows,
+                                              viewport: panelContentWidth,
+                                              offset: model.scrollOffset,
+                                              fade: iconRowFade))
 
             if !model.windows.isEmpty {
                 Divider()
@@ -67,17 +66,18 @@ struct OverlayView: View {
         return CGFloat(count) * cellWidth + CGFloat(count - 1) * iconSpacing
     }
 
+    /// Layout of the scrolling icon row, shared with the controller (which drives
+    /// `scrollOffset`) via `IconRowGeometry`.
+    private var iconRowGeometry: IconRowGeometry {
+        IconRowGeometry(count: model.apps.count, cellWidth: cellWidth,
+                        spacing: iconSpacing, viewport: panelContentWidth)
+    }
+
     /// Edge-fade amounts for the (possibly scrolled) icon row, fading only the
-    /// side(s) with content hidden past the edge. Anchored to the scroll position
-    /// (`scrollAnchorIndex`), not the highlight, so it stays put while hovering.
-    /// See `EdgeFade.forIconRow`.
+    /// side(s) with content hidden past the edge. Tracks the real scroll position
+    /// (`scrollOffset`), not the highlight, so it stays put while hovering.
     private var iconRowFade: EdgeFade {
-        EdgeFade.forIconRow(centeredIndex: model.scrollAnchorIndex,
-                            count: model.apps.count,
-                            cellWidth: cellWidth,
-                            spacing: iconSpacing,
-                            viewport: panelContentWidth,
-                            fadeWidth: preferences.iconSize)
+        iconRowGeometry.fade(offset: model.scrollOffset, fadeWidth: preferences.iconSize)
     }
 
     private var panelBackground: some View {
@@ -250,82 +250,30 @@ enum WindowPreviewMetrics {
     static let rowHeight: CGFloat = 72
 }
 
-/// How strongly each edge of the icon row fades, and how wide the fade ramp is
-/// (as a fraction of the viewport). `leading`/`trailing` run 0 (crisp) → 1 (fully
-/// faded) with the amount of content hidden on that side.
-struct EdgeFade: Equatable {
-    var leading: CGFloat
-    var trailing: CGFloat
-    var inset: CGFloat
-
-    static let none = EdgeFade(leading: 0, trailing: 0, inset: 0)
-
-    /// Edge fade for an icon row that auto-scrolls to centre `centeredIndex` and
-    /// clamps at both ends — so the scroll offset, and thus how much is hidden on
-    /// each side, is fully determined by that index and the geometry. Pure function
-    /// (no SwiftUI/AppKit state) so the edge behaviour can be unit-tested.
-    ///
-    /// - `centeredIndex`: the icon the row is scrolled to centre on (the scroll
-    ///   anchor, which the keyboard drives — not the hover highlight).
-    /// - `cellWidth`: footprint of one icon (image + padding).
-    /// - `spacing`: gap between icons.
-    /// - `viewport`: visible width of the scrolling row.
-    /// - `fadeWidth`: desired ramp width in points (clamped to ≤ a third of the
-    ///   viewport). Returns `.none` when the row fits and nothing is hidden.
-    static func forIconRow(centeredIndex: Int,
-                           count: Int,
-                           cellWidth: CGFloat,
-                           spacing: CGFloat,
-                           viewport: CGFloat,
-                           fadeWidth: CGFloat) -> EdgeFade {
-        guard count > 0, viewport > 0 else { return .none }
-        let contentWidth = CGFloat(count) * cellWidth + CGFloat(count - 1) * spacing
-        let maxScroll = max(0, contentWidth - viewport)
-        guard maxScroll > 0 else { return .none }
-
-        let index = min(max(centeredIndex, 0), count - 1)
-        let iconCentre = CGFloat(index) * (cellWidth + spacing) + cellWidth / 2
-        let scrolled = min(max(iconCentre - viewport / 2, 0), maxScroll)
-        let ramp = min(max(fadeWidth, 1), viewport / 3)
-        return EdgeFade(
-            leading: min(1, scrolled / ramp),               // content hidden to the left
-            trailing: min(1, (maxScroll - scrolled) / ramp), // content hidden to the right
-            inset: ramp / viewport
-        )
-    }
-}
-
-/// Wraps content in a horizontal `ScrollView` constrained to `width` when
-/// `active`, so a crowded icon row scrolls instead of overflowing the screen.
+/// Clips a crowded icon row to `viewport` and scrolls it by a raw pixel `offset`,
+/// so a row wider than the panel can be scrolled (continuously, by the wheel) and
+/// auto-scrolled (animated, by the keyboard) without an inner `ScrollView` — which
+/// on macOS 13 can't be driven to a pixel offset. When the row fits (`active` is
+/// false) it's shown untouched.
 ///
-/// While scrolling, the row follows the keyboard's scroll anchor — `scrollTarget`
-/// is its app id — so cycling past the visible edge keeps the current app on screen
-/// instead of leaving it scrolled out of view. Hover deliberately doesn't move the
-/// anchor, so pointing at an icon never scrolls it out from under the cursor. The
-/// icons also fade to transparent at an edge that has content scrolled past it (per
-/// `fade`), so the cutoff reads as a deliberate soft edge rather than a hard clip.
-/// The fade shows only where there's hidden content: a first/last icon resting flush
-/// against an edge stays fully crisp.
+/// The icons fade to transparent at an edge that has content scrolled past it (per
+/// `fade`), so the cutoff reads as a deliberate soft edge rather than a hard clip;
+/// the fade shows only where there's hidden content, so a first/last icon resting
+/// flush against an edge stays crisp.
 private struct HorizontallyScrollable: ViewModifier {
     let active: Bool
-    let width: CGFloat
+    let viewport: CGFloat
+    let offset: CGFloat
     let fade: EdgeFade
-    let scrollTarget: String?
 
     func body(content: Content) -> some View {
-        if active && width.isFinite {
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) { content }
-                    .frame(width: width)
-                    .mask { fadeMask }
-                    // Position the initial selection without animation, then glide to
-                    // follow it as the user cycles. `scrollTo` clamps at the ends, so
-                    // near-edge selections sit flush rather than forcing centring.
-                    .onAppear { scroll(to: scrollTarget, using: proxy, animated: false) }
-                    .onChange(of: scrollTarget) { target in
-                        scroll(to: target, using: proxy, animated: true)
-                    }
-            }
+        if active && viewport.isFinite {
+            content
+                .fixedSize(horizontal: true, vertical: false)   // lay out at full width
+                .offset(x: -offset)                             // scroll
+                .frame(width: viewport, alignment: .leading)    // window onto the row
+                .clipped()
+                .mask { fadeMask }
         } else {
             content
         }
@@ -344,14 +292,5 @@ private struct HorizontallyScrollable: ViewModifier {
             startPoint: .leading,
             endPoint: .trailing
         )
-    }
-
-    private func scroll(to target: String?, using proxy: ScrollViewProxy, animated: Bool) {
-        guard let target else { return }
-        if animated {
-            withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(target, anchor: .center) }
-        } else {
-            proxy.scrollTo(target, anchor: .center)
-        }
     }
 }

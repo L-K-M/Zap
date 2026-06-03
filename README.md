@@ -4,7 +4,7 @@ A fast, customizable macOS app switcher — a drop-in replacement for the native
 <kbd>⌘</kbd>+<kbd>Tab</kbd> switcher that lets you **exclude apps** you never switch
 to and **customize the colors** of the switcher.
 
-![Screenshot](screenshot.png)
+![Screencast](zap-video.gif)
 
 ## Features
 
@@ -17,6 +17,8 @@ to and **customize the colors** of the switcher.
 - Menu-bar agent (no Dock icon); never appears in its own switcher.
 - Launch at login via `SMAppService`.
 - Fallback to <kbd>⌥</kbd>+<kbd>Tab</kbd> when Accessibility access isn't granted; the Permissions tab reports the trigger that's actually active.
+
+![Screenshot](screenshot.png)
 
 ## Build & Run
 

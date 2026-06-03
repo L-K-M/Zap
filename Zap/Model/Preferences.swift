@@ -60,6 +60,7 @@ final class Preferences: ObservableObject {
         static let windowDwellMs = "windowDwellMs"
         static let launchAtLogin = "launchAtLogin"
         static let useAlternateHotkey = "useAlternateHotkey"
+        static let closeOnClickOutside = "closeOnClickOutside"
     }
 
     // MARK: Stored settings
@@ -180,6 +181,11 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(useAlternateHotkey, forKey: Key.useAlternateHotkey) }
     }
 
+    /// Whether clicking outside the switcher panel dismisses it (without switching).
+    @Published var closeOnClickOutside: Bool {
+        didSet { defaults.set(closeOnClickOutside, forKey: Key.closeOnClickOutside) }
+    }
+
     // MARK: Init
 
     init(defaults: UserDefaults = .standard) {
@@ -211,6 +217,7 @@ final class Preferences: ObservableObject {
         showWindowPreviews = defaults.object(forKey: Key.showWindowPreviews) as? Bool ?? false
         windowDwellMs = Self.clamp(defaults.object(forKey: Key.windowDwellMs) as? Double ?? Default.windowDwellMs, 50, 5000, Default.windowDwellMs)
         useAlternateHotkey = defaults.object(forKey: Key.useAlternateHotkey) as? Bool ?? false
+        closeOnClickOutside = defaults.object(forKey: Key.closeOnClickOutside) as? Bool ?? true
 
         // Seed launch-at-login from the authoritative system state rather than a
         // possibly-stale stored value, so an external change in System Settings is
