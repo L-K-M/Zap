@@ -36,33 +36,89 @@ struct WindowInfo: Identifiable, Equatable {
 /// so callers should gate use behind `AccessibilityAuthorizer.isTrusted`.
 enum WindowEnumerator {
 
+    private static let finderBundleID = "com.apple.finder"
+
     // MARK: Enumeration
 
     /// The standard, user-facing windows of the process `pid`, in AX order.
     static func windows(forPID pid: pid_t) -> [WindowInfo] {
         let app = AXUIElementCreateApplication(pid)
+        let isFinder = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == finderBundleID
 
-        var value: CFTypeRef?
-        guard
-            AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
-            let axWindows = value as? [AXUIElement]
-        else {
-            return []
-        }
+        let primary = windowInfos(from: elementsAttribute(app, kAXWindowsAttribute), allowFinderFallback: isFinder)
+        guard isFinder, primary.count < 2 else { return primary }
 
-        return axWindows.compactMap { element in
-            // Keep only standard document/app windows; drop palettes, sheets, etc.
-            // Require an explicit standard subrole — if the attribute is missing
-            // or unreadable, treat the window as non-standard and skip it rather
-            // than risk listing transient/utility windows.
-            guard stringAttribute(element, kAXSubroleAttribute) == (kAXStandardWindowSubrole as String) else {
-                return nil
-            }
+        // Finder is a special case: depending on macOS/Finder state, browser
+        // windows can be omitted from AXWindows or lack the standard subrole.
+        // AXChildren often still exposes the same live window elements, so merge
+        // it only as a Finder fallback and keep the normal stricter path for apps.
+        let fallback = windowInfos(from: elementsAttribute(app, kAXChildrenAttribute), allowFinderFallback: true)
+        return unique(primary + fallback)
+    }
 
+    private static func windowInfos(from elements: [AXUIElement], allowFinderFallback: Bool) -> [WindowInfo] {
+        elements.compactMap { element in
+            guard stringAttribute(element, kAXRoleAttribute) == (kAXWindowRole as String) else { return nil }
+            let cgWindowID = windowID(of: element)
+            guard isUserFacingWindow(element, allowFinderFallback: allowFinderFallback) else { return nil }
             let title = stringAttribute(element, kAXTitleAttribute) ?? ""
             let minimized = boolAttribute(element, kAXMinimizedAttribute) ?? false
             return WindowInfo(title: title, isMinimized: minimized, element: element,
-                              cgWindowID: windowID(of: element))
+                              cgWindowID: cgWindowID)
+        }
+    }
+
+    private static func isUserFacingWindow(_ element: AXUIElement, allowFinderFallback: Bool) -> Bool {
+        let subrole = stringAttribute(element, kAXSubroleAttribute)
+        if subrole == (kAXStandardWindowSubrole as String) { return true }
+
+        guard allowFinderFallback else { return false }
+        if let subrole, isTransientSubrole(subrole) { return false }
+        return hasWindowChrome(element)
+    }
+
+    private static func isTransientSubrole(_ subrole: String) -> Bool {
+        subrole == (kAXDialogSubrole as String)
+            || subrole == (kAXSystemDialogSubrole as String)
+            || subrole == (kAXFloatingWindowSubrole as String)
+    }
+
+    private static func hasWindowChrome(_ element: AXUIElement) -> Bool {
+        hasElementAttribute(element, kAXCloseButtonAttribute)
+            || hasElementAttribute(element, kAXMinimizeButtonAttribute)
+            || hasElementAttribute(element, kAXZoomButtonAttribute)
+    }
+
+    private static func hasElementAttribute(_ element: AXUIElement, _ attribute: String) -> Bool {
+        var value: CFTypeRef?
+        guard
+            AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+            let value
+        else {
+            return false
+        }
+        return CFGetTypeID(value) == AXUIElementGetTypeID()
+    }
+
+    private static func elementsAttribute(_ element: AXUIElement, _ attribute: String) -> [AXUIElement] {
+        var value: CFTypeRef?
+        guard
+            AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+            let elements = value as? [AXUIElement]
+        else {
+            return []
+        }
+        return elements
+    }
+
+    private static func unique(_ windows: [WindowInfo]) -> [WindowInfo] {
+        var seenWindowIDs = Set<CGWindowID>()
+        var seenElements = Set<CFHashCode>()
+        return windows.filter { window in
+            if let id = window.cgWindowID {
+                return seenWindowIDs.insert(id).inserted
+            }
+            return seenElements.insert(CFHash(window.element)).inserted
         }
     }
 
@@ -70,7 +126,7 @@ enum WindowEnumerator {
     /// returning `nil` on failure so previews stay strictly optional.
     private static func windowID(of element: AXUIElement) -> CGWindowID? {
         var id = CGWindowID(0)
-        return _AXUIElementGetWindow(element, &id) == .success ? id : nil
+        return _AXUIElementGetWindow(element, &id) == .success && id != 0 ? id : nil
     }
 
     // MARK: Raising

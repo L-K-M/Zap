@@ -30,10 +30,13 @@ struct OverlayView: View {
                         .onHover { hovering in
                             if hovering { model.onHoverApp?(index) }
                         }
+                        .id(app.id)
                 }
             }
             .modifier(HorizontallyScrollable(active: maxRowWidth > model.maxContentWidth,
-                                              width: panelContentWidth))
+                                              width: panelContentWidth,
+                                              fade: iconRowFade,
+                                              scrollTarget: model.selectedApp?.id))
 
             if !model.windows.isEmpty {
                 Divider()
@@ -56,10 +59,23 @@ struct OverlayView: View {
         min(maxRowWidth, model.maxContentWidth)
     }
 
+    /// Footprint of one icon: the image plus its 8pt padding on each side.
+    private var cellWidth: CGFloat { preferences.iconSize + 16 }
+
     private var maxRowWidth: CGFloat {
         let count = max(model.apps.count, 1)
-        let cell = preferences.iconSize + 16
-        return CGFloat(count) * cell + CGFloat(count - 1) * iconSpacing
+        return CGFloat(count) * cellWidth + CGFloat(count - 1) * iconSpacing
+    }
+
+    /// Edge-fade amounts for the (possibly scrolled) icon row, fading only the
+    /// side(s) with content hidden past the edge. See `EdgeFade.forIconRow`.
+    private var iconRowFade: EdgeFade {
+        EdgeFade.forIconRow(selectedIndex: model.selectedIndex,
+                            count: model.apps.count,
+                            cellWidth: cellWidth,
+                            spacing: iconSpacing,
+                            viewport: panelContentWidth,
+                            fadeWidth: preferences.iconSize)
     }
 
     private var panelBackground: some View {
@@ -232,18 +248,105 @@ enum WindowPreviewMetrics {
     static let rowHeight: CGFloat = 72
 }
 
+/// How strongly each edge of the icon row fades, and how wide the fade ramp is
+/// (as a fraction of the viewport). `leading`/`trailing` run 0 (crisp) → 1 (fully
+/// faded) with the amount of content hidden on that side.
+struct EdgeFade: Equatable {
+    var leading: CGFloat
+    var trailing: CGFloat
+    var inset: CGFloat
+
+    static let none = EdgeFade(leading: 0, trailing: 0, inset: 0)
+
+    /// Edge fade for an icon row that auto-scrolls to centre `selectedIndex` and
+    /// clamps at both ends — so the scroll offset, and thus how much is hidden on
+    /// each side, is fully determined by the selection and geometry. Pure function
+    /// (no SwiftUI/AppKit state) so the edge behaviour can be unit-tested.
+    ///
+    /// - `cellWidth`: footprint of one icon (image + padding).
+    /// - `spacing`: gap between icons.
+    /// - `viewport`: visible width of the scrolling row.
+    /// - `fadeWidth`: desired ramp width in points (clamped to ≤ a third of the
+    ///   viewport). Returns `.none` when the row fits and nothing is hidden.
+    static func forIconRow(selectedIndex: Int,
+                           count: Int,
+                           cellWidth: CGFloat,
+                           spacing: CGFloat,
+                           viewport: CGFloat,
+                           fadeWidth: CGFloat) -> EdgeFade {
+        guard count > 0, viewport > 0 else { return .none }
+        let contentWidth = CGFloat(count) * cellWidth + CGFloat(count - 1) * spacing
+        let maxScroll = max(0, contentWidth - viewport)
+        guard maxScroll > 0 else { return .none }
+
+        let index = min(max(selectedIndex, 0), count - 1)
+        let selectedCentre = CGFloat(index) * (cellWidth + spacing) + cellWidth / 2
+        let scrolled = min(max(selectedCentre - viewport / 2, 0), maxScroll)
+        let ramp = min(max(fadeWidth, 1), viewport / 3)
+        return EdgeFade(
+            leading: min(1, scrolled / ramp),               // content hidden to the left
+            trailing: min(1, (maxScroll - scrolled) / ramp), // content hidden to the right
+            inset: ramp / viewport
+        )
+    }
+}
+
 /// Wraps content in a horizontal `ScrollView` constrained to `width` when
 /// `active`, so a crowded icon row scrolls instead of overflowing the screen.
+///
+/// While scrolling, the row follows the selection — `scrollTarget` is the id of
+/// the highlighted icon — so cycling past the visible edge keeps the current app
+/// on screen instead of leaving it scrolled out of view. The icons also fade to
+/// transparent at an edge that has content scrolled past it (per `fade`), so the
+/// cutoff reads as a deliberate soft edge rather than a hard clip. The fade shows
+/// only where there's hidden content: a first/last icon resting flush against an
+/// edge stays fully crisp.
 private struct HorizontallyScrollable: ViewModifier {
     let active: Bool
     let width: CGFloat
+    let fade: EdgeFade
+    let scrollTarget: String?
 
     func body(content: Content) -> some View {
         if active && width.isFinite {
-            ScrollView(.horizontal, showsIndicators: false) { content }
-                .frame(width: width)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) { content }
+                    .frame(width: width)
+                    .mask { fadeMask }
+                    // Position the initial selection without animation, then glide to
+                    // follow it as the user cycles. `scrollTo` clamps at the ends, so
+                    // near-edge selections sit flush rather than forcing centring.
+                    .onAppear { scroll(to: scrollTarget, using: proxy, animated: false) }
+                    .onChange(of: scrollTarget) { target in
+                        scroll(to: target, using: proxy, animated: true)
+                    }
+            }
         } else {
             content
+        }
+    }
+
+    /// A horizontal mask: opaque through the middle, ramping to clear at an edge in
+    /// proportion to how much content is hidden on that side.
+    private var fadeMask: some View {
+        LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: .black.opacity(1 - fade.leading), location: 0),
+                .init(color: .black, location: fade.inset),
+                .init(color: .black, location: 1 - fade.inset),
+                .init(color: .black.opacity(1 - fade.trailing), location: 1),
+            ]),
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+    }
+
+    private func scroll(to target: String?, using proxy: ScrollViewProxy, animated: Bool) {
+        guard let target else { return }
+        if animated {
+            withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(target, anchor: .center) }
+        } else {
+            proxy.scrollTo(target, anchor: .center)
         }
     }
 }

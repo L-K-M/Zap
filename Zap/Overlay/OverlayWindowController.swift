@@ -30,6 +30,16 @@ final class OverlayWindowController {
     /// downward when the window list appears, so the switcher row doesn't jump.
     private var anchorTop: CGFloat?
 
+    /// A pending corrective re-layout. A freshly-created or just-reassigned SwiftUI
+    /// host can momentarily report a zero/degenerate `fittingSize` before it
+    /// reconciles; committing that would clamp the panel to its 80×80 minimum — the
+    /// "small square" glitch. We defer sizing (and revealing) until a real size is
+    /// available, bounded by `maxLayoutRetries` so a host that never measures still
+    /// shows something rather than looping forever.
+    private var layoutRetryWorkItem: DispatchWorkItem?
+    private var layoutRetryCount = 0
+    private let maxLayoutRetries = 10
+
     /// Invoked when the user clicks an app icon. Argument is the app's index.
     var onPick: ((Int) -> Void)? {
         get { model.onPick }
@@ -113,9 +123,13 @@ final class OverlayWindowController {
         // Reassigning the root view is cheap (the model stays the same) and nudges
         // SwiftUI/AppKit to rebuild a host that may have stopped drawing while idle.
         hostingView.rootView = OverlayView(model: model, preferences: preferences)
-        layout(keepTop: false)
-        window.orderFrontRegardless()
-        forceDisplay()
+        // Size first, reveal second. If the host can't be measured yet, `layout`
+        // returns false and schedules a retry that reveals the window once it can be
+        // sized correctly — so we never flash the 80×80 "small square".
+        if layout(keepTop: false) {
+            window.orderFrontRegardless()
+            forceDisplay()
+        }
         isVisible = true
     }
 
@@ -177,6 +191,7 @@ final class OverlayWindowController {
 
     func hide() {
         guard isVisible else { return }
+        cancelLayoutRetry()
         window.orderOut(nil)
         isVisible = false
         model.apps = []
@@ -223,19 +238,43 @@ final class OverlayWindowController {
 
     // MARK: Layout
 
-    private func layout(keepTop: Bool) {
-        guard let screen = currentScreen else { return }
+    /// Sizes and positions the window to fit its SwiftUI content. Returns whether a
+    /// real size was committed; `false` means the host wasn't ready to be measured
+    /// and a corrective re-layout was scheduled (so the caller should not reveal the
+    /// window yet).
+    @discardableResult
+    private func layout(keepTop: Bool) -> Bool {
+        guard let screen = currentScreen else { return false }
         let visible = screen.visibleFrame
 
-        // Cap how wide the icon row may grow before it scrolls, leaving a margin
-        // so the panel never butts against the screen edges.
+        // Cap how wide the icon row may grow before it scrolls. Leave a margin so
+        // the panel never butts against the screen edges, and reserve room for the
+        // panel's own outer padding — otherwise a crowded row only starts scrolling
+        // after the padded panel has already overflowed, clipping the last icons at
+        // the screen edge.
         let horizontalMargin: CGFloat = 40
-        model.maxContentWidth = max(120, visible.width - horizontalMargin * 2)
+        let maxPanelWidth = visible.width - horizontalMargin
+        model.maxContentWidth = max(120, maxPanelWidth - preferences.contentPadding * 2)
 
         hostingView.layoutSubtreeIfNeeded()
         let fitting = hostingView.fittingSize
+
+        // A just-created or just-reassigned SwiftUI host can momentarily report a
+        // zero/degenerate fitting size before it reconciles. Committing it would
+        // clamp the panel to its 80×80 minimum — the "small square" — so defer to
+        // the next runloop turn, by which point the host has laid out, instead of
+        // stamping that size. Give up after `maxLayoutRetries` so a host that never
+        // measures still shows something.
+        let measured = fitting.width.isFinite && fitting.width > 1
+            && fitting.height.isFinite && fitting.height > 1
+        guard measured || layoutRetryCount >= maxLayoutRetries else {
+            scheduleLayoutRetry(keepTop: keepTop)
+            return false
+        }
+        cancelLayoutRetry()
+
         let size = NSSize(
-            width: min(max(safeDimension(fitting.width, fallback: 80), 80), visible.width - horizontalMargin),
+            width: min(max(safeDimension(fitting.width, fallback: 80), 80), maxPanelWidth),
             height: min(max(safeDimension(fitting.height, fallback: 80), 80), visible.height)
         )
 
@@ -258,6 +297,33 @@ final class OverlayWindowController {
         window.setFrame(NSRect(origin: origin, size: size), display: true)
         hostingView.frame = window.contentView?.bounds ?? NSRect(origin: .zero, size: size)
         anchorTop = origin.y + size.height
+        return true
+    }
+
+    /// Schedules a corrective re-layout one frame later, after the SwiftUI host has
+    /// had a runloop turn to reconcile and report a real fitting size. If this is
+    /// the initial presentation (the window isn't on screen yet), revealing it is
+    /// deferred to this retry so the panel only ever appears at its correct size.
+    private func scheduleLayoutRetry(keepTop: Bool) {
+        layoutRetryCount += 1
+        layoutRetryWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.layoutRetryWorkItem = nil
+            guard self.isVisible, self.layout(keepTop: keepTop) else { return }
+            if !self.window.isVisible {
+                self.window.orderFrontRegardless()
+            }
+            self.forceDisplay()
+        }
+        layoutRetryWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60.0, execute: work)
+    }
+
+    private func cancelLayoutRetry() {
+        layoutRetryWorkItem?.cancel()
+        layoutRetryWorkItem = nil
+        layoutRetryCount = 0
     }
 
     private func safeDimension(_ value: CGFloat, fallback: CGFloat) -> CGFloat {

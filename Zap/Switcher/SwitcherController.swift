@@ -493,12 +493,15 @@ final class SwitcherController {
         Task { [weak self, thumbnails = thumbnails] in
             for id in ids {
                 guard let image = await thumbnails.thumbnail(for: id, maxDimension: maxDimension) else { continue }
-                await MainActor.run {
-                    guard let self, self.windowsGeneration == generation else { return }
-                    self.overlay.setWindowThumbnail(image, for: id)
-                }
+                await self?.applyWindowThumbnail(image, for: id, generation: generation)
             }
         }
+    }
+
+    @MainActor
+    private func applyWindowThumbnail(_ image: NSImage, for windowID: CGWindowID, generation: Int) {
+        guard windowsGeneration == generation else { return }
+        overlay.setWindowThumbnail(image, for: windowID)
     }
 
     /// Moves through the revealed window list. Down advances; Up moves back and,
