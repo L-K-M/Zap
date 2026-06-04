@@ -6,6 +6,9 @@ to, switch **directoy do individual screens**, and **customize the appearance** 
 
 ![Screencast](zap-video.gif)
 
+> [!IMPORTANT]
+> LLM Disclosure: Much of this code base was written with the help of large language models — AI coding agents working from the [`AGENTS.md`](AGENTS.md) brief in this repo.
+
 ## Features
 
 - Intercepts the real <kbd>⌘</kbd>+<kbd>Tab</kbd> (and <kbd>⌘</kbd>+<kbd>⇧</kbd>+<kbd>Tab</kbd> / <kbd>⌘</kbd>+<kbd>`</kbd> to reverse).
