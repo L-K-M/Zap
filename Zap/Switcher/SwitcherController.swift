@@ -493,7 +493,9 @@ final class SwitcherController {
         // The selection can rest on a quitting app only when it's the last one
         // left; don't reveal windows for an app that's on its way out.
         guard !quittingPIDs.contains(apps[selectedIndex].processIdentifier) else { return }
-        let found = WindowEnumerator.windows(forPID: apps[selectedIndex].processIdentifier)
+        let found = WindowEnumerator.windows(
+            forPID: apps[selectedIndex].processIdentifier,
+            includeFullScreenWindows: preferences.includeFullScreenWindows)
         guard found.count >= 2 else { return }
         windows = found
         windowSelectedIndex = nil

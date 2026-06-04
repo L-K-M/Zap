@@ -42,6 +42,17 @@ struct GeneralView: View {
                 if preferences.showWindowPreviews {
                     windowPreviewHint
                 }
+
+                Toggle("Include full-screen windows on other desktops", isOn: $preferences.includeFullScreenWindows)
+                    .disabled(!preferences.showWindowList)
+                Text("""
+                A full-screen window lives on its own desktop (Space), which macOS won't let Zap switch to directly: \
+                choosing one activates the app and lets the system decide whether to jump to that desktop — it often \
+                doesn't if the app also has windows on the current one. Their titles are also blank without Screen \
+                Recording permission. Off by default for that reason.
+                """)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             Section("Trigger") {

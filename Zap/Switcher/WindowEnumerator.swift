@@ -20,7 +20,11 @@ struct WindowInfo: Identifiable, Equatable {
     let id = UUID()
     let title: String
     let isMinimized: Bool
-    let element: AXUIElement
+    /// The live AX element used to raise and close the window. `nil` for a window
+    /// found only via the Quartz window list — e.g. a full-screen window on another
+    /// Space, which `AXWindows` omits — which can be listed but only brought forward
+    /// by activating its app.
+    let element: AXUIElement?
     /// The Quartz window ID, used to capture a preview. `nil` when the SPI is
     /// unavailable, so previews are best-effort and never required.
     let cgWindowID: CGWindowID?
@@ -40,20 +44,34 @@ enum WindowEnumerator {
 
     // MARK: Enumeration
 
-    /// The standard, user-facing windows of the process `pid`, in AX order.
-    static func windows(forPID pid: pid_t) -> [WindowInfo] {
+    /// The standard, user-facing windows of the process `pid`, in AX order. When
+    /// `includeFullScreenWindows` is on, also lists full-screen windows on other
+    /// Spaces that the Accessibility API omits.
+    static func windows(forPID pid: pid_t, includeFullScreenWindows: Bool = false) -> [WindowInfo] {
         let app = AXUIElementCreateApplication(pid)
         let isFinder = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == finderBundleID
 
-        let primary = windowInfos(from: elementsAttribute(app, kAXWindowsAttribute), allowFinderFallback: isFinder)
-        guard isFinder, primary.count < 2 else { return primary }
+        var axWindows = windowInfos(from: elementsAttribute(app, kAXWindowsAttribute), allowFinderFallback: isFinder)
+        if isFinder, axWindows.count < 2 {
+            // Finder is a special case: depending on macOS/Finder state, browser
+            // windows can be omitted from AXWindows or lack the standard subrole.
+            // AXChildren often still exposes the same live window elements, so merge
+            // it only as a Finder fallback and keep the normal stricter path for apps.
+            let fallback = windowInfos(from: elementsAttribute(app, kAXChildrenAttribute), allowFinderFallback: true)
+            axWindows = unique(axWindows + fallback)
+        }
 
-        // Finder is a special case: depending on macOS/Finder state, browser
-        // windows can be omitted from AXWindows or lack the standard subrole.
-        // AXChildren often still exposes the same live window elements, so merge
-        // it only as a Finder fallback and keep the normal stricter path for apps.
-        let fallback = windowInfos(from: elementsAttribute(app, kAXChildrenAttribute), allowFinderFallback: true)
-        return unique(primary + fallback)
+        guard includeFullScreenWindows else { return axWindows }
+
+        // `AXWindows` only reports windows on the active Space, so full-screen windows
+        // (each on their own Space) and windows on other desktops go missing. Backfill
+        // them from the Quartz window list, which spans every Space, keyed by
+        // CGWindowID so a window AX already returned is never duplicated.
+        let known = Set(axWindows.compactMap(\.cgWindowID))
+        let offSpace = offSpaceWindows(pid: pid).filter { window in
+            window.cgWindowID.map { !known.contains($0) } ?? false
+        }
+        return unique(axWindows + offSpace)
     }
 
     private static func windowInfos(from elements: [AXUIElement], allowFinderFallback: Bool) -> [WindowInfo] {
@@ -118,7 +136,10 @@ enum WindowEnumerator {
             if let id = window.cgWindowID {
                 return seenWindowIDs.insert(id).inserted
             }
-            return seenElements.insert(CFHash(window.element)).inserted
+            if let element = window.element {
+                return seenElements.insert(CFHash(element)).inserted
+            }
+            return true
         }
     }
 
@@ -127,6 +148,47 @@ enum WindowEnumerator {
     private static func windowID(of element: AXUIElement) -> CGWindowID? {
         var id = CGWindowID(0)
         return _AXUIElementGetWindow(element, &id) == .success && id != 0 ? id : nil
+    }
+
+    // MARK: Off-Space windows (Quartz fallback)
+
+    /// `pid`'s document windows that aren't on the active Space — chiefly full-screen
+    /// windows, each on its own desktop, which `AXWindows` doesn't report. Sourced
+    /// from the Quartz window list (which spans all Spaces). These carry no AX element.
+    private static func offSpaceWindows(pid: pid_t) -> [WindowInfo] {
+        let options: CGWindowListOption = [.optionAll, .excludeDesktopElements]
+        guard let infoList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+            return []
+        }
+        return infoList.compactMap { offSpaceWindowInfo(from: $0, pid: pid) }
+    }
+
+    /// Builds a `WindowInfo` from one Quartz window-list entry when it's an off-Space
+    /// document window of `pid`, or `nil` otherwise (wrong process, on the current
+    /// Space, a non-window layer, or too small to be a real window). Pure for testing.
+    static func offSpaceWindowInfo(from info: [String: Any], pid: pid_t) -> WindowInfo? {
+        guard
+            (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid,
+            (info[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,           // normal window layer
+            (info[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue != true,  // not on the current Space
+            isDocumentSized(info),
+            let number = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value
+        else { return nil }
+        // `kCGWindowName` is only populated with Screen Recording permission, so the
+        // title may be empty for these — the row still appears (and gets a preview if
+        // that permission is granted).
+        let title = info[kCGWindowName as String] as? String ?? ""
+        return WindowInfo(title: title, isMinimized: false, element: nil, cgWindowID: number)
+    }
+
+    /// Whether a Quartz window entry is a visible, real-sized window rather than a
+    /// transparent or tiny helper surface.
+    private static func isDocumentSized(_ info: [String: Any]) -> Bool {
+        if let alpha = (info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue, alpha <= 0 { return false }
+        guard let bounds = info[kCGWindowBounds as String] as? [String: Any] else { return false }
+        let width = (bounds["Width"] as? NSNumber)?.doubleValue ?? 0
+        let height = (bounds["Height"] as? NSNumber)?.doubleValue ?? 0
+        return width >= 120 && height >= 120
     }
 
     // MARK: Raising
@@ -141,17 +203,22 @@ enum WindowEnumerator {
         if runningApp?.isHidden == true {
             runningApp?.unhide()
         }
-        if window.isMinimized {
-            let unminimize = AXUIElementSetAttributeValue(window.element, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
-            if unminimize != .success {
-                NSLog("Zap: failed to un-minimize window (AX error \(unminimize.rawValue))")
+        if let element = window.element {
+            if window.isMinimized {
+                let unminimize = AXUIElementSetAttributeValue(element, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+                if unminimize != .success {
+                    NSLog("Zap: failed to un-minimize window (AX error \(unminimize.rawValue))")
+                }
+            }
+            AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
+            let raise = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+            if raise != .success {
+                NSLog("Zap: failed to raise window (AX error \(raise.rawValue))")
             }
         }
-        AXUIElementSetAttributeValue(window.element, kAXMainAttribute as CFString, kCFBooleanTrue)
-        let raise = AXUIElementPerformAction(window.element, kAXRaiseAction as CFString)
-        if raise != .success {
-            NSLog("Zap: failed to raise window (AX error \(raise.rawValue))")
-        }
+        // Activating the app brings the target forward. For a window found only on
+        // another Space (no AX element) it's the only lever available — switching to
+        // its desktop is then best-effort and up to the system.
         if let runningApp, !activate(runningApp) {
             NSLog("Zap: failed to activate app pid \(pid) while raising window")
         }
@@ -208,9 +275,11 @@ enum WindowEnumerator {
     /// window exposes no close button (so the caller can leave it in the list).
     @discardableResult
     static func close(_ window: WindowInfo) -> Bool {
+        // No AX element (off-Space Quartz-only window) → nothing to press; leave it.
+        guard let element = window.element else { return false }
         var button: CFTypeRef?
         guard
-            AXUIElementCopyAttributeValue(window.element, kAXCloseButtonAttribute as CFString, &button) == .success,
+            AXUIElementCopyAttributeValue(element, kAXCloseButtonAttribute as CFString, &button) == .success,
             let button,
             CFGetTypeID(button) == AXUIElementGetTypeID()
         else {

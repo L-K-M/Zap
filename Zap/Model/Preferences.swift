@@ -62,6 +62,7 @@ final class Preferences: ObservableObject {
         static let useAlternateHotkey = "useAlternateHotkey"
         static let closeOnClickOutside = "closeOnClickOutside"
         static let showOnAllScreens = "showOnAllScreens"
+        static let includeFullScreenWindows = "includeFullScreenWindows"
     }
 
     // MARK: Stored settings
@@ -193,6 +194,12 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(showOnAllScreens, forKey: Key.showOnAllScreens) }
     }
 
+    /// Whether the window list includes full-screen windows on other desktops. Off by
+    /// default because macOS can't reliably switch to them (see the Settings caption).
+    @Published var includeFullScreenWindows: Bool {
+        didSet { defaults.set(includeFullScreenWindows, forKey: Key.includeFullScreenWindows) }
+    }
+
     // MARK: Init
 
     init(defaults: UserDefaults = .standard) {
@@ -226,6 +233,7 @@ final class Preferences: ObservableObject {
         useAlternateHotkey = defaults.object(forKey: Key.useAlternateHotkey) as? Bool ?? false
         closeOnClickOutside = defaults.object(forKey: Key.closeOnClickOutside) as? Bool ?? true
         showOnAllScreens = defaults.object(forKey: Key.showOnAllScreens) as? Bool ?? false
+        includeFullScreenWindows = defaults.object(forKey: Key.includeFullScreenWindows) as? Bool ?? false
 
         // Seed launch-at-login from the authoritative system state rather than a
         // possibly-stale stored value, so an external change in System Settings is

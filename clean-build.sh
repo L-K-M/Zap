@@ -26,3 +26,12 @@ sleep 1
 xcodebuild -project Zap.xcodeproj -scheme Zap clean
 rm -rf ~/Library/Developer/Xcode/DerivedData/Zap-*
 xcodebuild -project Zap.xcodeproj -scheme Zap -configuration Release build
+status=$?
+
+# On a successful build, reveal the product in Finder. The wipe+rebuild above
+# leaves exactly one Zap-* DerivedData folder, so the glob resolves uniquely.
+if [ $status -eq 0 ]; then
+    open ~/Library/Developer/Xcode/DerivedData/Zap-*/Build/Products/Release
+fi
+
+exit $status
