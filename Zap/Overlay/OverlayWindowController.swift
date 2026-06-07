@@ -474,11 +474,16 @@ final class OverlayWindowController {
         let maxPanelWidth = fittingBounds.width - horizontalMargin
         model.maxContentWidth = max(120, maxPanelWidth - preferences.contentPadding * 2)
 
-        // Cap the whole panel's height too, leaving a margin off the screen edges.
-        // The window list/grid scrolls within this rather than growing the panel
-        // until its top runs off-screen.
-        let verticalMargin: CGFloat = 40
-        model.maxPanelHeight = max(200, fittingBounds.height - verticalMargin)
+        // Cap the panel height. When growing downward from a fixed top edge (the
+        // window list revealing on dwell), the limit is the space from that top down
+        // to the bottom of the screen — so the panel's top stays put and the list
+        // scrolls once it reaches the bottom, rather than the panel shifting up to
+        // stay on screen. Also bounded by the (smallest, when mirroring) screen
+        // height so the panel always fits wherever it's shown.
+        model.maxPanelHeight = Self.maxPanelHeight(
+            anchorTop: keepTop ? anchorTop : nil,
+            screenBottom: visible.minY,
+            screenHeight: fittingBounds.height)
 
         hostingView.layoutSubtreeIfNeeded()
         let fitting = hostingView.fittingSize
@@ -570,5 +575,19 @@ final class OverlayWindowController {
         let candidates = (allScreens && !screens.isEmpty) ? screens : [current]
         return CGSize(width: candidates.map(\.width).min() ?? current.width,
                       height: candidates.map(\.height).min() ?? current.height)
+    }
+
+    /// Pure panel-height cap (AppKit coords, y up). When `anchorTop` is set (the
+    /// panel is growing downward from a fixed top edge), the panel may use the space
+    /// from that top down to `screenBottom`, less a bottom margin — so its top stays
+    /// put and the window list scrolls once it reaches the bottom. Otherwise it may
+    /// use the full screen height. Always bounded by the screen height and a sane
+    /// floor. Extracted so the "top stays put, then scroll" rule is unit-testable.
+    static func maxPanelHeight(anchorTop: CGFloat?, screenBottom: CGFloat,
+                               screenHeight: CGFloat, bottomMargin: CGFloat = 16,
+                               floor: CGFloat = 200) -> CGFloat {
+        let screenCap = screenHeight - bottomMargin * 2
+        guard let top = anchorTop else { return max(floor, screenCap) }
+        return max(floor, min(top - screenBottom - bottomMargin, screenCap))
     }
 }

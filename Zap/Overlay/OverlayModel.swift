@@ -41,10 +41,12 @@ final class OverlayModel: ObservableObject {
     /// Set from the target screen so the panel never runs off-screen.
     @Published var maxContentWidth: CGFloat = .greatestFiniteMagnitude
 
-    /// Maximum height the whole panel may occupy, derived from the target screen.
-    /// The window list/grid scrolls internally rather than letting the panel grow
-    /// past this and push its top off-screen. `.greatestFiniteMagnitude` until
-    /// `layout` sets it, so the panel is unconstrained before it's first sized.
+    /// Maximum height the whole panel may occupy. Once the window list is showing
+    /// this is the space from the panel's fixed top edge down to the bottom of the
+    /// screen, so the panel only ever grows *downward* and the window list/grid
+    /// scrolls internally once it reaches the bottom — the top never shifts up.
+    /// `.greatestFiniteMagnitude` until `layout` sets it, so the panel is
+    /// unconstrained before it's first sized.
     @Published var maxPanelHeight: CGFloat = .greatestFiniteMagnitude
 
     /// The icon a file drag is currently hovering over, highlighted as a drop target.

@@ -123,9 +123,11 @@ must **intercept the key event and suppress the system switcher**.
   previews **off**, as a single-column list of titles. The grid's column count is a
   pure function of the window count and available width (`WindowGridGeometry`),
   shared with the controller so arrow-key navigation is grid-aware. Either form
-  **scrolls vertically** once it would grow taller than the room left on screen, so
-  a long window list never pushes the panel's top off-screen; the panel height is
-  capped to the target display (`model.maxPanelHeight`, set in `layout`).
+  **scrolls vertically** once it would grow taller than the room left on screen. The
+  panel's top edge stays fixed and the list grows only *downward*: the height cap
+  (`model.maxPanelHeight`, set in `layout` via `maxPanelHeight(anchorTop:…)`) is the
+  space from that top down to the bottom of the screen, so the list reaches the
+  bottom and then scrolls instead of the panel shifting up to stay on-screen.
 - The `CGWindowID` for an AX window element is resolved via the private
   `_AXUIElementGetWindow` SPI (no public bridge exists). Treated as best-effort —
   a `nil` ID just means "no preview", never a failure.
