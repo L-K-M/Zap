@@ -4,6 +4,8 @@ A fast, customizable macOS app switcher — a drop-in replacement for the native
 <kbd>⌘</kbd>+<kbd>Tab</kbd> switcher that lets you **exclude apps** you never switch
 to, switch **directoy do individual screens**, and **customize the appearance** of the switcher.
 
+**Latest release:** v<!-- version -->1.5.1<!-- /version --> · [Download](https://github.com/L-K-M/Zap/releases/latest)
+
 ![Screencast](zap-video.gif)
 
 > [!IMPORTANT]
