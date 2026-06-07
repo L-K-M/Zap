@@ -164,7 +164,7 @@ final class SwitcherController {
         eventTap.onCancel = { [weak self] in self?.cancel() }
         eventTap.onQuitSelected = { [weak self] in self?.quitSelected() }
         eventTap.onCloseWindow = { [weak self] in self?.closeFocusedWindow() }
-        eventTap.onNavigateWindows = { [weak self] down in self?.navigateWindows(down: down) }
+        eventTap.onNavigateWindows = { [weak self] direction in self?.navigateWindows(direction) }
     }
 
     @discardableResult
@@ -530,20 +530,50 @@ final class SwitcherController {
         overlay.setWindowThumbnail(image, for: windowID)
     }
 
-    /// Moves through the revealed window list. Down advances; Up moves back and,
-    /// from the first window, returns focus to the app row.
-    private func navigateWindows(down: Bool) {
+    /// Moves through the revealed windows with the arrow keys. The list is a
+    /// single column; the preview grid has several, so navigation is grid-aware
+    /// (Up/Down move a row, Left/Right a column). Up from the top row returns focus
+    /// to the app row, matching the list behavior.
+    private func navigateWindows(_ direction: WindowNavDirection) {
         guard !windows.isEmpty else { return }
-        let count = windows.count
-        if down {
-            let next = (windowSelectedIndex ?? -1) + 1
-            windowSelectedIndex = min(next, count - 1)
-        } else if let current = windowSelectedIndex {
-            windowSelectedIndex = current == 0 ? nil : current - 1
-        } else {
-            windowSelectedIndex = nil
+        let columns = preferences.showWindowPreviews ? max(1, overlay.windowGridColumns) : 1
+        let next = Self.nextWindowSelection(from: windowSelectedIndex, direction: direction,
+                                            count: windows.count, columns: columns)
+        guard next != windowSelectedIndex else { return }
+        windowSelectedIndex = next
+        overlay.navigateWindowSelection(next)
+    }
+
+    /// Pure next-selection rule for arrow-key navigation over `count` windows laid
+    /// out row-major in `columns` columns. `nil` means the app row (above the grid)
+    /// is focused. A single column reproduces the old list behavior exactly.
+    static func nextWindowSelection(from current: Int?, direction: WindowNavDirection,
+                                    count: Int, columns: Int) -> Int? {
+        guard count > 0 else { return nil }
+        let cols = max(1, columns)
+
+        guard let cur = current else {
+            // Focus is on the app row; only Down drops into the grid (first cell).
+            return direction == .down ? 0 : nil
         }
-        overlay.updateWindowSelection(windowSelectedIndex)
+
+        let row = cur / cols
+        let col = cur % cols
+        switch direction {
+        case .down:
+            // No row below ⇒ stay; otherwise the cell directly below, clamped onto a
+            // short last row.
+            guard (row + 1) * cols < count else { return cur }
+            return min((row + 1) * cols + col, count - 1)
+        case .up:
+            // From the top row, hand focus back to the app row.
+            return row == 0 ? nil : (row - 1) * cols + col
+        case .left:
+            return col == 0 ? cur : cur - 1
+        case .right:
+            let target = cur + 1
+            return (col + 1 < cols && target < count) ? target : cur
+        }
     }
 
     /// Handles a click on a window row: select it and switch immediately.

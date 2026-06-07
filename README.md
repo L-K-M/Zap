@@ -14,8 +14,8 @@ to, switch **directoy do individual screens**, and **customize the appearance** 
 - Intercepts the real <kbd>⌘</kbd>+<kbd>Tab</kbd> (and <kbd>⌘</kbd>+<kbd>⇧</kbd>+<kbd>Tab</kbd> / <kbd>⌘</kbd>+<kbd>`</kbd> to reverse).
 - Native-feeling MRU ordering (single tap toggles the two most-recent apps).
 - Per-app exclusions — hide apps you never switch to.
-- Dwell on an app to list its windows; switch straight to one with <kbd>↑</kbd>/<kbd>↓</kbd> or a click.
-- Optional small live preview of each window in that list (needs Screen Recording permission; off by default).
+- Dwell on an app to see its windows; switch straight to one with the arrow keys or a click. A long window list scrolls instead of overflowing the panel.
+- Optional live preview of each window, laid out as a thumbnail grid (needs Screen Recording permission; off by default).
 - Customizable colors, opacity, icon size, and corner radius with a live preview.
 - Menu-bar agent (no Dock icon); never appears in its own switcher.
 - Launch at login via `SMAppService`.

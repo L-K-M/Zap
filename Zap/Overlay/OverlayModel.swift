@@ -26,6 +26,12 @@ final class OverlayModel: ObservableObject {
     /// The highlighted window, or `nil` when the app row itself is focused.
     @Published var windowSelectedIndex: Int?
 
+    /// Bumped each time *keyboard* navigation moves the window selection, so the
+    /// overlay can scroll the highlighted window into view. Hover updates the
+    /// selection without bumping this, so merely pointing at a window never scrolls
+    /// the list out from under the cursor.
+    @Published var windowScrollTick: Int = 0
+
     /// Captured previews keyed by `CGWindowID`, populated asynchronously after the
     /// window list appears. A missing entry means "not (yet) available" — the row
     /// falls back to its placeholder glyph.
@@ -34,6 +40,12 @@ final class OverlayModel: ObservableObject {
     /// Maximum width the icon row may occupy before it scrolls horizontally.
     /// Set from the target screen so the panel never runs off-screen.
     @Published var maxContentWidth: CGFloat = .greatestFiniteMagnitude
+
+    /// Maximum height the whole panel may occupy, derived from the target screen.
+    /// The window list/grid scrolls internally rather than letting the panel grow
+    /// past this and push its top off-screen. `.greatestFiniteMagnitude` until
+    /// `layout` sets it, so the panel is unconstrained before it's first sized.
+    @Published var maxPanelHeight: CGFloat = .greatestFiniteMagnitude
 
     /// The icon a file drag is currently hovering over, highlighted as a drop target.
     @Published var dropTargetIndex: Int?
