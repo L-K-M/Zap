@@ -214,12 +214,35 @@ final class OverlayWindowController {
         model.windowSelectedIndex = selected
         model.windowThumbnails = [:]
         layout(keepTop: true)
+        // Bring a pre-selected window into view (e.g. after closing one); a fresh
+        // reveal selects nothing and stays scrolled to the top.
+        if selected != nil { model.windowScrollTick &+= 1 }
         forceDisplay()
         syncMirrors()
     }
 
+    /// Moves the window highlight to follow the pointer. Leaves the scroll position
+    /// put — hovering should never scroll the list out from under the cursor.
     func updateWindowSelection(_ index: Int?) {
         model.windowSelectedIndex = index
+    }
+
+    /// Moves the window highlight via keyboard navigation, also scrolling it into
+    /// view if the list is long enough to have overflowed into its scroll area.
+    func navigateWindowSelection(_ index: Int?) {
+        model.windowSelectedIndex = index
+        model.windowScrollTick &+= 1
+    }
+
+    /// Number of columns the preview grid currently lays out into, so the controller
+    /// can drive arrow-key navigation in two dimensions. Mirrors `OverlayView`'s grid
+    /// geometry. Meaningful only when previews are on (the list is single-column).
+    var windowGridColumns: Int {
+        WindowGridGeometry(count: model.windows.count,
+                           availableWidth: model.maxContentWidth,
+                           cellWidth: WindowGridMetrics.cellWidth,
+                           cellHeight: WindowGridMetrics.cellHeight,
+                           spacing: WindowGridMetrics.spacing).columns
     }
 
     /// Stores a captured preview for `windowID`. Ignored if that window is no
@@ -330,6 +353,14 @@ final class OverlayWindowController {
     /// consumed (only when the row actually overflows).
     private func handleScroll(_ event: NSEvent) -> Bool {
         guard isVisible else { return false }
+
+        // When a window list/grid is showing it has its own (vertical) scroll view.
+        // Let vertical gestures fall through to it and keep only horizontal gestures
+        // for the icon row, so the wheel can scroll a long window list. With no
+        // window list, a vertical wheel still scrolls the icon row (as before).
+        let horizontalDominant = abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY)
+        if !model.windows.isEmpty && !horizontalDominant { return false }
+
         let geometry = iconRowGeometry()
         guard geometry.overflows else { return false }
 
@@ -442,6 +473,12 @@ final class OverlayWindowController {
         let horizontalMargin: CGFloat = 40
         let maxPanelWidth = fittingBounds.width - horizontalMargin
         model.maxContentWidth = max(120, maxPanelWidth - preferences.contentPadding * 2)
+
+        // Cap the whole panel's height too, leaving a margin off the screen edges.
+        // The window list/grid scrolls within this rather than growing the panel
+        // until its top runs off-screen.
+        let verticalMargin: CGFloat = 40
+        model.maxPanelHeight = max(200, fittingBounds.height - verticalMargin)
 
         hostingView.layoutSubtreeIfNeeded()
         let fitting = hostingView.fittingSize

@@ -19,10 +19,10 @@ final class EventTapMonitor {
     var onQuitSelected: (() -> Void)?
     /// Called when the user presses ⌘W with a window focused in the window list.
     var onCloseWindow: (() -> Void)?
-    /// Called when the user presses Down/Up to move through the window list.
-    /// `down == true` moves toward the next window; `false` moves back up
-    /// (eventually returning focus to the app row).
-    var onNavigateWindows: ((_ down: Bool) -> Void)?
+    /// Called when the user presses an arrow key to move through the window list/grid.
+    /// Down enters/advances; Up steps back (eventually returning focus to the app
+    /// row); Left/Right move within a preview-grid row.
+    var onNavigateWindows: ((_ direction: WindowNavDirection) -> Void)?
     /// Whether a switch session is currently active (overlay shown or pending).
     /// Drives commit/cancel behavior.
     var isSwitching: () -> Bool = { false }
@@ -155,10 +155,16 @@ final class EventTapMonitor {
                 onCloseWindow?()
                 return nil
             case KeyCode.arrowDown:
-                onNavigateWindows?(true)
+                onNavigateWindows?(.down)
                 return nil
             case KeyCode.arrowUp:
-                onNavigateWindows?(false)
+                onNavigateWindows?(.up)
+                return nil
+            case KeyCode.arrowLeft:
+                onNavigateWindows?(.left)
+                return nil
+            case KeyCode.arrowRight:
+                onNavigateWindows?(.right)
                 return nil
             default:
                 // Swallow other keys so they don't leak to the front app mid-switch.

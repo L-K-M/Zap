@@ -104,7 +104,7 @@ must **intercept the key event and suppress the system switcher**.
 | <kbd>Esc</kbd>            | Cancel, hide overlay, no switch         |
 | <kbd>Q</kbd>               | Quit selected app                       |
 | <kbd>W</kbd>               | Close focused window (in the window list) |
-| <kbd>↑</kbd> / <kbd>↓</kbd> | Move through the selected app's window list |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | Move through the selected app's windows (←/→ too, in the preview grid) |
 | Mouse hover / click        | Move selection / pick app or window     |
 
 ### Fallback / coexistence
@@ -115,9 +115,17 @@ must **intercept the key event and suppress the system switcher**.
   suppresses it while Zap is active.
 
 ### Window previews (optional)
-- Each window row can show a small still capture of the window. Disabled by
-  default; enabling it requires the separate **Screen Recording** permission
+- Each window can show a small still capture. Disabled by default; enabling it
+  requires the separate **Screen Recording** permission
   (`CGPreflightScreenCaptureAccess` / `CGRequestScreenCaptureAccess`).
+- **Layout:** with previews **on**, the windows are shown as a roughly-square
+  **grid** of thumbnail tiles (each a preview above a one-line title); with
+  previews **off**, as a single-column list of titles. The grid's column count is a
+  pure function of the window count and available width (`WindowGridGeometry`),
+  shared with the controller so arrow-key navigation is grid-aware. Either form
+  **scrolls vertically** once it would grow taller than the room left on screen, so
+  a long window list never pushes the panel's top off-screen; the panel height is
+  capped to the target display (`model.maxPanelHeight`, set in `layout`).
 - The `CGWindowID` for an AX window element is resolved via the private
   `_AXUIElementGetWindow` SPI (no public bridge exists). Treated as best-effort —
   a `nil` ID just means "no preview", never a failure.
