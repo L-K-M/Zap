@@ -4,10 +4,11 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var preferences: Preferences
     @ObservedObject var inputMode: InputModeReporter
+    @ObservedObject var updateChecker: UpdateChecker
 
     var body: some View {
         TabView {
-            GeneralView(preferences: preferences)
+            GeneralView(preferences: preferences, updateChecker: updateChecker)
                 .tabItem { Label("General", systemImage: "gearshape") }
 
             ExclusionsView(preferences: preferences)

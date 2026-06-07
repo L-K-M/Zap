@@ -5,7 +5,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let preferences = Preferences.shared
     private lazy var switcher = SwitcherController(preferences: preferences)
-    private lazy var settingsWindow = SettingsWindowController(preferences: preferences, inputMode: switcher.inputMode)
+    private let updateChecker = UpdateChecker(
+        configuration: .init(owner: "L-K-M", repo: "Zap", appName: "Zap")
+    )
+    private lazy var settingsWindow = SettingsWindowController(preferences: preferences, inputMode: switcher.inputMode, updateChecker: updateChecker)
 
     private var statusItem: NSStatusItem?
     private var pauseMenuItem: NSMenuItem?
@@ -19,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         setUpStatusItem()
         switcher.start()
+        updateChecker.start()   // check GitHub for a newer release on launch + daily
         promptForAccessibilityIfNeeded()
     }
 
@@ -72,6 +76,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsItem.target = self
         menu.addItem(settingsItem)
 
+        let updatesItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        updatesItem.target = self
+        menu.addItem(updatesItem)
+
         let pauseItem = NSMenuItem(title: "Pause Zap", action: #selector(togglePause), keyEquivalent: "")
         pauseItem.target = self
         menu.addItem(pauseItem)
@@ -90,6 +98,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openSettings() {
         settingsWindow.show()
+    }
+
+    @objc private func checkForUpdates() {
+        updateChecker.checkNow()
     }
 
     @objc private func togglePause() {

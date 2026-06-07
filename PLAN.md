@@ -294,6 +294,12 @@ Zap/
 │   │   ├── ExclusionsView.swift
 │   │   ├── AppearanceView.swift
 │   │   └── PermissionsView.swift
+│   ├── Updates/
+│   │   ├── UpdateChecker.swift   # GitHub release check + update alert (reusable)
+│   │   ├── GitHubReleaseClient.swift
+│   │   ├── GitHubRelease.swift
+│   │   ├── UpdateDownloader.swift # downloads an asset to ~/Downloads
+│   │   └── SemanticVersion.swift
 │   ├── Model/
 │   │   ├── Preferences.swift     # UserDefaults wrapper
 │   │   ├── AppInfo.swift
