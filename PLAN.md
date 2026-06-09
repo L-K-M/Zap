@@ -154,17 +154,18 @@ must **intercept the key event and suppress the system switcher**.
   pre-selected (so a quick ⌘+Tab tap toggles between the two most recent apps).
 - Maintain our own MRU list by observing
   `NSWorkspace.didActivateApplicationNotification` and moving the activated app to the
-  front, ignoring Zap's own activations while Settings is open. Persist nothing —
-  rebuild from live notifications + current frontmost ordering on launch.
+  front, ignoring Zap's own activations while Settings is open. The order is persisted
+  (a small capped array of bundle IDs in `UserDefaults`) and seeds the tracker on the
+  next launch.
 - On show: order = MRU list; default selection = index `1` (second item) so a single
   tap switches to the last app, matching native feel. When the frontmost app is
   *excluded* it is filtered out, so the default selection becomes index `0` instead
   (the previous visible app), preserving the toggle feel.
 - **Known limitation:** there is no public API for the system's own MRU order, so on a
-  cold launch Zap only knows the current frontmost app. Apps activated before launch
-  keep `NSWorkspace.runningApplications` order until the user activates them (which our
-  notification observer then records). The MRU order becomes accurate after the first
-  few app switches.
+  cold launch Zap starts from its *persisted* order from the previous session (with the
+  current frontmost app promoted to the top). Switches made while Zap wasn't running
+  are invisible to it, so the order may briefly lag reality until the user activates
+  apps again (which our notification observer then records).
 
 ### Exclusions
 - Store a `Set<String>` of excluded **bundle identifiers** in `UserDefaults`.
@@ -242,8 +243,9 @@ Menu-bar `NSStatusItem` menu: *Settings…*, *Pause Zap*, *Quit*.
 ## 8. Persistence
 
 - `UserDefaults` (small, simple): excluded bundle IDs, color/appearance settings,
-  alternate hotkey, launch-at-login flag, show delay.
-- No database needed. MRU order is in-memory.
+  alternate hotkey, launch-at-login flag, show delay, and the MRU order (a capped
+  array of bundle IDs, so a cold launch starts from the previous session's order).
+- No database needed.
 
 ---
 

@@ -6,7 +6,15 @@ import Foundation
 final class MRUTracker {
 
     /// Bundle identifiers, most-recently-used first.
-    private(set) var order: [String] = []
+    private(set) var order: [String]
+
+    /// Creates a tracker, optionally seeded with the order persisted by a previous
+    /// session (most-recently-used first). There is no API for the system's own MRU
+    /// order, so the last session's order is the best available prior on a cold
+    /// launch; live activations then correct it.
+    init(order: [String] = []) {
+        self.order = order
+    }
 
     /// Records that an app was just activated, moving it to the front.
     func recordActivation(bundleID: String) {

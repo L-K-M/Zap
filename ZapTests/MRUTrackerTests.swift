@@ -43,6 +43,19 @@ final class MRUTrackerTests: XCTestCase {
         XCTAssertEqual(result, ["b", "a", "c"])
     }
 
+    func testSeededOrderIsRespected() {
+        // A tracker seeded from a persisted order ranks known apps by it.
+        let tracker = MRUTracker(order: ["b", "a"])
+        let result = tracker.ordered([app("a"), app("b"), app("c")]).map(\.bundleIdentifier)
+        XCTAssertEqual(result, ["b", "a", "c"])
+    }
+
+    func testActivationPromotesOverSeededOrder() {
+        let tracker = MRUTracker(order: ["b", "a"])
+        tracker.recordActivation(bundleID: "a")
+        XCTAssertEqual(tracker.order, ["a", "b"])
+    }
+
     func testSecondItemIsPreviousAppForToggle() {
         // The frontmost (most-recent) app is index 0; index 1 is the previous app
         // that a single ⌘-Tab should switch to.
