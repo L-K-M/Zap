@@ -72,8 +72,11 @@ struct ExclusionsView: View {
     /// Resolves a human-readable name for an installed (but not running) app.
     private static func displayName(forBundleID bundleID: String) -> String? {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
-        return FileManager.default.displayName(atPath: url.path)
-            .replacingOccurrences(of: ".app", with: "")
+        let name = FileManager.default.displayName(atPath: url.path)
+        // Strip only a trailing `.app` extension — a blanket substring replace
+        // would mangle names that merely contain ".app".
+        let nsName = name as NSString
+        return nsName.pathExtension == "app" ? nsName.deletingPathExtension : name
     }
 
     /// Resolves the icon for an installed (but not running) app.

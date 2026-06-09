@@ -112,6 +112,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switcher.resume()
         }
         pauseMenuItem?.title = isPaused ? "Resume Zap" : "Pause Zap"
+        // Dim the menu-bar icon while paused so the inert state is visible.
+        statusItem?.button?.appearsDisabled = isPaused
     }
 
     @objc private func quit() {
@@ -121,6 +123,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Helpers
 
     private func promptForAccessibilityIfNeeded() {
+        // The user deliberately chose the ⌥-Tab fallback — don't nag for a
+        // permission Zap won't use.
+        guard !preferences.useAlternateHotkey else { return }
         if !switcher.isUsingEventTap {
             AccessibilityAuthorizer.prompt()
         }
