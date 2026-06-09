@@ -460,15 +460,17 @@ private struct HorizontallyScrollable: ViewModifier {
         }
     }
 
-    /// A horizontal mask: opaque through the middle, ramping to clear at an edge in
-    /// proportion to how much content is hidden on that side.
+    /// A horizontal mask: fully opaque (content shown) through the middle, fading to
+    /// transparent across the fade band at each edge — `fade.leading`/`fade.trailing`
+    /// wide, as viewport fractions. An edge with no band (nothing hidden past it)
+    /// stays crisp.
     private var fadeMask: some View {
         LinearGradient(
             gradient: Gradient(stops: [
-                .init(color: .black.opacity(1 - fade.leading), location: 0),
-                .init(color: .black, location: fade.inset),
-                .init(color: .black, location: 1 - fade.inset),
-                .init(color: .black.opacity(1 - fade.trailing), location: 1),
+                .init(color: .black.opacity(fade.leading > 0 ? 0 : 1), location: 0),
+                .init(color: .black, location: fade.leading),
+                .init(color: .black, location: 1 - fade.trailing),
+                .init(color: .black.opacity(fade.trailing > 0 ? 0 : 1), location: 1),
             ]),
             startPoint: .leading,
             endPoint: .trailing

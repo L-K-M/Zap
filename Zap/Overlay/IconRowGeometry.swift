@@ -1,14 +1,15 @@
 import CoreGraphics
 
-/// How strongly each edge of the icon row fades, and how wide the fade ramp is (as
-/// a fraction of the viewport). `leading`/`trailing` run 0 (crisp) → 1 (fully
-/// faded) with the amount of content hidden on that side.
+/// Width of the fade band at each edge of the icon row, as a fraction of the
+/// viewport. `leading`/`trailing` are 0 at a crisp edge and grow up to the fade
+/// ramp's width as content is hidden past that side. The band always fades fully
+/// to transparent at the very edge, so a partly-hidden icon never ends in a hard
+/// cut — the band just narrows as the edge nears flush.
 struct EdgeFade: Equatable {
     var leading: CGFloat
     var trailing: CGFloat
-    var inset: CGFloat
 
-    static let none = EdgeFade(leading: 0, trailing: 0, inset: 0)
+    static let none = EdgeFade(leading: 0, trailing: 0)
 }
 
 /// Geometry of the horizontally-scrolling icon row. The row scrolls by a raw pixel
@@ -49,17 +50,19 @@ struct IconRowGeometry: Equatable {
         return clamp(centre - viewport / 2)
     }
 
-    /// Edge fade for a given scroll `offset`: opaque through the middle, ramping to
-    /// clear at an edge in proportion to how much content is hidden past it. Fades
-    /// only where there's hidden content, so a flush first/last icon stays crisp.
+    /// Edge fade for a given scroll `offset`: a soft band that fades fully to
+    /// transparent at any edge with content hidden past it, so the clip reads as a
+    /// deliberate soft edge rather than a hard cut. Each band is at most the fade
+    /// ramp wide but narrows to the amount of content actually hidden on that side,
+    /// so it shrinks to nothing — leaving a flush first/last icon crisp — instead of
+    /// hardening into an opaque edge over the last hidden sliver.
     func fade(offset: CGFloat, fadeWidth: CGFloat) -> EdgeFade {
         guard overflows else { return .none }
         let scrolled = clamp(offset)
         let ramp = min(max(fadeWidth, 1), viewport / 3)
         return EdgeFade(
-            leading: min(1, scrolled / ramp),
-            trailing: min(1, (maxScroll - scrolled) / ramp),
-            inset: ramp / viewport
+            leading: min(ramp, scrolled) / viewport,
+            trailing: min(ramp, maxScroll - scrolled) / viewport
         )
     }
 }
