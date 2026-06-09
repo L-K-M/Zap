@@ -17,11 +17,15 @@ final class EventTapMonitor {
     var onCancel: (() -> Void)?
     /// Called when the user presses ⌘Q on the selection (optional handler).
     var onQuitSelected: (() -> Void)?
+    /// Called when the user presses ⌘H on the selection: hide the app (or un-hide
+    /// it when it's already hidden), matching the native switcher.
+    var onHideSelected: (() -> Void)?
     /// Called when the user presses ⌘W with a window focused in the window list.
     var onCloseWindow: (() -> Void)?
-    /// Called when the user presses an arrow key to move through the window list/grid.
-    /// Down enters/advances; Up steps back (eventually returning focus to the app
-    /// row); Left/Right move within a preview-grid row.
+    /// Called when the user presses an arrow key. Down enters/advances the window
+    /// list/grid; Up steps back (eventually returning focus to the app row);
+    /// Left/Right move within a preview-grid row — or, while the app row is
+    /// focused, move the app selection itself.
     var onNavigateWindows: ((_ direction: WindowNavDirection) -> Void)?
     /// Whether a switch session is currently active (overlay shown or pending).
     /// Drives commit/cancel behavior.
@@ -149,6 +153,10 @@ final class EventTapMonitor {
             case KeyCode.q:
                 // Quit the highlighted app (Command is still held here).
                 onQuitSelected?()
+                return nil
+            case KeyCode.h:
+                // Hide (or un-hide) the highlighted app, like the native switcher.
+                onHideSelected?()
                 return nil
             case KeyCode.w:
                 // Close the focused window in the window list (if any).

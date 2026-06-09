@@ -103,8 +103,10 @@ must **intercept the key event and suppress the system switcher**.
 | Release <kbd>⌘</kbd>       | Activate selected app, hide overlay     |
 | <kbd>Esc</kbd>            | Cancel, hide overlay, no switch         |
 | <kbd>Q</kbd>               | Quit selected app                       |
+| <kbd>H</kbd>               | Hide selected app (un-hide if already hidden) |
 | <kbd>W</kbd>               | Close focused window (in the window list) |
-| <kbd>↑</kbd> / <kbd>↓</kbd> | Move through the selected app's windows (←/→ too, in the preview grid) |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | Move through the selected app's windows |
+| <kbd>←</kbd> / <kbd>→</kbd> | Move the app selection; within the preview grid, move along the row |
 | Mouse hover / click        | Move selection / pick app or window     |
 
 ### Fallback / coexistence
