@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 /// The Commodore Amiga "boing ball": a red-and-white checkered sphere, nestled in
 /// one of the panel's top corners. Companion to `PanelDecoration` (the stripe

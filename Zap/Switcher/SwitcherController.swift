@@ -323,23 +323,25 @@ final class SwitcherController {
         applyTypeQuery()
     }
 
-    /// Pushes the current query to the overlay and jumps the highlight to the best
-    /// matching app (leaving the selection put when nothing matches, so the user can
-    /// see and correct the query).
+    /// Jumps the highlight to the best matching app (leaving the selection put when
+    /// nothing matches, so the user can see and correct the query) and shows the
+    /// query badge. The badge is pushed *last* — after any `presentOverlay()`, whose
+    /// `show()` resets the model — so a query typed during the show-delay survives.
     private func applyTypeQuery() {
-        overlay.setTypeQuery(typeBuffer)
-        guard !typeBuffer.isEmpty,
-              let index = Self.bestMatchIndex(query: typeBuffer, names: apps.map(\.name)),
-              !quittingPIDs.contains(apps[index].processIdentifier)
-        else { return }
-        selectedIndex = index
-        windowSelectedIndex = nil
-        if overlay.isVisible {
-            overlay.updateSelection(index)
-            restartDwell()
-        } else {
+        if let index = Self.bestMatchIndex(query: typeBuffer, names: apps.map(\.name)),
+           !quittingPIDs.contains(apps[index].processIdentifier) {
+            selectedIndex = index
+            windowSelectedIndex = nil
+            if overlay.isVisible {
+                overlay.updateSelection(index)
+                restartDwell()
+            }
+        }
+        // Force the overlay up (past any show-delay) so the query badge is visible.
+        if !typeBuffer.isEmpty, !overlay.isVisible {
             presentOverlay()
         }
+        overlay.setTypeQuery(typeBuffer)
     }
 
     /// Clears any in-progress type-to-search query and hides its badge.
