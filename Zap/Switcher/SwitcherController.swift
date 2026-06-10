@@ -38,8 +38,32 @@ final class SwitcherController {
     /// The current type-to-search query. Typing letters/digits jumps the highlight
     /// to the best-matching app; a leading digit with an empty query instead jumps
     /// straight to that app and commits (number-key shortcut). Reset on commit,
-    /// cancel, and explicit Tab/arrow navigation.
+    /// cancel, explicit Tab/arrow navigation, and Escape — which clears the query
+    /// first and only cancels the session once it's empty.
     private var typeBuffer = ""
+
+    /// A Q/H press being disambiguated between its two meanings: a quick *tap*
+    /// types the letter into the search query, while a *hold* (key still down
+    /// after `shortcutHoldDelay`) undoes the tentatively-typed letter and
+    /// quits/hides the app that was highlighted when the key went down. Resolved
+    /// by the timer (hold), the key-up (tap), or any other input (tap).
+    private var pendingShortcut: PendingShortcut?
+
+    private struct PendingShortcut {
+        let key: ShortcutKey
+        /// The query to restore when the press turns out to be a hold.
+        let bufferBefore: String
+        /// The highlighted app at key-down, by pid — indices can shift while the
+        /// timer runs — so the shortcut targets what the user saw, not whatever
+        /// the tentative letter jumped the highlight to.
+        let selectedPIDBefore: pid_t?
+        let timer: Timer
+    }
+
+    /// How long Q/H must stay down to act as quit/hide rather than type. Driven
+    /// by a timer plus the key-up event — not key auto-repeat — so the hold works
+    /// even when the user has disabled key repeat.
+    private let shortcutHoldDelay: TimeInterval = 0.5
 
     /// Captures window previews off the hot path. A monotonically-increasing
     /// generation token lets late async captures bail when the window list has
@@ -167,10 +191,11 @@ final class SwitcherController {
         eventTap.isSwitching = { [weak self] in self?.isSessionActive ?? false }
         eventTap.onCycle = { [weak self] forward in self?.cycle(forward: forward) }
         eventTap.onCommit = { [weak self] in self?.commit() }
-        eventTap.onCancel = { [weak self] in self?.cancel() }
-        eventTap.onQuitSelected = { [weak self] in self?.quitSelected() }
-        eventTap.onHideSelected = { [weak self] in self?.hideSelected() }
-        eventTap.onCloseWindow = { [weak self] in self?.closeFocusedWindow() }
+        eventTap.onEscape = { [weak self] in self?.handleEscape() }
+        eventTap.onShortcutKey = { [weak self] key, character, isRepeat in
+            self?.handleShortcutKey(key, character: character, isRepeat: isRepeat)
+        }
+        eventTap.onShortcutKeyUp = { [weak self] key in self?.handleShortcutKeyUp(key) }
         eventTap.onNavigateWindows = { [weak self] direction in self?.navigateWindows(direction) }
         eventTap.onType = { [weak self] character in self?.handleTypedCharacter(character) }
         eventTap.onDeleteBackward = { [weak self] in self?.handleTypeBackspace() }
@@ -253,6 +278,7 @@ final class SwitcherController {
 
     private func advanceSelection(forward: Bool) {
         // Explicit Tab/arrow navigation ends any in-progress type-to-search.
+        cancelPendingShortcut()
         clearTypeBuffer()
         guard let next = nextSelectableIndex(from: selectedIndex, forward: forward) else { return }
         selectedIndex = next
@@ -303,6 +329,8 @@ final class SwitcherController {
     /// jumps to the best match.
     private func handleTypedCharacter(_ character: Character) {
         guard isSessionActive else { return }
+        // A new character resolves any armed Q/H press as a tap (key rollover).
+        cancelPendingShortcut()
 
         if typeBuffer.isEmpty, let digit = character.wholeNumberValue, (1...9).contains(digit) {
             jumpAndCommit(toNumber: digit)
@@ -318,6 +346,7 @@ final class SwitcherController {
 
     /// Removes the last character from the type-to-search query (Backspace).
     private func handleTypeBackspace() {
+        cancelPendingShortcut()
         guard isSessionActive, !typeBuffer.isEmpty else { return }
         typeBuffer.removeLast()
         applyTypeQuery()
@@ -390,6 +419,116 @@ final class SwitcherController {
             .contains { $0.hasPrefix(needle) }
     }
 
+    // MARK: Dual-purpose action keys (Q / H / W)
+
+    /// How a dual-purpose action key behaves in the current context.
+    enum ShortcutKeyRouting: Equatable {
+        /// Perform the shortcut immediately (native switcher behavior).
+        case act
+        /// The key is an ordinary search letter.
+        case type
+        /// Type the letter, but holding the key past `shortcutHoldDelay` turns
+        /// the press into the shortcut instead.
+        case typeAndArmHold
+    }
+
+    /// Pure routing rule, extracted for unit testing. With a window-list row
+    /// focused the keys keep their native shortcut meaning — the user is
+    /// navigating windows, not searching. On the app row, W is just a letter
+    /// (close-window needs a focused window), while Q and H type immediately but
+    /// arm a hold, so "QuickTime" or "Hammerspoon" are searchable by name and a
+    /// *held* ⌘Q/⌘H still quits/hides.
+    static func shortcutRouting(for key: ShortcutKey, windowFocused: Bool) -> ShortcutKeyRouting {
+        if windowFocused { return .act }
+        return key == .closeWindow ? .type : .typeAndArmHold
+    }
+
+    private func handleShortcutKey(_ key: ShortcutKey, character: Character?, isRepeat: Bool) {
+        guard isSessionActive else { return }
+        switch Self.shortcutRouting(for: key, windowFocused: windowSelectedIndex != nil) {
+        case .act:
+            switch key {
+            case .closeWindow:
+                // Fires on auto-repeat too, so holding ⌘W closes window after window.
+                closeFocusedWindow()
+            case .quit:
+                if !isRepeat { quitSelected() }
+            case .hide:
+                if !isRepeat { hideSelected() }
+            }
+        case .type:
+            // Auto-repeat extends the query, exactly like any other letter.
+            if let character { handleTypedCharacter(character) }
+        case .typeAndArmHold:
+            guard !isRepeat else { return }     // repeats just mean "still holding"
+            guard let character else {
+                // The key types nothing on this layout — no ambiguity to resolve.
+                if key == .quit { quitSelected() } else { hideSelected() }
+                return
+            }
+            let bufferBefore = typeBuffer
+            let pidBefore = apps.indices.contains(selectedIndex)
+                ? apps[selectedIndex].processIdentifier : nil
+            handleTypedCharacter(character)     // tentative; undone if this becomes a hold
+            // A key that types a digit can jump-and-commit, ending the session;
+            // never arm a hold that would outlive it.
+            guard isSessionActive else { return }
+            let timer = Timer.scheduledTimer(withTimeInterval: shortcutHoldDelay,
+                                             repeats: false) { [weak self] _ in
+                self?.fireHeldShortcut()
+            }
+            pendingShortcut = PendingShortcut(key: key, bufferBefore: bufferBefore,
+                                              selectedPIDBefore: pidBefore, timer: timer)
+        }
+    }
+
+    /// Key released before the hold delay: the press resolves as a tap, and the
+    /// tentatively-typed letter stands.
+    private func handleShortcutKeyUp(_ key: ShortcutKey) {
+        guard pendingShortcut?.key == key else { return }
+        cancelPendingShortcut()
+    }
+
+    /// The armed Q/H press turned out to be a hold: undo the tentatively-typed
+    /// letter — restoring the query and the selection it had moved — then perform
+    /// the shortcut on the app that was highlighted when the key went down.
+    private func fireHeldShortcut() {
+        guard let pending = pendingShortcut else { return }
+        pendingShortcut = nil
+        guard isSessionActive else { return }
+
+        typeBuffer = pending.bufferBefore
+        if let pid = pending.selectedPIDBefore,
+           let index = apps.firstIndex(where: { $0.processIdentifier == pid }),
+           !quittingPIDs.contains(pid) {
+            selectedIndex = index
+        }
+        overlay.setTypeQuery(typeBuffer)
+        if overlay.isVisible { overlay.updateSelection(selectedIndex) }
+
+        switch pending.key {
+        case .quit: quitSelected()
+        case .hide: hideSelected()
+        case .closeWindow: break    // never armed: W is a plain letter on the app row
+        }
+    }
+
+    private func cancelPendingShortcut() {
+        pendingShortcut?.timer.invalidate()
+        pendingShortcut = nil
+    }
+
+    /// Escape clears an in-progress search query first; pressed with no query it
+    /// cancels the session — two-stage, like Spotlight.
+    private func handleEscape() {
+        cancelPendingShortcut()
+        if typeBuffer.isEmpty {
+            cancel()
+        } else {
+            clearTypeBuffer()
+        }
+    }
+
     // MARK: Commit / cancel
 
     private func commit() {
@@ -460,6 +599,7 @@ final class SwitcherController {
         showTimer?.invalidate(); showTimer = nil
         autoCommitTimer?.invalidate(); autoCommitTimer = nil
         dwellTimer?.invalidate(); dwellTimer = nil
+        cancelPendingShortcut()
         isSessionActive = false
         typeBuffer = ""
         quittingPIDs.removeAll()
@@ -665,6 +805,8 @@ final class SwitcherController {
     /// (Up/Down move a row, Left/Right a column). Up from the top row returns focus
     /// to the app row, matching the list behavior.
     private func navigateWindows(_ direction: WindowNavDirection) {
+        // Arrow keys are explicit navigation: they resolve an armed Q/H as a tap.
+        cancelPendingShortcut()
         // While the app row is focused (no window highlighted), ←/→ move the app
         // selection itself, matching the native switcher's arrow-key behavior.
         if windowSelectedIndex == nil, direction == .left || direction == .right {

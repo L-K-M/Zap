@@ -236,6 +236,11 @@ struct OverlayView: View {
                 .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.head)
+            if let hint = holdHint {
+                Text(hint)
+                    .font(.system(size: 10))
+                    .opacity(0.6)
+            }
         }
         .foregroundStyle(Color(hexString: preferences.labelColorHex))
         .padding(.horizontal, 9)
@@ -248,6 +253,17 @@ struct OverlayView: View {
             Capsule(style: .continuous)
                 .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
         )
+    }
+
+    /// Discoverability nudge for the dual-purpose action keys: right after the
+    /// user types a lone "q" or "h", point out that *holding* the key still
+    /// performs the native quit/hide shortcut.
+    private var holdHint: String? {
+        switch model.typeQuery {
+        case "q": return "hold to quit"
+        case "h": return "hold to hide"
+        default: return nil
+        }
     }
 
     // MARK: Window list / grid

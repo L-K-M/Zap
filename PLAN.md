@@ -101,10 +101,10 @@ must **intercept the key event and suppress the system switcher**.
 | <kbd>⇧</kbd>+<kbd>Tab</kbd> | Previous app                            |
 | <kbd>`</kbd> (backtick)    | Previous app — only while switching (matches native) |
 | Release <kbd>⌘</kbd>       | Activate selected app, hide overlay     |
-| <kbd>Esc</kbd>            | Cancel, hide overlay, no switch         |
-| <kbd>Q</kbd>               | Quit selected app                       |
-| <kbd>H</kbd>               | Hide selected app (un-hide if already hidden) |
-| <kbd>W</kbd>               | Close focused window (in the window list) |
+| <kbd>Esc</kbd>            | Clear the search query; with no query, cancel without switching |
+| <kbd>Q</kbd>               | **Hold** to quit the selected app; a tap types into the search |
+| <kbd>H</kbd>               | **Hold** to hide the selected app (un-hide if already hidden); a tap types |
+| <kbd>W</kbd>               | Close focused window (with a window-list row focused; otherwise types) |
 | <kbd>1</kbd>–<kbd>9</kbd>   | Switch straight to the Nth app and commit |
 | Letters / digits           | Type-to-search: jump the highlight to the best-matching app (a leading digit jumps-and-commits instead) |
 | <kbd>⌫</kbd> Delete        | Edit the type-to-search query           |

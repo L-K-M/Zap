@@ -20,7 +20,7 @@ to, switch **directly to individual windows**, and **customize the appearance** 
 - Per-app exclusions — hide apps you never switch to.
 - Dwell on an app to see its windows; switch straight to one with the arrow keys or a click. A long window list scrolls instead of overflowing the panel.
 - Optional live preview of each window, laid out as a thumbnail grid (needs Screen Recording permission; off by default).
-- <kbd>⌘</kbd>+<kbd>Q</kbd> quit, <kbd>⌘</kbd>+<kbd>H</kbd> hide, and <kbd>⌘</kbd>+<kbd>W</kbd> close-focused-window, all without leaving the switcher.
+- **Hold** <kbd>⌘</kbd>+<kbd>Q</kbd> to quit and <kbd>⌘</kbd>+<kbd>H</kbd> to hide the highlighted app without leaving the switcher — a quick tap types into the search instead, so apps like QuickTime stay reachable by name. With a window focused, <kbd>⌘</kbd>+<kbd>W</kbd> closes it.
 - Rich appearance: colors, gradients, opacity, icon size, corner radii, retro corner decorations (ZX Spectrum, Apple rainbow, the Amiga boing ball, …), an optional CRT scanline mode, and shareable theme presets — all with a live preview.
 - Menu-bar agent (no Dock icon); never appears in its own switcher. The menu-bar icon dims while paused.
 - Launch at login via `SMAppService`.
@@ -61,12 +61,14 @@ Accessibility permission prompt behave correctly.
   the system switcher can do this; Zap makes it a first-class feature.
 - **Type to search:** with the switcher up, just type part of an app's name
   ("term" → Terminal). The highlight jumps to the best match; <kbd>⌫</kbd> edits your
-  query and <kbd>Tab</kbd> clears it. (Because <kbd>⌘</kbd> is held, the action keys
-  <kbd>Q</kbd>/<kbd>W</kbd>/<kbd>H</kbd> stay reserved for quit/close/hide.)
+  query and <kbd>Esc</kbd> clears it (a second <kbd>Esc</kbd> dismisses the switcher).
+  Every letter types — even <kbd>Q</kbd>/<kbd>W</kbd>/<kbd>H</kbd>, so "QuickTime",
+  "Wave", or "Hammerspoon" work; quit and hide answer to a *hold* instead.
 - **Number keys:** press <kbd>1</kbd>–<kbd>9</kbd> to jump straight to the Nth app and
   switch — faster than tabbing.
-- **In-switcher actions:** <kbd>⌘</kbd>+<kbd>Q</kbd> quits the highlighted app,
-  <kbd>⌘</kbd>+<kbd>H</kbd> hides it (or un-hides), and with a window selected,
+- **In-switcher actions:** hold <kbd>⌘</kbd>+<kbd>Q</kbd> for half a second to quit
+  the highlighted app, hold <kbd>⌘</kbd>+<kbd>H</kbd> to hide it (or un-hide) — a
+  quick tap types into the search instead — and with a window selected,
   <kbd>⌘</kbd>+<kbd>W</kbd> closes it.
 - **Themes:** in **Appearance**, apply a built-in theme (Classic, ZX Night, Vaporwave,
   Amiga) or **Export…** your look to a small `.json` file to share and **Import…**
