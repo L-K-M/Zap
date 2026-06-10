@@ -96,10 +96,10 @@ struct AppearanceView: View {
         }
     }
 
-    /// "Ball size" for the boing ball (which the slider scales), "Band size" for
+    /// "Ball size" for the boing balls (which the slider scales), "Band size" for
     /// the stripe styles (where it's each band's thickness).
     private var decorationSizeLabel: String {
-        preferences.decorationStyle == .amiga ? "Ball size" : "Band size"
+        preferences.decorationStyle.kind == .ball ? "Ball size" : "Band size"
     }
 
     // MARK: Preview

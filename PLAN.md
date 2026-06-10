@@ -197,8 +197,9 @@ A borderless, transparent, floating window mimicking the native look.
     restretch when the window list grows the panel — the always-visible icon row keeps
     a constant appearance at every angle.
   - Optional retro corner **decoration** — diagonal rainbow stripes (ZX Spectrum,
-    Apple rainbow, …) or the Amiga **boing ball** — drawn in the top-left or
-    top-right corner, clipped to the panel's rounded edge.
+    Apple rainbow, …) or the Amiga **boing ball** (smooth, or pixelated like the
+    original demo) — drawn in the top-left or top-right corner, clipped to the
+    panel's rounded edge.
   - Optional **CRT** overlay: faint scanlines + a soft vignette drawn over the whole
     panel for a retro look, scaled by an intensity slider (off by default).
   - Horizontal row of app icons (~64–128px), wrapping or scrolling if many.

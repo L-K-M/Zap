@@ -37,4 +37,20 @@ final class BoingBallDecorationTests: XCTestCase {
         XCTAssertGreaterThan(round.y, sharp.y)
         XCTAssertLessThan(round.x, sharp.x)
     }
+
+    func testSphereBitmapMatchesRequestedPixelSize() {
+        let bitmap = BoingBallDecoration.renderSphere(pixelDiameter: 64, antialiased: true)
+        XCTAssertEqual(bitmap?.width, 64)
+        XCTAssertEqual(bitmap?.height, 64)
+    }
+
+    func testPixelatedBitmapMatchesRequestedPixelSize() {
+        let bitmap = BoingBallDecoration.renderSphere(pixelDiameter: 96, antialiased: false)
+        XCTAssertEqual(bitmap?.width, 96)
+        XCTAssertEqual(bitmap?.height, 96)
+    }
+
+    func testSphereBitmapRejectsDegenerateSize() {
+        XCTAssertNil(BoingBallDecoration.renderSphere(pixelDiameter: 0, antialiased: true))
+    }
 }

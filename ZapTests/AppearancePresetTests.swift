@@ -45,7 +45,7 @@ final class AppearancePresetTests: XCTestCase {
         let prefs = Preferences(defaults: defaults)
         AppearancePreset.amiga.apply(to: prefs)
 
-        XCTAssertEqual(prefs.decorationStyle, .amiga)
+        XCTAssertEqual(prefs.decorationStyle, .amigaPixel)
         XCTAssertTrue(prefs.crtEnabled)
         XCTAssertEqual(prefs.crtIntensity, 0.7, accuracy: 0.0001)
         XCTAssertEqual(prefs.highlightColorHex, "#FF6F00")
