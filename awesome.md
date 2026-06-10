@@ -88,7 +88,56 @@ medium effort.
 
 ---
 
-## 4. Test gaps (carried forward)
+## 4. Decoration ideas (backlog — none implemented yet)
+
+Brainstormed after the boing-ball work. `DecorationKind` currently knows
+`stripes` and `ball`; several of these want new kinds — `background`, `border`,
+edge strip, pixel `sprite` — and the sprite family can reuse the raster
+machinery `BoingBallDecoration` already has (fixed-resolution bitmap,
+nearest-neighbor upscale, cached `CGImage`). Like the existing ZX/Apple/Amiga
+styles, most are affectionate nods to trademarked designs — the same homage
+spirit, and the same bucket.
+
+### 4.1 Companions to existing styles
+
+- **Boing grid** — the original demo's magenta wireframe grid, drawn faintly
+  behind the whole panel. Pairs with the ball, so the Amiga preset becomes a
+  full diorama. (Background kind.)
+- **Synthwave sun** — a striped setting-sun semicircle in a corner; the natural
+  partner for the Vaporwave stripes + CRT mode.
+- **Spectrum loading border** — alternating cyan/yellow bars around the panel's
+  edge, the tape-loading screen every 80s kid stared at. Pairs with the ZX
+  stripes. (Border kind — one clipped stroke.)
+
+### 4.2 Pixel sprites (data-driven bitmaps over the boing-ball raster path)
+
+- **Tetromino stack** — a few classic pieces snugged into the top corner as if
+  mid-fall. Blocks stacking into a corner is exactly what tetrominoes do;
+  the strongest candidate of the lot.
+- **Space invader** — the 11×8 alien, crisp chunky pixels in the corner.
+- **Clarus the dogcow** — Susan Kare deep cut for the Mac faithful. Moof.
+
+### 4.3 More machine homages
+
+- **C64** — dark-blue panel with the boot screen's lighter-blue inner border;
+  optionally a tiny `READY.` with a blinking block cursor.
+- **Atari woodgrain** — a 2600-style woodgrain strip along the panel's bottom
+  edge. Ridiculous in the best way.
+- **Classic Mac title bar** — the System 7 six-pinstripe title bar with a close
+  box across the panel top; makes the switcher read as a vintage window.
+- **IBM stripes** — the eight-bar blue monogram stack in a corner.
+
+### 4.4 Pure delight
+
+- **Googly eyes (xeyes)** — two eyes in the corner whose pupils *track the
+  highlighted icon*. The only one needing model wiring (the selection index)
+  rather than just preferences; also the one people would screenshot.
+- **"Surprise me"** — a meta-style that picks a random decoration per session.
+  Zero drawing code, instant charm.
+
+---
+
+## 5. Test gaps (carried forward)
 
 - Reverse-cycling / commit / cancel still depend on AppKit and remain untested
   (acknowledged in `ISSUES.md`).
