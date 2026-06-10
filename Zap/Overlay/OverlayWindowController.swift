@@ -190,10 +190,10 @@ final class OverlayWindowController {
         model.selectedIndex = index
     }
 
-    /// Updates the type-to-search query badge shown above the icon row. The badge
-    /// appearing or disappearing changes the panel height, so re-fit the window
-    /// (keeping its top fixed) on that transition; plain edits to the text don't
-    /// resize it.
+    /// Updates the type-to-search query badge shown below the icon row. The badge
+    /// appearing or disappearing changes the panel height, so re-fit the window on
+    /// that transition; plain edits to the text don't resize it. The top edge stays
+    /// fixed and the badge is below the row, so the icons never move.
     func setTypeQuery(_ query: String) {
         let togglesBadge = query.isEmpty != model.typeQuery.isEmpty
         model.typeQuery = query
