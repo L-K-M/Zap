@@ -23,6 +23,8 @@ final class Preferences: ObservableObject {
         static let decorationPosition = DecorationPosition.topTrailing
         static let decorationOpacity = 1.0
         static let decorationSize = 10.0
+        static let crtEnabled = false
+        static let crtIntensity = 0.6
         static let highlightColorHex = "#0A84FF"
         static let labelColorHex = "#FFFFFF"
         static let backgroundOpacity = 0.55
@@ -45,6 +47,8 @@ final class Preferences: ObservableObject {
         static let decorationPosition = "decorationPosition"
         static let decorationOpacity = "decorationOpacity"
         static let decorationSize = "decorationSize"
+        static let crtEnabled = "crtEnabled"
+        static let crtIntensity = "crtIntensity"
         static let highlightColorHex = "highlightColorHex"
         static let labelColorHex = "labelColorHex"
         static let backgroundOpacity = "backgroundOpacity"
@@ -112,6 +116,17 @@ final class Preferences: ObservableObject {
     /// Thickness of each band in the corner decoration.
     @Published var decorationSize: Double {
         didSet { defaults.set(decorationSize, forKey: Key.decorationSize) }
+    }
+
+    /// Whether an optional CRT overlay (scanlines + vignette) is drawn over the
+    /// panel for a retro look.
+    @Published var crtEnabled: Bool {
+        didSet { defaults.set(crtEnabled, forKey: Key.crtEnabled) }
+    }
+
+    /// Strength of the CRT overlay, 0...1 (scanline darkness + vignette depth).
+    @Published var crtIntensity: Double {
+        didSet { defaults.set(crtIntensity, forKey: Key.crtIntensity) }
     }
 
     @Published var highlightColorHex: String {
@@ -216,6 +231,8 @@ final class Preferences: ObservableObject {
         decorationPosition = DecorationPosition(rawValue: defaults.string(forKey: Key.decorationPosition) ?? "") ?? Default.decorationPosition
         decorationOpacity = Self.clamp(defaults.object(forKey: Key.decorationOpacity) as? Double ?? Default.decorationOpacity, 0, 1, Default.decorationOpacity)
         decorationSize = Self.clamp(defaults.object(forKey: Key.decorationSize) as? Double ?? Default.decorationSize, 4, 30, Default.decorationSize)
+        crtEnabled = defaults.object(forKey: Key.crtEnabled) as? Bool ?? Default.crtEnabled
+        crtIntensity = Self.clamp(defaults.object(forKey: Key.crtIntensity) as? Double ?? Default.crtIntensity, 0, 1, Default.crtIntensity)
         highlightColorHex = Self.validColor(defaults.string(forKey: Key.highlightColorHex), default: Default.highlightColorHex)
         labelColorHex = Self.validColor(defaults.string(forKey: Key.labelColorHex), default: Default.labelColorHex)
 

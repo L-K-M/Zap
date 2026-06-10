@@ -62,6 +62,12 @@ struct OverlayView: View {
         .padding(outerPadding)
         .background(panelBackground)
         .clipShape(RoundedRectangle(cornerRadius: preferences.cornerRadius, style: .continuous))
+        .overlay {
+            if preferences.crtEnabled {
+                CRTScreenOverlay(intensity: preferences.crtIntensity,
+                                 cornerRadius: preferences.cornerRadius)
+            }
+        }
         .overlay(
             RoundedRectangle(cornerRadius: preferences.cornerRadius, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
@@ -101,14 +107,31 @@ struct OverlayView: View {
             VisualEffectBlur()
             backgroundFill
                 .opacity(preferences.backgroundOpacity)
-            if preferences.decorationStyle != .none {
-                PanelDecoration(style: preferences.decorationStyle,
-                                position: preferences.decorationPosition,
-                                cornerRadius: preferences.cornerRadius,
-                                thickness: preferences.decorationSize)
-                    .opacity(preferences.decorationOpacity)
-            }
+            decoration
+                .opacity(preferences.decorationOpacity)
         }
+    }
+
+    /// The corner decoration: the boing ball for the Amiga style, diagonal stripes
+    /// for the others, nothing for `.none`.
+    @ViewBuilder
+    private var decoration: some View {
+        if preferences.decorationStyle == .amiga {
+            BoingBallDecoration(position: preferences.decorationPosition,
+                                cornerRadius: preferences.cornerRadius,
+                                diameter: ballDiameter)
+        } else if preferences.decorationStyle != .none {
+            PanelDecoration(style: preferences.decorationStyle,
+                            position: preferences.decorationPosition,
+                            cornerRadius: preferences.cornerRadius,
+                            thickness: preferences.decorationSize)
+        }
+    }
+
+    /// The boing ball's diameter, scaled off the shared decoration-size slider so
+    /// the one control sizes both the stripes and the ball sensibly.
+    private var ballDiameter: CGFloat {
+        min(120, max(24, preferences.decorationSize * 3))
     }
 
     /// The tint behind the blur: either a solid color or a gradient.

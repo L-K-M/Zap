@@ -111,6 +111,37 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(prefs.gradientColorHex, Preferences.Default.gradientColorHex)
     }
 
+    func testCRTDefaults() {
+        let prefs = Preferences(defaults: defaults)
+        XCTAssertFalse(prefs.crtEnabled)
+        XCTAssertEqual(prefs.crtIntensity, Preferences.Default.crtIntensity)
+    }
+
+    func testCRTRoundTrip() {
+        let prefs = Preferences(defaults: defaults)
+        prefs.crtEnabled = true
+        prefs.crtIntensity = 0.3
+
+        let reloaded = Preferences(defaults: defaults)
+        XCTAssertTrue(reloaded.crtEnabled)
+        XCTAssertEqual(reloaded.crtIntensity, 0.3)
+    }
+
+    func testOutOfRangeCRTIntensityIsClamped() {
+        defaults.set(4.0, forKey: "crtIntensity")
+        XCTAssertEqual(Preferences(defaults: defaults).crtIntensity, 1)
+        defaults.set(-1.0, forKey: "crtIntensity")
+        XCTAssertEqual(Preferences(defaults: defaults).crtIntensity, 0)
+    }
+
+    func testAmigaDecorationRoundTrips() {
+        let prefs = Preferences(defaults: defaults)
+        prefs.decorationStyle = .amiga
+        XCTAssertEqual(Preferences(defaults: defaults).decorationStyle, .amiga)
+        XCTAssertEqual(DecorationStyle.amiga.kind, .ball)
+        XCTAssertEqual(DecorationStyle.zxSpectrum.kind, .stripes)
+    }
+
     func testShowWindowPreviewsRoundTrip() {
         let prefs = Preferences(defaults: defaults)
         prefs.showWindowPreviews = true
