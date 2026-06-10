@@ -40,23 +40,26 @@ final class IconRowGeometryTests: XCTestCase {
     // MARK: Which edge fades
 
     func testScrolledToStartFadesOnlyTheRight() {
+        // 1148pt hidden on the right, far more than the 80pt ramp, so the trailing
+        // band is the full ramp wide; the flush left edge stays crisp.
         let fade = geometry(count: 20, viewport: 1000).fade(offset: 0, fadeWidth: 80)
         XCTAssertEqual(fade.leading, 0, accuracy: accuracy)
-        XCTAssertEqual(fade.trailing, 1, accuracy: accuracy)
+        XCTAssertEqual(fade.trailing, 80.0 / 1000.0, accuracy: accuracy)
     }
 
     func testScrolledToEndFadesOnlyTheLeft() {
         let g = geometry(count: 20, viewport: 1000)
         let fade = g.fade(offset: g.maxScroll, fadeWidth: 80)
-        XCTAssertEqual(fade.leading, 1, accuracy: accuracy)
+        XCTAssertEqual(fade.leading, 80.0 / 1000.0, accuracy: accuracy)
         XCTAssertEqual(fade.trailing, 0, accuracy: accuracy)
     }
 
     func testMidScrollFadesBothEdges() {
         let g = geometry(count: 20, viewport: 1000)
         let fade = g.fade(offset: g.maxScroll / 2, fadeWidth: 80)
-        XCTAssertGreaterThan(fade.leading, 0)
-        XCTAssertGreaterThan(fade.trailing, 0)
+        // Plenty hidden on both sides, so each band is the full ramp wide.
+        XCTAssertEqual(fade.leading, 80.0 / 1000.0, accuracy: accuracy)
+        XCTAssertEqual(fade.trailing, 80.0 / 1000.0, accuracy: accuracy)
     }
 
     // MARK: Centred offset drives the fade ends
@@ -78,33 +81,48 @@ final class IconRowGeometryTests: XCTestCase {
 
     // MARK: Exact ramp values
 
-    /// 5 icons (528pt) in a 480pt viewport ⇒ 48pt of scroll, 80pt ramp.
+    /// 5 icons (528pt) in a 480pt viewport ⇒ only 48pt of overflow, less than the
+    /// 80pt ramp, so each fade band is exactly the content hidden on that side.
     func testPartialFadeRampValues() {
         let g = geometry(count: 5, viewport: 480)
         XCTAssertEqual(g.maxScroll, 48, accuracy: accuracy)
 
-        // Start: no left fade, 48/80 of a right fade.
+        // Start: left crisp, the 48pt hidden on the right as a 48/480 band.
         XCTAssertEqual(g.fade(offset: 0, fadeWidth: 80).leading, 0, accuracy: accuracy)
-        XCTAssertEqual(g.fade(offset: 0, fadeWidth: 80).trailing, 0.6, accuracy: accuracy)
-        // Middle of the range: symmetric half-ramp.
-        XCTAssertEqual(g.fade(offset: 24, fadeWidth: 80).leading, 0.3, accuracy: accuracy)
-        XCTAssertEqual(g.fade(offset: 24, fadeWidth: 80).trailing, 0.3, accuracy: accuracy)
-        // End: 48/80 of a left fade, no right fade.
-        XCTAssertEqual(g.fade(offset: 48, fadeWidth: 80).leading, 0.6, accuracy: accuracy)
+        XCTAssertEqual(g.fade(offset: 0, fadeWidth: 80).trailing, 48.0 / 480.0, accuracy: accuracy)
+        // Middle of the range: the hidden content splits evenly between the edges.
+        XCTAssertEqual(g.fade(offset: 24, fadeWidth: 80).leading, 24.0 / 480.0, accuracy: accuracy)
+        XCTAssertEqual(g.fade(offset: 24, fadeWidth: 80).trailing, 24.0 / 480.0, accuracy: accuracy)
+        // End: 48pt hidden on the left, right crisp.
+        XCTAssertEqual(g.fade(offset: 48, fadeWidth: 80).leading, 48.0 / 480.0, accuracy: accuracy)
         XCTAssertEqual(g.fade(offset: 48, fadeWidth: 80).trailing, 0, accuracy: accuracy)
     }
 
-    // MARK: Ramp width
+    // MARK: Band width
 
-    func testRampInsetIsFadeWidthOverViewport() {
+    func testFadeBandIsFadeWidthOverViewportWhenContentExceedsIt() {
+        // Far more overflow than the ramp, so the trailing band is the full ramp wide.
         let fade = geometry(count: 20, viewport: 480).fade(offset: 0, fadeWidth: 80)
-        XCTAssertEqual(fade.inset, 80.0 / 480.0, accuracy: accuracy)
+        XCTAssertEqual(fade.trailing, 80.0 / 480.0, accuracy: accuracy)
     }
 
     func testRampIsClampedToAThirdOfTheViewport() {
-        let g = geometry(count: 5, viewport: 480)
-        let fade = g.fade(offset: 0, fadeWidth: 10_000)
-        XCTAssertEqual(fade.inset, 1.0 / 3.0, accuracy: accuracy)   // ramp clamped to 160
-        XCTAssertEqual(fade.trailing, 48.0 / 160.0, accuracy: accuracy)
+        // A huge fadeWidth is clamped to viewport/3 (160); with ample overflow the
+        // band reaches that clamp, so it spans 160/480 = 1/3 of the viewport.
+        let fade = geometry(count: 20, viewport: 480).fade(offset: 0, fadeWidth: 10_000)
+        XCTAssertEqual(fade.trailing, 1.0 / 3.0, accuracy: accuracy)
+    }
+
+    // MARK: Regression — soft fade survives to the end of the scroll
+
+    /// Near the end of a long row a small sliver is still hidden on the right, so the
+    /// trailing edge must keep a (narrow) soft fade tracking that sliver rather than
+    /// hardening into an opaque cut as it nears flush.
+    func testNearEndKeepsSoftFadeOverHiddenSliver() {
+        let g = geometry(count: 20, viewport: 1000)        // 1148pt of overflow
+        let hidden: CGFloat = 20
+        let fade = g.fade(offset: g.maxScroll - hidden, fadeWidth: 80)
+        XCTAssertGreaterThan(fade.trailing, 0)
+        XCTAssertEqual(fade.trailing, hidden / 1000.0, accuracy: accuracy)
     }
 }
