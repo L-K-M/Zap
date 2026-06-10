@@ -627,7 +627,10 @@ final class SwitcherController {
             overlay.clearWindows()
         } else {
             windowSelectedIndex = min(index, windows.count - 1)
+            // `setWindows` resets the thumbnail map, so re-request previews for the
+            // remaining windows; the provider's cache makes this nearly free.
             overlay.setWindows(windows, selected: windowSelectedIndex)
+            loadThumbnails()
         }
     }
 
