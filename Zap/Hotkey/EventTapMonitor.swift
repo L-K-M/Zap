@@ -13,15 +13,18 @@ final class EventTapMonitor {
     var onCycle: ((_ forward: Bool) -> Void)?
     /// Called when the Command key is released while the overlay is visible.
     var onCommit: (() -> Void)?
-    /// Called when the user cancels (Escape) while the overlay is visible.
-    var onCancel: (() -> Void)?
-    /// Called when the user presses ⌘Q on the selection (optional handler).
-    var onQuitSelected: (() -> Void)?
-    /// Called when the user presses ⌘H on the selection: hide the app (or un-hide
-    /// it when it's already hidden), matching the native switcher.
-    var onHideSelected: (() -> Void)?
-    /// Called when the user presses ⌘W with a window focused in the window list.
-    var onCloseWindow: (() -> Void)?
+    /// Called when the user presses Escape while the overlay is visible. The
+    /// controller decides whether that clears the search query or cancels.
+    var onEscape: (() -> Void)?
+    /// Called when one of the dual-purpose action keys (Q/H/W) goes down
+    /// mid-session. `character` is the layout-aware letter the key would type
+    /// (for type-to-search; `nil` if it types nothing) and `isRepeat` marks the
+    /// auto-repeat events of a held key. The controller decides by context
+    /// whether the key acts (quit/hide/close) or types.
+    var onShortcutKey: ((_ key: ShortcutKey, _ character: Character?, _ isRepeat: Bool) -> Void)?
+    /// Called when a dual-purpose action key is released, resolving a potential
+    /// tap-vs-hold in favor of the tap.
+    var onShortcutKeyUp: ((_ key: ShortcutKey) -> Void)?
     /// Called when the user presses an arrow key. Down enters/advances the window
     /// list/grid; Up steps back (eventually returning focus to the app row);
     /// Left/Right move within a preview-grid row — or, while the app row is
@@ -53,8 +56,11 @@ final class EventTapMonitor {
     func start() -> Bool {
         guard eventTap == nil else { return true }
 
+        // Key-ups are tapped only to resolve the tap-vs-hold of the dual-purpose
+        // action keys (Q/H/W); all others pass straight through.
         let mask: CGEventMask =
             CGEventMask(1 << CGEventType.keyDown.rawValue) |
+            CGEventMask(1 << CGEventType.keyUp.rawValue) |
             CGEventMask(1 << CGEventType.flagsChanged.rawValue)
 
         let callback: CGEventTapCallBack = { _, type, event, refcon in
@@ -153,21 +159,21 @@ final class EventTapMonitor {
             }
 
             // Keys handled only while the overlay is up.
+            let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
             switch keyCode {
             case KeyCode.escape:
-                onCancel?()
+                onEscape?()
                 return nil
             case KeyCode.q:
-                // Quit the highlighted app (Command is still held here).
-                onQuitSelected?()
+                // Q/H/W double as shortcuts (quit/hide/close window) and search
+                // letters; forward both readings for the controller to route.
+                onShortcutKey?(.quit, typedCharacter(for: event), isRepeat)
                 return nil
             case KeyCode.h:
-                // Hide (or un-hide) the highlighted app, like the native switcher.
-                onHideSelected?()
+                onShortcutKey?(.hide, typedCharacter(for: event), isRepeat)
                 return nil
             case KeyCode.w:
-                // Close the focused window in the window list (if any).
-                onCloseWindow?()
+                onShortcutKey?(.closeWindow, typedCharacter(for: event), isRepeat)
                 return nil
             case KeyCode.arrowDown:
                 onNavigateWindows?(.down)
@@ -193,6 +199,26 @@ final class EventTapMonitor {
                     onType?(character)
                 }
                 return nil
+            }
+
+        case .keyUp:
+            guard isSwitching() else {
+                return Unmanaged.passUnretained(event)
+            }
+            // Releasing a dual-purpose key resolves its tap-vs-hold; consume the
+            // key-up for symmetry with its consumed key-down.
+            switch event.getIntegerValueField(.keyboardEventKeycode) {
+            case KeyCode.q:
+                onShortcutKeyUp?(.quit)
+                return nil
+            case KeyCode.h:
+                onShortcutKeyUp?(.hide)
+                return nil
+            case KeyCode.w:
+                onShortcutKeyUp?(.closeWindow)
+                return nil
+            default:
+                return Unmanaged.passUnretained(event)
             }
 
         default:
