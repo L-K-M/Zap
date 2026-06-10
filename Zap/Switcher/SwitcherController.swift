@@ -163,6 +163,7 @@ final class SwitcherController {
         eventTap.onCommit = { [weak self] in self?.commit() }
         eventTap.onCancel = { [weak self] in self?.cancel() }
         eventTap.onQuitSelected = { [weak self] in self?.quitSelected() }
+        eventTap.onHideSelected = { [weak self] in self?.hideSelected() }
         eventTap.onCloseWindow = { [weak self] in self?.closeFocusedWindow() }
         eventTap.onNavigateWindows = { [weak self] direction in self?.navigateWindows(direction) }
     }
@@ -389,6 +390,23 @@ final class SwitcherController {
         restartDwell()
     }
 
+    /// Hides the highlighted app (⌘H), or un-hides it when it's already hidden —
+    /// matching the native switcher. The session stays up so the user can keep
+    /// cycling; the dwell restarts because hiding closes the app's visible windows.
+    private func hideSelected() {
+        guard isSessionActive, apps.indices.contains(selectedIndex) else { return }
+        let target = apps[selectedIndex]
+        // Don't toggle an app that's on its way out.
+        guard !quittingPIDs.contains(target.processIdentifier) else { return }
+        guard let runningApp = provider.runningApplication(for: target) else { return }
+        if runningApp.isHidden {
+            runningApp.unhide()
+        } else {
+            runningApp.hide()
+        }
+        restartDwell()
+    }
+
     /// Starts the one-shot timer that checks whether `runningApp` actually quit.
     private func scheduleQuitVerification(for runningApp: NSRunningApplication) {
         let pid = runningApp.processIdentifier
@@ -535,6 +553,12 @@ final class SwitcherController {
     /// (Up/Down move a row, Left/Right a column). Up from the top row returns focus
     /// to the app row, matching the list behavior.
     private func navigateWindows(_ direction: WindowNavDirection) {
+        // While the app row is focused (no window highlighted), ←/→ move the app
+        // selection itself, matching the native switcher's arrow-key behavior.
+        if windowSelectedIndex == nil, direction == .left || direction == .right {
+            advanceSelection(forward: direction == .right)
+            return
+        }
         guard !windows.isEmpty else { return }
         let columns = preferences.showWindowPreviews ? max(1, overlay.windowGridColumns) : 1
         let next = Self.nextWindowSelection(from: windowSelectedIndex, direction: direction,

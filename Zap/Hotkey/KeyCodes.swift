@@ -7,6 +7,7 @@ enum KeyCode {
     static let escape: Int64 = 0x35   // 53
     static let q: Int64 = 0x0C        // 12
     static let w: Int64 = 0x0D        // 13
+    static let h: Int64 = 0x04        // 4
     static let arrowLeft: Int64 = 0x7B  // 123
     static let arrowRight: Int64 = 0x7C // 124
     static let arrowDown: Int64 = 0x7D  // 125
