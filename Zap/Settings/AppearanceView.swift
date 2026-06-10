@@ -169,7 +169,7 @@ struct AppearanceView: View {
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = "Zap Theme.json"
         panel.canCreateDirectories = true
-        guard panel.runModal == .OK, let url = panel.url else { return }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try data.write(to: url)
         } catch {
@@ -183,7 +183,7 @@ struct AppearanceView: View {
         panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        guard panel.runModal == .OK, let url = panel.url else { return }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
         guard let data = try? Data(contentsOf: url),
               let preset = try? JSONDecoder().decode(AppearancePreset.self, from: data) else {
             NSLog("Zap: couldn't read a theme from \(url.lastPathComponent)")
