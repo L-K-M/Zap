@@ -1,9 +1,10 @@
 import SwiftUI
 import Foundation
 
-/// The Commodore Amiga "boing ball": a red-and-white checkered sphere, nestled in
-/// one of the panel's top corners. Companion to `PanelDecoration` (the stripe
-/// styles) for `DecorationStyle.amiga`.
+/// The Commodore Amiga "boing ball": a red-and-white checkered sphere tucked into
+/// one of the panel's top corners — the disc overshoots the two panel edges and
+/// the panel's rounded clip trims it flush, the same treatment the stripe styles
+/// get (see `PanelDecoration`). Companion to those for `DecorationStyle.amiga`.
 ///
 /// The checker is a genuine spherical mapping rather than a flat grid: for each
 /// sample inside the disc we recover the front-hemisphere point of a unit sphere
@@ -31,11 +32,10 @@ struct BoingBallDecoration: View {
     var body: some View {
         Canvas { context, size in
             let radius = diameter / 2
-            // Inset from the corner so the ball clears the rounded edge, scaling the
-            // inset gently with the corner radius (as the stripes do).
-            let inset = cornerRadius * 0.5 + 6
-            let centerX = position == .topTrailing ? size.width - inset - radius : inset + radius
-            let center = CGPoint(x: centerX, y: inset + radius)
+            // Tuck the ball into the corner: most of the disc inside the panel, the
+            // rest overshooting the two edges for the rounded clip to trim flush.
+            let center = Self.center(in: size, position: position,
+                                     cornerRadius: cornerRadius, radius: radius)
 
             // Clean circular edge over the chunky sample grid.
             let disc = Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius,
@@ -80,5 +80,19 @@ struct BoingBallDecoration: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(false)
+    }
+
+    /// Centre of the ball, sitting on the corner's 45° diagonal so the disc
+    /// occupies the corner like the stripe decorations: pushed inward of the
+    /// rounded edge (the same `cornerRadius·(√2 − 1)` inset the stripes use) by
+    /// most of a radius, leaving the rest of the disc to overshoot both panel
+    /// edges and be trimmed flush by the panel's clip. Pure, for unit testing.
+    static func center(in size: CGSize, position: DecorationPosition,
+                       cornerRadius: CGFloat, radius: CGFloat) -> CGPoint {
+        let cornerInset = cornerRadius * (2.0.squareRoot() - 1)
+        let diagonal = cornerInset + radius * 0.8
+        let perAxis = diagonal / 2.0.squareRoot()
+        let x = position == .topTrailing ? size.width - perAxis : perAxis
+        return CGPoint(x: x, y: perAxis)
     }
 }
