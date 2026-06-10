@@ -67,6 +67,7 @@ final class Preferences: ObservableObject {
         static let closeOnClickOutside = "closeOnClickOutside"
         static let showOnAllScreens = "showOnAllScreens"
         static let includeFullScreenWindows = "includeFullScreenWindows"
+        static let scrollHapticsEnabled = "scrollHapticsEnabled"
         static let switchCountTotal = "switchCountTotal"
         static let switchCountToday = "switchCountToday"
         static let switchCountDay = "switchCountDay"
@@ -218,6 +219,12 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(includeFullScreenWindows, forKey: Key.includeFullScreenWindows) }
     }
 
+    /// Whether scrolling the icon row gives a faint haptic tick as the centred icon
+    /// changes. Off by default; only does anything on a Force Touch trackpad.
+    @Published var scrollHapticsEnabled: Bool {
+        didSet { defaults.set(scrollHapticsEnabled, forKey: Key.scrollHapticsEnabled) }
+    }
+
     // MARK: Switch counter
 
     /// Total number of switches Zap has performed, all-time. A telemetry-free bit
@@ -267,6 +274,7 @@ final class Preferences: ObservableObject {
         closeOnClickOutside = defaults.object(forKey: Key.closeOnClickOutside) as? Bool ?? true
         showOnAllScreens = defaults.object(forKey: Key.showOnAllScreens) as? Bool ?? false
         includeFullScreenWindows = defaults.object(forKey: Key.includeFullScreenWindows) as? Bool ?? false
+        scrollHapticsEnabled = defaults.object(forKey: Key.scrollHapticsEnabled) as? Bool ?? false
         switchCountTotal = max(0, defaults.integer(forKey: Key.switchCountTotal))
         switchCountToday = max(0, defaults.integer(forKey: Key.switchCountToday))
         switchCountDay = defaults.string(forKey: Key.switchCountDay) ?? ""

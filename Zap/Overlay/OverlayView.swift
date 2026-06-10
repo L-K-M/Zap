@@ -7,7 +7,7 @@ struct OverlayView: View {
     @ObservedObject var model: OverlayModel
     @ObservedObject var preferences: Preferences
 
-    private var iconSpacing: CGFloat { 12 }
+    private var iconSpacing: CGFloat { IconRowMetrics.spacing }
     private var outerPadding: CGFloat { preferences.contentPadding }
 
     var body: some View {
@@ -81,7 +81,7 @@ struct OverlayView: View {
     }
 
     /// Footprint of one icon: the image plus its 8pt padding on each side.
-    private var cellWidth: CGFloat { preferences.iconSize + 16 }
+    private var cellWidth: CGFloat { IconRowMetrics.cellWidth(iconSize: preferences.iconSize) }
 
     private var maxRowWidth: CGFloat {
         let count = max(model.apps.count, 1)

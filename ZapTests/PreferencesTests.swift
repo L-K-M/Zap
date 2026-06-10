@@ -171,6 +171,13 @@ final class PreferencesTests: XCTestCase {
         XCTAssertTrue(Preferences(defaults: defaults).includeFullScreenWindows)
     }
 
+    func testScrollHapticsDefaultsOffAndRoundTrips() {
+        XCTAssertFalse(Preferences(defaults: defaults).scrollHapticsEnabled)
+
+        Preferences(defaults: defaults).scrollHapticsEnabled = true
+        XCTAssertTrue(Preferences(defaults: defaults).scrollHapticsEnabled)
+    }
+
     func testExclusionsRoundTrip() {
         let prefs = Preferences(defaults: defaults)
         prefs.setExcluded(true, bundleID: "com.apple.Safari")
