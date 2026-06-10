@@ -7,12 +7,23 @@ import AppKit
 final class AppListProvider {
 
     private let preferences: Preferences
-    private let mru = MRUTracker()
+    private let defaults: UserDefaults
+    private let mru: MRUTracker
     private let ownBundleID = Bundle.main.bundleIdentifier
     private var activationObserver: NSObjectProtocol?
 
-    init(preferences: Preferences) {
+    /// `UserDefaults` key under which the MRU order is persisted across launches.
+    private static let mruOrderKey = "mruOrder"
+    /// How many bundle identifiers to persist — generous for any realistic app set
+    /// while keeping the stored array bounded.
+    private static let mruPersistLimit = 50
+
+    init(preferences: Preferences, defaults: UserDefaults = .standard) {
         self.preferences = preferences
+        self.defaults = defaults
+        // Seed from the previous session's order so the first ⌘-Tab after launch
+        // highlights a sensible "previous" app instead of process-table order.
+        self.mru = MRUTracker(order: defaults.stringArray(forKey: Self.mruOrderKey) ?? [])
         seedMRU()
         observeActivations()
     }
@@ -63,7 +74,13 @@ final class AppListProvider {
         if let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
            !isOwnBundleID(front) {
             mru.recordActivation(bundleID: front)
+            persistMRU()
         }
+    }
+
+    /// Saves the (capped) MRU order so the next launch can seed from it.
+    private func persistMRU() {
+        defaults.set(Array(mru.order.prefix(Self.mruPersistLimit)), forKey: Self.mruOrderKey)
     }
 
     private func isOwnBundleID(_ bundleID: String) -> Bool {
@@ -84,6 +101,7 @@ final class AppListProvider {
                 !isOwnBundleID(bundleID)
             else { return }
             mru.recordActivation(bundleID: bundleID)
+            persistMRU()
         }
     }
 }
