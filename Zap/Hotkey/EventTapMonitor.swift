@@ -27,6 +27,13 @@ final class EventTapMonitor {
     /// Left/Right move within a preview-grid row — or, while the app row is
     /// focused, move the app selection itself.
     var onNavigateWindows: ((_ direction: WindowNavDirection) -> Void)?
+    /// Called when the user types a printable character mid-session (no ⌘-combo
+    /// of our own). The controller uses it for type-to-search and number-key jumps.
+    /// The character is layout-aware (see `typedCharacter(for:)`).
+    var onType: ((_ character: Character) -> Void)?
+    /// Called when the user presses Delete/Backspace mid-session, to edit the
+    /// type-to-search query.
+    var onDeleteBackward: (() -> Void)?
     /// Whether a switch session is currently active (overlay shown or pending).
     /// Drives commit/cancel behavior.
     var isSwitching: () -> Bool = { false }
@@ -174,13 +181,41 @@ final class EventTapMonitor {
             case KeyCode.arrowRight:
                 onNavigateWindows?(.right)
                 return nil
+            case KeyCode.delete:
+                // Backspace edits the type-to-search query.
+                onDeleteBackward?()
+                return nil
             default:
-                // Swallow other keys so they don't leak to the front app mid-switch.
+                // Forward a printable character for type-to-search / number-key
+                // jumps; otherwise swallow the key so it doesn't leak to the front
+                // app mid-switch.
+                if let character = typedCharacter(for: event) {
+                    onType?(character)
+                }
                 return nil
             }
 
         default:
             return Unmanaged.passUnretained(event)
         }
+    }
+
+    /// The character a key event would type with its modifiers cleared, so it's the
+    /// plain (lowercased, unshifted) letter/digit. Reading it from the event makes
+    /// this layout-aware — an AZERTY `A` is reported as `a`, not the US `q` at that
+    /// position — unlike the position-based `KeyCode` constants. Clearing the flags
+    /// first also avoids Command suppressing text generation. Returns `nil` for keys
+    /// that produce no text (function keys, etc.).
+    private func typedCharacter(for event: CGEvent) -> Character? {
+        var length = 0
+        var characters = [UniChar](repeating: 0, count: 4)
+        let savedFlags = event.flags
+        event.flags = []
+        event.keyboardGetUnicodeString(maxStringLength: characters.count,
+                                       actualStringLength: &length,
+                                       unicodeString: &characters)
+        event.flags = savedFlags
+        guard length > 0 else { return nil }
+        return String(decoding: characters.prefix(length), as: UTF16.self).first
     }
 }

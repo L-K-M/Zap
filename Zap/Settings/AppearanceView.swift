@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 /// Color and size customization with a live preview of the overlay.
 struct AppearanceView: View {
@@ -15,6 +16,22 @@ struct AppearanceView: View {
             Divider()
 
             Form {
+                Section("Presets") {
+                    Menu("Apply a built-in theme") {
+                        ForEach(AppearancePreset.builtIns) { preset in
+                            Button(preset.name) { preset.apply(to: preferences) }
+                        }
+                    }
+                    HStack {
+                        Button("Import…", action: importPreset)
+                        Button("Export…", action: exportPreset)
+                        Spacer()
+                    }
+                    Text("Apply a ready-made theme, or save the current look as a shareable .json file to import later or send to a friend.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Colors") {
                     ColorPicker("Background", selection: colorBinding(\.backgroundColorHex), supportsOpacity: false)
                     Toggle("Gradient background", isOn: $preferences.useGradientBackground)
@@ -55,9 +72,19 @@ struct AppearanceView: View {
                                 Text(position.label).tag(position)
                             }
                         }
-                        sliderRow("Band size", value: $preferences.decorationSize, range: 4...30, step: 1)
+                        sliderRow(decorationSizeLabel, value: $preferences.decorationSize, range: 4...30, step: 1)
                         sliderRow("Opacity", value: $preferences.decorationOpacity, range: 0...1)
                     }
+                }
+
+                Section("CRT effect") {
+                    Toggle("Scanlines & vignette", isOn: $preferences.crtEnabled)
+                    if preferences.crtEnabled {
+                        sliderRow("Intensity", value: $preferences.crtIntensity, range: 0...1)
+                    }
+                    Text("A retro CRT overlay drawn over the panel. Subtle by default.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section {
@@ -67,6 +94,12 @@ struct AppearanceView: View {
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
         }
+    }
+
+    /// "Ball size" for the boing ball (which the slider scales), "Band size" for
+    /// the stripe styles (where it's each band's thickness).
+    private var decorationSizeLabel: String {
+        preferences.decorationStyle == .amiga ? "Ball size" : "Band size"
     }
 
     // MARK: Preview
@@ -123,6 +156,42 @@ struct AppearanceView: View {
         )
     }
 
+    // MARK: Presets
+
+    /// Writes the current appearance to a user-chosen `.json` file.
+    private func exportPreset() {
+        let preset = AppearancePreset(name: "Zap Theme", from: preferences)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(preset) else { return }
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "Zap Theme.json"
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try data.write(to: url)
+        } catch {
+            NSLog("Zap: failed to export theme: \(error.localizedDescription)")
+        }
+    }
+
+    /// Reads a `.json` theme file and applies it (validating every value).
+    private func importPreset() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let data = try? Data(contentsOf: url),
+              let preset = try? JSONDecoder().decode(AppearancePreset.self, from: data) else {
+            NSLog("Zap: couldn't read a theme from \(url.lastPathComponent)")
+            return
+        }
+        preset.apply(to: preferences)
+    }
+
     private func resetDefaults() {
         preferences.backgroundColorHex = Preferences.Default.backgroundColorHex
         preferences.useGradientBackground = Preferences.Default.useGradientBackground
@@ -132,6 +201,8 @@ struct AppearanceView: View {
         preferences.decorationPosition = Preferences.Default.decorationPosition
         preferences.decorationOpacity = Preferences.Default.decorationOpacity
         preferences.decorationSize = Preferences.Default.decorationSize
+        preferences.crtEnabled = Preferences.Default.crtEnabled
+        preferences.crtIntensity = Preferences.Default.crtIntensity
         preferences.highlightColorHex = Preferences.Default.highlightColorHex
         preferences.labelColorHex = Preferences.Default.labelColorHex
         preferences.backgroundOpacity = Preferences.Default.backgroundOpacity

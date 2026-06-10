@@ -7,7 +7,7 @@ struct OverlayView: View {
     @ObservedObject var model: OverlayModel
     @ObservedObject var preferences: Preferences
 
-    private var iconSpacing: CGFloat { 12 }
+    private var iconSpacing: CGFloat { IconRowMetrics.spacing }
     private var outerPadding: CGFloat { preferences.contentPadding }
 
     var body: some View {
@@ -19,6 +19,10 @@ struct OverlayView: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(width: panelContentWidth)
+            }
+
+            if !model.typeQuery.isEmpty {
+                searchBadge
             }
 
             HStack(spacing: iconSpacing) {
@@ -58,6 +62,12 @@ struct OverlayView: View {
         .padding(outerPadding)
         .background(panelBackground)
         .clipShape(RoundedRectangle(cornerRadius: preferences.cornerRadius, style: .continuous))
+        .overlay {
+            if preferences.crtEnabled {
+                CRTScreenOverlay(intensity: preferences.crtIntensity,
+                                 cornerRadius: preferences.cornerRadius)
+            }
+        }
         .overlay(
             RoundedRectangle(cornerRadius: preferences.cornerRadius, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
@@ -71,7 +81,7 @@ struct OverlayView: View {
     }
 
     /// Footprint of one icon: the image plus its 8pt padding on each side.
-    private var cellWidth: CGFloat { preferences.iconSize + 16 }
+    private var cellWidth: CGFloat { IconRowMetrics.cellWidth(iconSize: preferences.iconSize) }
 
     private var maxRowWidth: CGFloat {
         let count = max(model.apps.count, 1)
@@ -97,14 +107,31 @@ struct OverlayView: View {
             VisualEffectBlur()
             backgroundFill
                 .opacity(preferences.backgroundOpacity)
-            if preferences.decorationStyle != .none {
-                PanelDecoration(style: preferences.decorationStyle,
-                                position: preferences.decorationPosition,
-                                cornerRadius: preferences.cornerRadius,
-                                thickness: preferences.decorationSize)
-                    .opacity(preferences.decorationOpacity)
-            }
+            decoration
+                .opacity(preferences.decorationOpacity)
         }
+    }
+
+    /// The corner decoration: the boing ball for the Amiga style, diagonal stripes
+    /// for the others, nothing for `.none`.
+    @ViewBuilder
+    private var decoration: some View {
+        if preferences.decorationStyle == .amiga {
+            BoingBallDecoration(position: preferences.decorationPosition,
+                                cornerRadius: preferences.cornerRadius,
+                                diameter: ballDiameter)
+        } else if preferences.decorationStyle != .none {
+            PanelDecoration(style: preferences.decorationStyle,
+                            position: preferences.decorationPosition,
+                            cornerRadius: preferences.cornerRadius,
+                            thickness: preferences.decorationSize)
+        }
+    }
+
+    /// The boing ball's diameter, scaled off the shared decoration-size slider so
+    /// the one control sizes both the stripes and the ball sensibly.
+    private var ballDiameter: CGFloat {
+        min(120, max(24, preferences.decorationSize * 3))
     }
 
     /// The tint behind the blur: either a solid color or a gradient.
@@ -194,6 +221,30 @@ struct OverlayView: View {
             // Dim apps that are quitting until their fate is confirmed.
             .opacity(isQuitting ? 0.3 : 1)
             .animation(.easeOut(duration: 0.15), value: isQuitting)
+    }
+
+    /// The type-to-search query, shown as a small capsule while the user types to
+    /// jump the selection. Dims when nothing matches so a typo is legible.
+    private var searchBadge: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11, weight: .semibold))
+            Text(model.typeQuery)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.head)
+        }
+        .foregroundStyle(Color(hexString: preferences.labelColorHex))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 3)
+        .background(
+            Capsule(style: .continuous)
+                .fill(Color.black.opacity(0.25))
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+        )
     }
 
     // MARK: Window list / grid

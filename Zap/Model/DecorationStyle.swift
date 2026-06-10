@@ -1,8 +1,15 @@
 import SwiftUI
 
+/// How a `DecorationStyle` is drawn: a set of diagonal corner stripes, or the
+/// Amiga "boing ball" nestled in the corner.
+enum DecorationKind: Equatable {
+    case stripes
+    case ball
+}
+
 /// An 80s-flavored corner decoration for the switcher panel — e.g. the Sinclair
-/// ZX Spectrum's diagonal rainbow stripes. Drawn as a small set of parallel
-/// diagonal bars hugging the panel's top corner (see `PanelDecoration`).
+/// ZX Spectrum's diagonal rainbow stripes (see `PanelDecoration`), or the Amiga
+/// boing ball (see `BoingBallDecoration`). Drawn hugging the panel's top corner.
 enum DecorationStyle: String, CaseIterable, Identifiable {
     case none
     case zxSpectrum
@@ -10,6 +17,7 @@ enum DecorationStyle: String, CaseIterable, Identifiable {
     case vaporwave
     case sunset
     case love
+    case amiga
 
     var id: String { rawValue }
 
@@ -21,7 +29,13 @@ enum DecorationStyle: String, CaseIterable, Identifiable {
         case .vaporwave: return "Vaporwave"
         case .sunset: return "Sunset"
         case .love: return "Love"
+        case .amiga: return "Amiga boing ball"
         }
+    }
+
+    /// Whether this style is drawn as corner stripes or as the boing ball.
+    var kind: DecorationKind {
+        self == .amiga ? .ball : .stripes
     }
 
     /// Stripe colors, ordered from the one nearest the corner inward. Empty for
@@ -38,6 +52,7 @@ enum DecorationStyle: String, CaseIterable, Identifiable {
         case .vaporwave: return ["#FF6AD5", "#C774E8", "#AD8CFF", "#8795E8", "#94D0FF"]
         case .sunset: return ["#FF512F", "#F09819", "#FFD200"]
         case .love: return ["#E40303", "#FF8C00", "#FFED00", "#008026", "#004DFF", "#750787"]
+        case .amiga: return []   // drawn as a ball, not stripes — see BoingBallDecoration
         }
     }
 }

@@ -44,6 +44,11 @@ final class OverlayWindowController {
     /// continuous row scrolling.
     private var scrollMonitor: Any?
 
+    /// The icon nearest the row's centre at the last scroll-haptic check, so a faint
+    /// tick fires only as the centred icon changes during a continuous scroll. `nil`
+    /// between sessions (reset on show/hide) so the first scroll just sets a baseline.
+    private var lastHapticIndex: Int?
+
     /// Monitors (local + global) that dismiss the overlay when the user clicks
     /// outside it, when `preferences.closeOnClickOutside` is on.
     private var clickOutsideMonitors: [Any] = []
@@ -149,8 +154,10 @@ final class OverlayWindowController {
         model.windowSelectedIndex = nil
         model.windowThumbnails = [:]
         model.dropTargetIndex = nil
+        model.typeQuery = ""
 
         currentScreen = screen
+        lastHapticIndex = nil
         // Reassigning the root view is cheap (the model stays the same) and nudges
         // SwiftUI/AppKit to rebuild a host that may have stopped drawing while idle.
         hostingView.rootView = OverlayView(model: model, preferences: preferences)
@@ -181,6 +188,19 @@ final class OverlayWindowController {
     /// from under the cursor and make the middle ones unclickable).
     func updateHover(_ index: Int) {
         model.selectedIndex = index
+    }
+
+    /// Updates the type-to-search query badge shown above the icon row. The badge
+    /// appearing or disappearing changes the panel height, so re-fit the window
+    /// (keeping its top fixed) on that transition; plain edits to the text don't
+    /// resize it.
+    func setTypeQuery(_ query: String) {
+        let togglesBadge = query.isEmpty != model.typeQuery.isEmpty
+        model.typeQuery = query
+        guard togglesBadge, isVisible else { return }
+        layout(keepTop: true)
+        forceDisplay()
+        syncMirrors()
     }
 
     /// Updates which app icons render dimmed (pending-quit) and moves the
@@ -272,6 +292,7 @@ final class OverlayWindowController {
         model.apps = []
         model.selectedIndex = 0
         model.dropTargetIndex = nil
+        model.typeQuery = ""
         model.scrollOffset = 0
         model.quittingPIDs = []
         model.windows = []
@@ -279,6 +300,7 @@ final class OverlayWindowController {
         model.windowThumbnails = [:]
         anchorTop = nil
         currentScreen = nil
+        lastHapticIndex = nil
     }
 
     private func refreshWindowIfNeeded() {
@@ -317,9 +339,10 @@ final class OverlayWindowController {
 
     /// Geometry of the icon row, mirroring `OverlayView`: the viewport is the row's
     /// natural width capped at `maxContentWidth` (which `layout` keeps current).
+    /// Both sides derive their cell/spacing inputs from `IconRowMetrics`.
     private func iconRowGeometry() -> IconRowGeometry {
-        let cellWidth = preferences.iconSize + 16
-        let spacing: CGFloat = 12 // matches OverlayView.iconSpacing
+        let cellWidth = IconRowMetrics.cellWidth(iconSize: preferences.iconSize)
+        let spacing = IconRowMetrics.spacing
         let count = model.apps.count
         let contentWidth = count > 0 ? CGFloat(count) * cellWidth + CGFloat(count - 1) * spacing : 0
         return IconRowGeometry(count: count, cellWidth: cellWidth, spacing: spacing,
@@ -375,8 +398,23 @@ final class OverlayWindowController {
         // here if it feels inverted on your pointer settings.)
         if delta != 0 {
             model.scrollOffset = geometry.clamp(model.scrollOffset - delta)
+            emitScrollHapticIfNeeded(geometry: geometry)
         }
         return true
+    }
+
+    /// Gives a faint `alignment` tick (Force Touch trackpads only) each time the
+    /// icon nearest the row's centre changes during a continuous scroll, so the row
+    /// feels like it clicks past detents. Off unless `scrollHapticsEnabled`. The
+    /// first check after a (re)present just sets the baseline without ticking.
+    private func emitScrollHapticIfNeeded(geometry: IconRowGeometry) {
+        guard preferences.scrollHapticsEnabled else { return }
+        let pitch = geometry.cellWidth + geometry.spacing
+        guard pitch > 0 else { return }
+        let centeredIndex = Int(((model.scrollOffset + geometry.viewport / 2) / pitch).rounded())
+        defer { lastHapticIndex = centeredIndex }
+        guard let last = lastHapticIndex, last != centeredIndex else { return }
+        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
     }
 
     // MARK: Click-outside dismissal

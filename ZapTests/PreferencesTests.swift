@@ -111,6 +111,37 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(prefs.gradientColorHex, Preferences.Default.gradientColorHex)
     }
 
+    func testCRTDefaults() {
+        let prefs = Preferences(defaults: defaults)
+        XCTAssertFalse(prefs.crtEnabled)
+        XCTAssertEqual(prefs.crtIntensity, Preferences.Default.crtIntensity)
+    }
+
+    func testCRTRoundTrip() {
+        let prefs = Preferences(defaults: defaults)
+        prefs.crtEnabled = true
+        prefs.crtIntensity = 0.3
+
+        let reloaded = Preferences(defaults: defaults)
+        XCTAssertTrue(reloaded.crtEnabled)
+        XCTAssertEqual(reloaded.crtIntensity, 0.3)
+    }
+
+    func testOutOfRangeCRTIntensityIsClamped() {
+        defaults.set(4.0, forKey: "crtIntensity")
+        XCTAssertEqual(Preferences(defaults: defaults).crtIntensity, 1)
+        defaults.set(-1.0, forKey: "crtIntensity")
+        XCTAssertEqual(Preferences(defaults: defaults).crtIntensity, 0)
+    }
+
+    func testAmigaDecorationRoundTrips() {
+        let prefs = Preferences(defaults: defaults)
+        prefs.decorationStyle = .amiga
+        XCTAssertEqual(Preferences(defaults: defaults).decorationStyle, .amiga)
+        XCTAssertEqual(DecorationStyle.amiga.kind, .ball)
+        XCTAssertEqual(DecorationStyle.zxSpectrum.kind, .stripes)
+    }
+
     func testShowWindowPreviewsRoundTrip() {
         let prefs = Preferences(defaults: defaults)
         prefs.showWindowPreviews = true
@@ -138,6 +169,13 @@ final class PreferencesTests: XCTestCase {
 
         Preferences(defaults: defaults).includeFullScreenWindows = true
         XCTAssertTrue(Preferences(defaults: defaults).includeFullScreenWindows)
+    }
+
+    func testScrollHapticsDefaultsOffAndRoundTrips() {
+        XCTAssertFalse(Preferences(defaults: defaults).scrollHapticsEnabled)
+
+        Preferences(defaults: defaults).scrollHapticsEnabled = true
+        XCTAssertTrue(Preferences(defaults: defaults).scrollHapticsEnabled)
     }
 
     func testExclusionsRoundTrip() {
@@ -215,5 +253,61 @@ final class PreferencesTests: XCTestCase {
         defaults.set(Double.nan, forKey: "iconSize")
         let prefs = Preferences(defaults: defaults)
         XCTAssertEqual(prefs.iconSize, Preferences.Default.iconSize)
+    }
+
+    // MARK: Switch counter
+
+    func testSwitchCountsStartAtZero() {
+        let prefs = Preferences(defaults: defaults)
+        XCTAssertEqual(prefs.switchCountTotal, 0)
+        XCTAssertEqual(prefs.switchCountToday, 0)
+    }
+
+    func testRecordSwitchIncrementsAndPersists() {
+        let day = makeDate(2026, 6, 10, 9)
+        let prefs = Preferences(defaults: defaults)
+        prefs.recordSwitch(now: day)
+        prefs.recordSwitch(now: day)
+
+        XCTAssertEqual(prefs.switchCountTotal, 2)
+        XCTAssertEqual(prefs.switchCountToday, 2)
+
+        // Survives a reload from the same defaults.
+        let reloaded = Preferences(defaults: defaults)
+        XCTAssertEqual(reloaded.switchCountTotal, 2)
+        XCTAssertEqual(reloaded.switchCountToday, 2)
+    }
+
+    func testTodayResetsOnNewDayButTotalAccumulates() {
+        let prefs = Preferences(defaults: defaults)
+        prefs.recordSwitch(now: makeDate(2026, 6, 10, 23))
+        prefs.recordSwitch(now: makeDate(2026, 6, 10, 23))
+        prefs.recordSwitch(now: makeDate(2026, 6, 11, 1))   // next day
+
+        XCTAssertEqual(prefs.switchCountToday, 1)
+        XCTAssertEqual(prefs.switchCountTotal, 3)
+    }
+
+    func testIncrementedSwitchCountsPureRule() {
+        // Same day: today and total both rise.
+        let same = Preferences.incrementedSwitchCounts(storedDay: "2026-06-10", currentDay: "2026-06-10", today: 5, total: 100)
+        XCTAssertEqual(same.day, "2026-06-10")
+        XCTAssertEqual(same.today, 6)
+        XCTAssertEqual(same.total, 101)
+
+        // New day: today resets to 1, total still rises.
+        let rolled = Preferences.incrementedSwitchCounts(storedDay: "2026-06-10", currentDay: "2026-06-11", today: 5, total: 100)
+        XCTAssertEqual(rolled.day, "2026-06-11")
+        XCTAssertEqual(rolled.today, 1)
+        XCTAssertEqual(rolled.total, 101)
+    }
+
+    private func makeDate(_ year: Int, _ month: Int, _ day: Int, _ hour: Int) -> Date {
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        components.hour = hour
+        return Calendar.current.date(from: components)!
     }
 }

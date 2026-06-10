@@ -99,6 +99,13 @@ struct GeneralView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section("Feedback") {
+                Toggle("Haptic tick when scrolling the switcher", isOn: $preferences.scrollHapticsEnabled)
+                Text("A faint tick as each icon passes the centre while you scroll the row. Requires a Force Touch trackpad.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)

@@ -105,6 +105,9 @@ must **intercept the key event and suppress the system switcher**.
 | <kbd>Q</kbd>               | Quit selected app                       |
 | <kbd>H</kbd>               | Hide selected app (un-hide if already hidden) |
 | <kbd>W</kbd>               | Close focused window (in the window list) |
+| <kbd>1</kbd>–<kbd>9</kbd>   | Switch straight to the Nth app and commit |
+| Letters / digits           | Type-to-search: jump the highlight to the best-matching app (a leading digit jumps-and-commits instead) |
+| <kbd>⌫</kbd> Delete        | Edit the type-to-search query           |
 | <kbd>↑</kbd> / <kbd>↓</kbd> | Move through the selected app's windows |
 | <kbd>←</kbd> / <kbd>→</kbd> | Move the app selection; within the preview grid, move along the row |
 | Mouse hover / click        | Move selection / pick app or window     |
@@ -193,8 +196,11 @@ A borderless, transparent, floating window mimicking the native look.
     converted to unit points against the current panel size, so it does **not**
     restretch when the window list grows the panel — the always-visible icon row keeps
     a constant appearance at every angle.
-  - Optional retro corner **decoration** (e.g. ZX Spectrum diagonal rainbow stripes)
-    drawn in the top-left or top-right corner, clipped to the panel's rounded edge.
+  - Optional retro corner **decoration** — diagonal rainbow stripes (ZX Spectrum,
+    Apple rainbow, …) or the Amiga **boing ball** — drawn in the top-left or
+    top-right corner, clipped to the panel's rounded edge.
+  - Optional **CRT** overlay: faint scanlines + a soft vignette drawn over the whole
+    panel for a retro look, scaled by an intensity slider (off by default).
   - Horizontal row of app icons (~64–128px), wrapping or scrolling if many.
   - Selection highlight: rounded rectangle behind the selected icon using the user's
     highlight color.
@@ -222,7 +228,9 @@ Stored in `UserDefaults`, applied live to the overlay. v1 settings:
 | Show delay before UI   | Slider (0–250ms)| ~150ms                       |
 
 Colors persisted as hex/`Codable` wrappers around `NSColor`. A live preview in Settings
-shows the overlay with current values.
+shows the overlay with current values. The full set of appearance settings (colors,
+gradient, decoration, CRT, sizes) can be saved and shared as an `AppearancePreset`
+(a small JSON file) and applied back later; a few built-in themes ship with the app.
 
 ---
 

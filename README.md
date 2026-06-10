@@ -14,12 +14,15 @@ to, switch **directly to individual windows**, and **customize the appearance** 
 ## Features
 
 - Intercepts the real <kbd>⌘</kbd>+<kbd>Tab</kbd> (and <kbd>⌘</kbd>+<kbd>⇧</kbd>+<kbd>Tab</kbd> / <kbd>⌘</kbd>+<kbd>`</kbd> to reverse).
-- Native-feeling MRU ordering (single tap toggles the two most-recent apps).
+- Native-feeling MRU ordering (single tap toggles the two most-recent apps); the order persists across launches.
+- **Type to search** while switching — start typing an app's name and the highlight jumps to it. **Number keys** <kbd>1</kbd>–<kbd>9</kbd> switch straight to the Nth app.
+- **Spring-loaded switching:** start dragging a file, hit <kbd>⌘</kbd>+<kbd>Tab</kbd> mid-drag, and drop it on an app's icon to open it there — like the Dock, but for every app. (See [Tips](#tips).)
 - Per-app exclusions — hide apps you never switch to.
 - Dwell on an app to see its windows; switch straight to one with the arrow keys or a click. A long window list scrolls instead of overflowing the panel.
 - Optional live preview of each window, laid out as a thumbnail grid (needs Screen Recording permission; off by default).
-- Customizable colors, opacity, icon size, and corner radius with a live preview.
-- Menu-bar agent (no Dock icon); never appears in its own switcher.
+- <kbd>⌘</kbd>+<kbd>Q</kbd> quit, <kbd>⌘</kbd>+<kbd>H</kbd> hide, and <kbd>⌘</kbd>+<kbd>W</kbd> close-focused-window, all without leaving the switcher.
+- Rich appearance: colors, gradients, opacity, icon size, corner radii, retro corner decorations (ZX Spectrum, Apple rainbow, the Amiga boing ball, …), an optional CRT scanline mode, and shareable theme presets — all with a live preview.
+- Menu-bar agent (no Dock icon); never appears in its own switcher. The menu-bar icon dims while paused.
 - Launch at login via `SMAppService`.
 - Fallback to <kbd>⌥</kbd>+<kbd>Tab</kbd> when Accessibility access isn't granted; the Permissions tab reports the trigger that's actually active.
 
@@ -48,6 +51,26 @@ Accessibility permission prompt behave correctly.
 2. Grant Accessibility access when prompted (Permissions tab), then *relaunch.*
 3. Use ⌘+Tab as normal. Open **Zap Settings…** from the menu bar to exclude apps
    and adjust colors.
+
+## Tips
+
+- **Spring-loaded switching (drag-and-drop onto an app):** start dragging a file in
+  Finder (or anywhere), and *while still dragging* press <kbd>⌘</kbd>+<kbd>Tab</kbd>.
+  The switcher appears; drop the file on an app's icon to open it there — drop a
+  `.psd` on Photoshop, a folder on Terminal, a link on a browser. Almost nobody knows
+  the system switcher can do this; Zap makes it a first-class feature.
+- **Type to search:** with the switcher up, just type part of an app's name
+  ("term" → Terminal). The highlight jumps to the best match; <kbd>⌫</kbd> edits your
+  query and <kbd>Tab</kbd> clears it. (Because <kbd>⌘</kbd> is held, the action keys
+  <kbd>Q</kbd>/<kbd>W</kbd>/<kbd>H</kbd> stay reserved for quit/close/hide.)
+- **Number keys:** press <kbd>1</kbd>–<kbd>9</kbd> to jump straight to the Nth app and
+  switch — faster than tabbing.
+- **In-switcher actions:** <kbd>⌘</kbd>+<kbd>Q</kbd> quits the highlighted app,
+  <kbd>⌘</kbd>+<kbd>H</kbd> hides it (or un-hides), and with a window selected,
+  <kbd>⌘</kbd>+<kbd>W</kbd> closes it.
+- **Themes:** in **Appearance**, apply a built-in theme (Classic, ZX Night, Vaporwave,
+  Amiga) or **Export…** your look to a small `.json` file to share and **Import…**
+  later.
 
 ## Troubleshooting
 
