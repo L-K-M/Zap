@@ -21,10 +21,6 @@ struct OverlayView: View {
                     .frame(width: panelContentWidth)
             }
 
-            if !model.typeQuery.isEmpty {
-                searchBadge
-            }
-
             HStack(spacing: iconSpacing) {
                 ForEach(Array(model.apps.enumerated()), id: \.element.id) { index, app in
                     iconCell(app, isSelected: index == model.selectedIndex,
@@ -52,6 +48,13 @@ struct OverlayView: View {
                                               viewport: panelContentWidth,
                                               offset: model.scrollOffset,
                                               fade: iconRowFade))
+
+            // The badge sits *below* the icon row so the panel grows downward
+            // from its fixed top edge (like the window list) — popping in and
+            // out never shifts the icons.
+            if !model.typeQuery.isEmpty {
+                searchBadge
+            }
 
             if !model.windows.isEmpty {
                 Divider()
