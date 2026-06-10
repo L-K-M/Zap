@@ -128,13 +128,12 @@ struct OverlayView: View {
         }
     }
 
-    /// The boing ball's diameter: scaled off the shared decoration-size slider so
-    /// the one control sizes both the stripes and the ball, and capped relative to
-    /// the always-visible header so the ball can't dwarf the panel. ×10 makes the
-    /// default slider value a bold ~100pt corner ball, in scale with the stripe
-    /// decorations — not an icon-sized dot.
+    /// The boing ball's diameter: proportional to the always-visible header so it
+    /// reads at decoration scale on any panel, scaled by the shared size slider —
+    /// the default slider value (10) gives a ball as tall as the header, cropped
+    /// into the corner. Capped at 2× so extreme slider values stay composed.
     private var ballDiameter: CGFloat {
-        min(preferences.decorationSize * 10, headerHeight * 0.9)
+        headerHeight * min(preferences.decorationSize / 10, 2)
     }
 
     /// The tint behind the blur: either a solid color or a gradient.

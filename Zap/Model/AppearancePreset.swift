@@ -183,7 +183,7 @@ extension AppearancePreset {
         decorationStyle: DecorationStyle.amiga.rawValue,
         decorationPosition: DecorationPosition.topTrailing.rawValue,
         decorationOpacity: 1,
-        decorationSize: 14,
+        decorationSize: 12,
         crtEnabled: true,
         crtIntensity: 0.7,
         highlightColorHex: "#FF6F00",
