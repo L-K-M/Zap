@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 /// Color and size customization with a live preview of the overlay.
 struct AppearanceView: View {
@@ -15,6 +16,22 @@ struct AppearanceView: View {
             Divider()
 
             Form {
+                Section("Presets") {
+                    Menu("Apply a built-in theme") {
+                        ForEach(AppearancePreset.builtIns) { preset in
+                            Button(preset.name) { preset.apply(to: preferences) }
+                        }
+                    }
+                    HStack {
+                        Button("Import…", action: importPreset)
+                        Button("Export…", action: exportPreset)
+                        Spacer()
+                    }
+                    Text("Apply a ready-made theme, or save the current look as a shareable .json file to import later or send to a friend.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Colors") {
                     ColorPicker("Background", selection: colorBinding(\.backgroundColorHex), supportsOpacity: false)
                     Toggle("Gradient background", isOn: $preferences.useGradientBackground)
@@ -137,6 +154,42 @@ struct AppearanceView: View {
             get: { Color(hexString: preferences[keyPath: keyPath]) },
             set: { preferences[keyPath: keyPath] = NSColor($0).hexString }
         )
+    }
+
+    // MARK: Presets
+
+    /// Writes the current appearance to a user-chosen `.json` file.
+    private func exportPreset() {
+        let preset = AppearancePreset(name: "Zap Theme", from: preferences)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(preset) else { return }
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "Zap Theme.json"
+        panel.canCreateDirectories = true
+        guard panel.runModal == .OK, let url = panel.url else { return }
+        do {
+            try data.write(to: url)
+        } catch {
+            NSLog("Zap: failed to export theme: \(error.localizedDescription)")
+        }
+    }
+
+    /// Reads a `.json` theme file and applies it (validating every value).
+    private func importPreset() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        guard panel.runModal == .OK, let url = panel.url else { return }
+        guard let data = try? Data(contentsOf: url),
+              let preset = try? JSONDecoder().decode(AppearancePreset.self, from: data) else {
+            NSLog("Zap: couldn't read a theme from \(url.lastPathComponent)")
+            return
+        }
+        preset.apply(to: preferences)
     }
 
     private func resetDefaults() {
