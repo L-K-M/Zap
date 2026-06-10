@@ -18,6 +18,7 @@ enum DecorationStyle: String, CaseIterable, Identifiable {
     case sunset
     case love
     case amiga
+    case amigaPixel
 
     var id: String { rawValue }
 
@@ -30,12 +31,13 @@ enum DecorationStyle: String, CaseIterable, Identifiable {
         case .sunset: return "Sunset"
         case .love: return "Love"
         case .amiga: return "Amiga boing ball"
+        case .amigaPixel: return "Amiga boing ball (pixel)"
         }
     }
 
     /// Whether this style is drawn as corner stripes or as the boing ball.
     var kind: DecorationKind {
-        self == .amiga ? .ball : .stripes
+        self == .amiga || self == .amigaPixel ? .ball : .stripes
     }
 
     /// Stripe colors, ordered from the one nearest the corner inward. Empty for
@@ -52,7 +54,7 @@ enum DecorationStyle: String, CaseIterable, Identifiable {
         case .vaporwave: return ["#FF6AD5", "#C774E8", "#AD8CFF", "#8795E8", "#94D0FF"]
         case .sunset: return ["#FF512F", "#F09819", "#FFD200"]
         case .love: return ["#E40303", "#FF8C00", "#FFED00", "#008026", "#004DFF", "#750787"]
-        case .amiga: return []   // drawn as a ball, not stripes — see BoingBallDecoration
+        case .amiga, .amigaPixel: return []   // drawn as a ball, not stripes — see BoingBallDecoration
         }
     }
 }

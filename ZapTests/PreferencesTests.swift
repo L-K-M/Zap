@@ -138,7 +138,10 @@ final class PreferencesTests: XCTestCase {
         let prefs = Preferences(defaults: defaults)
         prefs.decorationStyle = .amiga
         XCTAssertEqual(Preferences(defaults: defaults).decorationStyle, .amiga)
+        prefs.decorationStyle = .amigaPixel
+        XCTAssertEqual(Preferences(defaults: defaults).decorationStyle, .amigaPixel)
         XCTAssertEqual(DecorationStyle.amiga.kind, .ball)
+        XCTAssertEqual(DecorationStyle.amigaPixel.kind, .ball)
         XCTAssertEqual(DecorationStyle.zxSpectrum.kind, .stripes)
     }
 

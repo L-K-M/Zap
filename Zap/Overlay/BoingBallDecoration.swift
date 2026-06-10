@@ -12,9 +12,15 @@ import Foundation
 /// (orthographic inverse), and its longitude/latitude picks red or white from a
 /// lat/long checkerboard. Like the original demo, the shading is **flat** — the
 /// sphere illusion comes entirely from the checker distortion — and the poles
-/// lean to the right. The sphere is rasterized at full display scale with 2×2
-/// supersampling — smooth checker edges and silhouette — and cached, so
-/// re-renders of the overlay never re-rasterize it on the hot path.
+/// lean to the right.
+///
+/// Two renditions share that math. The **smooth** ball is rasterized at full
+/// display scale with 2×2 supersampling — smooth checker edges and silhouette.
+/// The **pixelated** ball is a copy of the original demo's look: rasterized at a
+/// fixed low resolution with hard edges and scaled up with interpolation off, so
+/// the chunky pixels and stair-stepped silhouette read just like the demo.
+/// Either bitmap is cached, so re-renders of the overlay never re-rasterize it
+/// on the hot path.
 struct BoingBallDecoration: View {
     /// Which top corner the ball sits in.
     let position: DecorationPosition
@@ -22,6 +28,8 @@ struct BoingBallDecoration: View {
     let cornerRadius: CGFloat
     /// The ball's diameter in points.
     let diameter: CGFloat
+    /// Render the original demo's chunky low-res look instead of the smooth ball.
+    let pixelated: Bool
 
     @Environment(\.displayScale) private var displayScale
 
@@ -37,7 +45,8 @@ struct BoingBallDecoration: View {
     var body: some View {
         // Resolve (or reuse) the rasterized sphere here in `body`, not inside the
         // Canvas closure, so the static cache is only touched on the main thread.
-        let sphere = Self.sphereImage(diameter: diameter, scale: displayScale)
+        let sphere = Self.sphereImage(diameter: diameter, scale: displayScale,
+                                      pixelated: pixelated)
         Canvas { context, size in
             let radius = diameter / 2
             // Tuck the ball into the corner: most of the disc inside the panel, the
@@ -49,9 +58,13 @@ struct BoingBallDecoration: View {
             if let sphere {
                 context.draw(sphere, in: frame)
             }
-            // A soft outline so the ball reads against a light panel too.
-            context.stroke(Path(ellipseIn: frame),
-                           with: .color(.black.opacity(0.25)), lineWidth: 1)
+            // A soft outline so the smooth ball reads against a light panel too.
+            // The pixelated ball keeps its bare stair-stepped silhouette — a
+            // smooth circle around it would clash, and the original had none.
+            if !pixelated {
+                context.stroke(Path(ellipseIn: frame),
+                               with: .color(.black.opacity(0.25)), lineWidth: 1)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(false)
@@ -73,34 +86,57 @@ struct BoingBallDecoration: View {
 
     // MARK: Sphere rasterization
 
-    /// The last-rendered sphere, keyed by pixel diameter. `body` re-runs on every
+    /// Raster width of the pixelated ball, independent of its on-screen size. The
+    /// original demo's ball was ~144 pixels across; at the decoration's smaller
+    /// visual size, 96 reproduces the same perceived chunkiness when scaled up
+    /// with interpolation off.
+    private static let pixelatedResolution = 96
+
+    /// The last-rendered sphere of each rendition. `body` re-runs on every
     /// selection change while the overlay is up; one cached image makes that free,
     /// where re-rasterizing ~100k pixels per Tab press would be wasted work on the
     /// switcher hot path. Read and written only from `body` (main thread).
-    private static var cachedSphere: (pixelDiameter: Int, image: Image)?
+    private static var cachedSmooth: (pixelDiameter: Int, image: Image)?
+    private static var cachedPixelated: Image?
 
-    /// The checkered sphere as an `Image`, rasterized at `scale` so it stays
-    /// crisp on Retina displays. Cached by resulting pixel size.
-    static func sphereImage(diameter: CGFloat, scale: CGFloat) -> Image? {
+    /// The checkered sphere as an `Image`: rasterized at `scale` so it stays
+    /// crisp on Retina displays, or — when `pixelated` — at the fixed low
+    /// resolution with interpolation off so the chunky pixels survive scaling.
+    /// Cached per rendition.
+    static func sphereImage(diameter: CGFloat, scale: CGFloat, pixelated: Bool) -> Image? {
+        if pixelated {
+            if let cached = cachedPixelated { return cached }
+            guard let bitmap = renderSphere(pixelDiameter: pixelatedResolution,
+                                            antialiased: false) else { return nil }
+            let image = Image(decorative: bitmap, scale: 1).interpolation(.none)
+            cachedPixelated = image
+            return image
+        }
         let effectiveScale = max(1, scale)
         let pixelDiameter = max(8, Int((diameter * effectiveScale).rounded()))
-        if let cached = cachedSphere, cached.pixelDiameter == pixelDiameter {
+        if let cached = cachedSmooth, cached.pixelDiameter == pixelDiameter {
             return cached.image
         }
-        guard let bitmap = renderSphere(pixelDiameter: pixelDiameter) else { return nil }
+        guard let bitmap = renderSphere(pixelDiameter: pixelDiameter,
+                                        antialiased: true) else { return nil }
         let image = Image(decorative: bitmap, scale: effectiveScale)
-        cachedSphere = (pixelDiameter, image)
+        cachedSmooth = (pixelDiameter, image)
         return image
     }
 
-    /// Rasterizes the sphere into a premultiplied-RGBA bitmap, sampling each pixel
-    /// at 2×2 subpixel offsets: subsample coverage becomes alpha (anti-aliasing
-    /// the silhouette) and interior checker edges average toward smooth.
-    static func renderSphere(pixelDiameter n: Int) -> CGImage? {
+    /// Rasterizes the sphere into a premultiplied-RGBA bitmap. Antialiased, each
+    /// pixel is sampled at 2×2 subpixel offsets: subsample coverage becomes alpha
+    /// (anti-aliasing the silhouette) and interior checker edges average toward
+    /// smooth. Otherwise one centre sample per pixel gives the hard edges of the
+    /// pixelated rendition.
+    static func renderSphere(pixelDiameter n: Int, antialiased: Bool) -> CGImage? {
         guard n > 0 else { return nil }
         let radius = Double(n) / 2
         let segment = Double.pi / segments
-        let offsets = [(0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75)]
+        let offsets: [(Double, Double)] = antialiased
+            ? [(0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75)]
+            : [(0.5, 0.5)]
+        let sampleCount = Double(offsets.count)
         var pixels = [UInt8](repeating: 0, count: n * n * 4)
 
         for py in 0..<n {
@@ -129,14 +165,14 @@ struct BoingBallDecoration: View {
                     covered += 1
                 }
                 guard covered > 0 else { continue }
-                // Premultiplied components: the sum over the 4 subsamples divided
-                // by 4 is exactly (average color × coverage alpha), since
+                // Premultiplied components: the sum over the subsamples divided by
+                // their count is exactly (average color × coverage alpha), since
                 // uncovered subsamples contribute zero.
                 let i = (py * n + px) * 4
-                pixels[i]     = UInt8((min(1, r / 4) * 255).rounded())
-                pixels[i + 1] = UInt8((min(1, g / 4) * 255).rounded())
-                pixels[i + 2] = UInt8((min(1, b / 4) * 255).rounded())
-                pixels[i + 3] = UInt8((Double(covered) / 4 * 255).rounded())
+                pixels[i]     = UInt8((min(1, r / sampleCount) * 255).rounded())
+                pixels[i + 1] = UInt8((min(1, g / sampleCount) * 255).rounded())
+                pixels[i + 2] = UInt8((min(1, b / sampleCount) * 255).rounded())
+                pixels[i + 3] = UInt8((Double(covered) / sampleCount * 255).rounded())
             }
         }
 

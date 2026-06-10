@@ -180,10 +180,11 @@ extension AppearancePreset {
         useGradientBackground: false,
         gradientColorHex: "#2C2C2C",
         gradientAngle: 0,
-        decorationStyle: DecorationStyle.amiga.rawValue,
+        // The pixel rendition: with the CRT scanlines below, the full retro look.
+        decorationStyle: DecorationStyle.amigaPixel.rawValue,
         decorationPosition: DecorationPosition.topTrailing.rawValue,
         decorationOpacity: 1,
-        decorationSize: 12,
+        decorationSize: 10,
         crtEnabled: true,
         crtIntensity: 0.7,
         highlightColorHex: "#FF6F00",

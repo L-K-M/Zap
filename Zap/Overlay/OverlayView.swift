@@ -112,14 +112,15 @@ struct OverlayView: View {
         }
     }
 
-    /// The corner decoration: the boing ball for the Amiga style, diagonal stripes
-    /// for the others, nothing for `.none`.
+    /// The corner decoration: a boing ball for the Amiga styles (smooth or
+    /// pixelated), diagonal stripes for the others, nothing for `.none`.
     @ViewBuilder
     private var decoration: some View {
-        if preferences.decorationStyle == .amiga {
+        if preferences.decorationStyle.kind == .ball {
             BoingBallDecoration(position: preferences.decorationPosition,
                                 cornerRadius: preferences.cornerRadius,
-                                diameter: ballDiameter)
+                                diameter: ballDiameter,
+                                pixelated: preferences.decorationStyle == .amigaPixel)
         } else if preferences.decorationStyle != .none {
             PanelDecoration(style: preferences.decorationStyle,
                             position: preferences.decorationPosition,
@@ -130,10 +131,10 @@ struct OverlayView: View {
 
     /// The boing ball's diameter: proportional to the always-visible header so it
     /// reads at decoration scale on any panel, scaled by the shared size slider —
-    /// the default slider value (10) gives a ball as tall as the header, cropped
+    /// the default slider value (10) gives a ball 1.2× the header height, cropped
     /// into the corner. Capped at 2× so extreme slider values stay composed.
     private var ballDiameter: CGFloat {
-        headerHeight * min(preferences.decorationSize / 10, 2)
+        headerHeight * min(preferences.decorationSize * 0.12, 2)
     }
 
     /// The tint behind the blur: either a solid color or a gradient.
