@@ -402,6 +402,11 @@ final class SwitcherController {
             guard let index = windowSelectedIndex, windows.indices.contains(index) else { return nil }
             return windows[index]
         }()
+        // Count a switch only when we're actually activating something (not a
+        // cancel, and not a commit that lands on a quitting app).
+        if targetApp != nil {
+            preferences.recordSwitch()
+        }
         endSession()
         if let targetWindow, let targetApp {
             DispatchQueue.main.async {

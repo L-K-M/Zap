@@ -19,6 +19,9 @@ struct SettingsView: View {
 
             PermissionsView(inputMode: inputMode)
                 .tabItem { Label("Permissions", systemImage: "lock.shield") }
+
+            AboutView(preferences: preferences)
+                .tabItem { Label("About", systemImage: "info.circle") }
         }
         .frame(minWidth: 520, minHeight: 460)
     }

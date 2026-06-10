@@ -67,6 +67,9 @@ final class Preferences: ObservableObject {
         static let closeOnClickOutside = "closeOnClickOutside"
         static let showOnAllScreens = "showOnAllScreens"
         static let includeFullScreenWindows = "includeFullScreenWindows"
+        static let switchCountTotal = "switchCountTotal"
+        static let switchCountToday = "switchCountToday"
+        static let switchCountDay = "switchCountDay"
     }
 
     // MARK: Stored settings
@@ -215,6 +218,19 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(includeFullScreenWindows, forKey: Key.includeFullScreenWindows) }
     }
 
+    // MARK: Switch counter
+
+    /// Total number of switches Zap has performed, all-time. A telemetry-free bit
+    /// of fun shown in the About tab; see `recordSwitch()`.
+    @Published private(set) var switchCountTotal: Int
+
+    /// Number of switches performed today (resets at local midnight).
+    @Published private(set) var switchCountToday: Int
+
+    /// The day (`yyyy-MM-dd`, local) `switchCountToday` is counting, so it can roll
+    /// over when a switch lands on a new day.
+    private var switchCountDay: String
+
     // MARK: Init
 
     init(defaults: UserDefaults = .standard) {
@@ -251,6 +267,9 @@ final class Preferences: ObservableObject {
         closeOnClickOutside = defaults.object(forKey: Key.closeOnClickOutside) as? Bool ?? true
         showOnAllScreens = defaults.object(forKey: Key.showOnAllScreens) as? Bool ?? false
         includeFullScreenWindows = defaults.object(forKey: Key.includeFullScreenWindows) as? Bool ?? false
+        switchCountTotal = max(0, defaults.integer(forKey: Key.switchCountTotal))
+        switchCountToday = max(0, defaults.integer(forKey: Key.switchCountToday))
+        switchCountDay = defaults.string(forKey: Key.switchCountDay) ?? ""
 
         // Seed launch-at-login from the authoritative system state rather than a
         // possibly-stale stored value, so an external change in System Settings is
@@ -305,6 +324,42 @@ final class Preferences: ObservableObject {
         } else {
             excludedBundleIDs.remove(bundleID)
         }
+    }
+
+    // MARK: Switch counter
+
+    /// Records one switch: bumps the all-time total and today's count, rolling
+    /// today's count over to 1 when the day has changed. `now` is injectable for
+    /// tests.
+    func recordSwitch(now: Date = Date()) {
+        let today = Self.dayStamp(for: now)
+        let result = Self.incrementedSwitchCounts(
+            storedDay: switchCountDay, currentDay: today,
+            today: switchCountToday, total: switchCountTotal)
+        switchCountDay = result.day
+        switchCountToday = result.today
+        switchCountTotal = result.total
+        defaults.set(result.day, forKey: Key.switchCountDay)
+        defaults.set(result.today, forKey: Key.switchCountToday)
+        defaults.set(result.total, forKey: Key.switchCountTotal)
+    }
+
+    /// Pure counter update for one recorded switch: the total always rises by one;
+    /// today's count rises by one on the same day, or resets to one on a new day.
+    /// Extracted so the midnight-rollover rule is unit-testable.
+    static func incrementedSwitchCounts(storedDay: String, currentDay: String,
+                                        today: Int, total: Int) -> (day: String, today: Int, total: Int) {
+        let newToday = storedDay == currentDay ? today + 1 : 1
+        return (currentDay, newToday, total + 1)
+    }
+
+    /// Local `yyyy-MM-dd` stamp used to bucket switches by day.
+    static func dayStamp(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
 
     // MARK: Launch at login
