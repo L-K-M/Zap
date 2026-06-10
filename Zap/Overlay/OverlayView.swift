@@ -21,6 +21,10 @@ struct OverlayView: View {
                     .frame(width: panelContentWidth)
             }
 
+            if !model.typeQuery.isEmpty {
+                searchBadge
+            }
+
             HStack(spacing: iconSpacing) {
                 ForEach(Array(model.apps.enumerated()), id: \.element.id) { index, app in
                     iconCell(app, isSelected: index == model.selectedIndex,
@@ -194,6 +198,30 @@ struct OverlayView: View {
             // Dim apps that are quitting until their fate is confirmed.
             .opacity(isQuitting ? 0.3 : 1)
             .animation(.easeOut(duration: 0.15), value: isQuitting)
+    }
+
+    /// The type-to-search query, shown as a small capsule while the user types to
+    /// jump the selection. Dims when nothing matches so a typo is legible.
+    private var searchBadge: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11, weight: .semibold))
+            Text(model.typeQuery)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.head)
+        }
+        .foregroundStyle(Color(hexString: preferences.labelColorHex))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 3)
+        .background(
+            Capsule(style: .continuous)
+                .fill(Color.black.opacity(0.25))
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+        )
     }
 
     // MARK: Window list / grid

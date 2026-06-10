@@ -35,6 +35,12 @@ final class SwitcherController {
     private var windows: [WindowInfo] = []
     private var windowSelectedIndex: Int?
 
+    /// The current type-to-search query. Typing letters/digits jumps the highlight
+    /// to the best-matching app; a leading digit with an empty query instead jumps
+    /// straight to that app and commits (number-key shortcut). Reset on commit,
+    /// cancel, and explicit Tab/arrow navigation.
+    private var typeBuffer = ""
+
     /// Captures window previews off the hot path. A monotonically-increasing
     /// generation token lets late async captures bail when the window list has
     /// since changed or closed.
@@ -166,6 +172,8 @@ final class SwitcherController {
         eventTap.onHideSelected = { [weak self] in self?.hideSelected() }
         eventTap.onCloseWindow = { [weak self] in self?.closeFocusedWindow() }
         eventTap.onNavigateWindows = { [weak self] direction in self?.navigateWindows(direction) }
+        eventTap.onType = { [weak self] character in self?.handleTypedCharacter(character) }
+        eventTap.onDeleteBackward = { [weak self] in self?.handleTypeBackspace() }
     }
 
     @discardableResult
@@ -204,6 +212,7 @@ final class SwitcherController {
     private func beginSession(forward: Bool) {
         apps = provider.currentApps()
         guard !apps.isEmpty else { return }
+        typeBuffer = ""
 
         // Pre-select the previous app so a single press toggles the two
         // most-recent apps, like the native switcher. Normally that's index 1,
@@ -243,6 +252,8 @@ final class SwitcherController {
     }
 
     private func advanceSelection(forward: Bool) {
+        // Explicit Tab/arrow navigation ends any in-progress type-to-search.
+        clearTypeBuffer()
         guard let next = nextSelectableIndex(from: selectedIndex, forward: forward) else { return }
         selectedIndex = next
 
@@ -282,6 +293,99 @@ final class SwitcherController {
             overlay.setQuitting(quittingPIDs, selectedIndex: selectedIndex)
         }
         restartDwell()
+    }
+
+    // MARK: Type-to-search / number jump
+
+    /// Handles a printable character typed mid-session. A leading digit with an
+    /// empty query is a number-key shortcut: jump straight to that app and commit.
+    /// Otherwise the character extends the type-to-search query and the highlight
+    /// jumps to the best match.
+    private func handleTypedCharacter(_ character: Character) {
+        guard isSessionActive else { return }
+
+        if typeBuffer.isEmpty, let digit = character.wholeNumberValue, (1...9).contains(digit) {
+            jumpAndCommit(toNumber: digit)
+            return
+        }
+
+        // Only letters, digits, and spaces extend the search query; ignore other
+        // punctuation/symbols so a stray key doesn't pollute the query.
+        guard character.isLetter || character.isNumber || character == " " else { return }
+        typeBuffer.append(character)
+        applyTypeQuery()
+    }
+
+    /// Removes the last character from the type-to-search query (Backspace).
+    private func handleTypeBackspace() {
+        guard isSessionActive, !typeBuffer.isEmpty else { return }
+        typeBuffer.removeLast()
+        applyTypeQuery()
+    }
+
+    /// Pushes the current query to the overlay and jumps the highlight to the best
+    /// matching app (leaving the selection put when nothing matches, so the user can
+    /// see and correct the query).
+    private func applyTypeQuery() {
+        overlay.setTypeQuery(typeBuffer)
+        guard !typeBuffer.isEmpty,
+              let index = Self.bestMatchIndex(query: typeBuffer, names: apps.map(\.name)),
+              !quittingPIDs.contains(apps[index].processIdentifier)
+        else { return }
+        selectedIndex = index
+        windowSelectedIndex = nil
+        if overlay.isVisible {
+            overlay.updateSelection(index)
+            restartDwell()
+        } else {
+            presentOverlay()
+        }
+    }
+
+    /// Clears any in-progress type-to-search query and hides its badge.
+    private func clearTypeBuffer() {
+        guard !typeBuffer.isEmpty else { return }
+        typeBuffer = ""
+        overlay.setTypeQuery("")
+    }
+
+    /// Number-key shortcut: switch straight to the `digit`-th app (1-based) and
+    /// commit, like clicking it. No-ops when there's no such app.
+    private func jumpAndCommit(toNumber digit: Int) {
+        let index = digit - 1
+        guard apps.indices.contains(index) else { return }
+        pick(index)
+    }
+
+    /// Pure incremental-search rule: the index of the best app matching `query`,
+    /// or `nil` if none match. Preference order, each taking the earliest (most
+    /// recently used) candidate: a name that *starts with* the query, then a name
+    /// with a *word* starting with the query ("co" → "Visual Studio **Co**de"),
+    /// then any *substring* match. Case-insensitive. Extracted for unit testing.
+    static func bestMatchIndex(query: String, names: [String]) -> Int? {
+        let needle = query.lowercased()
+        guard !needle.isEmpty else { return nil }
+
+        var wordPrefix: Int?
+        var substring: Int?
+        for (index, name) in names.enumerated() {
+            let haystack = name.lowercased()
+            if haystack.hasPrefix(needle) {
+                return index   // best possible match; earliest one wins
+            }
+            if wordPrefix == nil, hasWordPrefix(haystack, needle) { wordPrefix = index }
+            if substring == nil, haystack.contains(needle) { substring = index }
+        }
+        return wordPrefix ?? substring
+    }
+
+    /// Whether any whitespace/punctuation-delimited word in `haystack` starts with
+    /// `needle` (both already lowercased).
+    private static func hasWordPrefix(_ haystack: String, _ needle: String) -> Bool {
+        let separators = CharacterSet.whitespaces.union(.punctuationCharacters)
+        return haystack
+            .components(separatedBy: separators)
+            .contains { $0.hasPrefix(needle) }
     }
 
     // MARK: Commit / cancel
@@ -350,6 +454,7 @@ final class SwitcherController {
         autoCommitTimer?.invalidate(); autoCommitTimer = nil
         dwellTimer?.invalidate(); dwellTimer = nil
         isSessionActive = false
+        typeBuffer = ""
         quittingPIDs.removeAll()
         windows = []
         windowSelectedIndex = nil

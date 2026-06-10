@@ -149,6 +149,7 @@ final class OverlayWindowController {
         model.windowSelectedIndex = nil
         model.windowThumbnails = [:]
         model.dropTargetIndex = nil
+        model.typeQuery = ""
 
         currentScreen = screen
         // Reassigning the root view is cheap (the model stays the same) and nudges
@@ -181,6 +182,11 @@ final class OverlayWindowController {
     /// from under the cursor and make the middle ones unclickable).
     func updateHover(_ index: Int) {
         model.selectedIndex = index
+    }
+
+    /// Updates the type-to-search query badge shown above the icon row.
+    func setTypeQuery(_ query: String) {
+        model.typeQuery = query
     }
 
     /// Updates which app icons render dimmed (pending-quit) and moves the
@@ -272,6 +278,7 @@ final class OverlayWindowController {
         model.apps = []
         model.selectedIndex = 0
         model.dropTargetIndex = nil
+        model.typeQuery = ""
         model.scrollOffset = 0
         model.quittingPIDs = []
         model.windows = []

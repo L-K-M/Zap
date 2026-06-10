@@ -52,6 +52,10 @@ final class OverlayModel: ObservableObject {
     /// The icon a file drag is currently hovering over, highlighted as a drop target.
     @Published var dropTargetIndex: Int?
 
+    /// The current type-to-search query, shown as a small badge while the user
+    /// types to jump the selection. Empty when no query is active.
+    @Published var typeQuery: String = ""
+
     /// Called when the user clicks an icon. The argument is the app's index.
     var onPick: ((Int) -> Void)?
     /// Called when the pointer hovers an app icon. The argument is the app's index.
