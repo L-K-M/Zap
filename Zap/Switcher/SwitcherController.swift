@@ -35,6 +35,12 @@ final class SwitcherController {
     private var windows: [WindowInfo] = []
     private var windowSelectedIndex: Int?
 
+    /// The display chosen when the session began. Resolved once (from the pointer
+    /// location) so the per-display scoped app list and the panel are guaranteed to
+    /// agree on which screen the session is for, even though the panel is presented a
+    /// moment later (after `showDelayMs`).
+    private var sessionScreen: NSScreen?
+
     /// The current type-to-search query. Typing letters/digits jumps the highlight
     /// to the best-matching app; a leading digit with an empty query instead jumps
     /// straight to that app and commits (number-key shortcut). Reset on commit,
@@ -235,7 +241,11 @@ final class SwitcherController {
     }
 
     private func beginSession(forward: Bool) {
-        apps = provider.currentApps()
+        // Resolve the display now and reuse it for presentation, so the (possibly
+        // per-display scoped) list matches the screen the panel will appear on.
+        let screen = targetScreen()
+        sessionScreen = screen
+        apps = appList(for: screen)
         guard !apps.isEmpty else { return }
         typeBuffer = ""
 
@@ -311,7 +321,7 @@ final class SwitcherController {
     private func presentOverlay() {
         showTimer?.invalidate()
         showTimer = nil
-        guard isSessionActive, !apps.isEmpty, let screen = targetScreen() else { return }
+        guard isSessionActive, !apps.isEmpty, let screen = sessionScreen ?? targetScreen() else { return }
         overlay.show(apps: apps, selectedIndex: selectedIndex, on: screen)
         // `show` clears the dim state; re-apply it in case a quit was requested
         // before the overlay first appeared.
@@ -606,6 +616,7 @@ final class SwitcherController {
         windows = []
         windowSelectedIndex = nil
         windowsGeneration &+= 1
+        sessionScreen = nil
         overlay.hide()
     }
 
@@ -922,5 +933,30 @@ final class SwitcherController {
         return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
             ?? NSScreen.main
             ?? NSScreen.screens.first
+    }
+
+    /// The scope mode in effect for `screen`. Per-display scoping is suppressed while
+    /// "show on all displays" is on: that mirrors one shared panel onto every screen,
+    /// so a per-display app list can't apply coherently (the two are mutually
+    /// exclusive, with mirroring taking precedence).
+    private func scopeMode(for screen: NSScreen?) -> ScreenScopeMode {
+        guard !preferences.showOnAllScreens,
+              let screen,
+              let id = ScreenIdentity.persistentID(for: screen)
+        else { return .off }
+        return preferences.screenScopeMode(forID: id)
+    }
+
+    /// Builds the app list for `screen`, applying its scope mode. A scoped display
+    /// that ends up with no qualifying apps (e.g. a bare secondary display) falls back
+    /// to the full list, so ⌘-Tab is never a dead key there.
+    private func appList(for screen: NSScreen?) -> [AppInfo] {
+        let mode = scopeMode(for: screen)
+        guard mode.isScoped, let screen else {
+            return provider.currentApps(mode: .off, pidsOnScreen: [])
+        }
+        let pids = ScreenWindowScoper.pidsOwningWindows(onScreen: screen)
+        let scoped = provider.currentApps(mode: mode, pidsOnScreen: pids)
+        return scoped.isEmpty ? provider.currentApps(mode: .off, pidsOnScreen: []) : scoped
     }
 }

@@ -100,6 +100,8 @@ struct GeneralView: View {
                     .foregroundStyle(.secondary)
             }
 
+            DisplayScopeSection(preferences: preferences)
+
             Section("Feedback") {
                 Toggle("Haptic tick when scrolling the switcher", isOn: $preferences.scrollHapticsEnabled)
                 Text("A faint tick as each icon passes the centre while you scroll the row. Requires a Force Touch trackpad.")

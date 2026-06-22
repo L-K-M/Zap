@@ -66,6 +66,7 @@ final class Preferences: ObservableObject {
         static let useAlternateHotkey = "useAlternateHotkey"
         static let closeOnClickOutside = "closeOnClickOutside"
         static let showOnAllScreens = "showOnAllScreens"
+        static let screenScopeModes = "screenScopeModes"
         static let includeFullScreenWindows = "includeFullScreenWindows"
         static let scrollHapticsEnabled = "scrollHapticsEnabled"
         static let switchCountTotal = "switchCountTotal"
@@ -213,6 +214,14 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(showOnAllScreens, forKey: Key.showOnAllScreens) }
     }
 
+    /// Per-display scope mode, keyed by a stable display UUID (see `ScreenIdentity`).
+    /// Only displays the user has opted into scoping are stored; an absent display
+    /// means `.off`. Lets a side display list only the apps living on it while the
+    /// main display shows everything.
+    @Published var screenScopeModes: [String: ScreenScopeMode] {
+        didSet { defaults.set(screenScopeModes.mapValues(\.rawValue), forKey: Key.screenScopeModes) }
+    }
+
     /// Whether the window list includes full-screen windows on other desktops. Off by
     /// default because macOS can't reliably switch to them (see the Settings caption).
     @Published var includeFullScreenWindows: Bool {
@@ -273,6 +282,10 @@ final class Preferences: ObservableObject {
         useAlternateHotkey = defaults.object(forKey: Key.useAlternateHotkey) as? Bool ?? false
         closeOnClickOutside = defaults.object(forKey: Key.closeOnClickOutside) as? Bool ?? true
         showOnAllScreens = defaults.object(forKey: Key.showOnAllScreens) as? Bool ?? false
+        let rawScopeModes = defaults.dictionary(forKey: Key.screenScopeModes) as? [String: String] ?? [:]
+        screenScopeModes = rawScopeModes
+            .compactMapValues(ScreenScopeMode.init(rawValue:))
+            .filter { $0.value != .off }   // `.off` is the absence of an entry; never store it
         includeFullScreenWindows = defaults.object(forKey: Key.includeFullScreenWindows) as? Bool ?? false
         scrollHapticsEnabled = defaults.object(forKey: Key.scrollHapticsEnabled) as? Bool ?? false
         switchCountTotal = max(0, defaults.integer(forKey: Key.switchCountTotal))
@@ -333,6 +346,28 @@ final class Preferences: ObservableObject {
             excludedBundleIDs.remove(bundleID)
         }
     }
+
+    // MARK: Per-display scoping
+
+    /// The scope mode configured for the display with stable id `id`, defaulting to
+    /// `.off` for displays the user hasn't opted in.
+    func screenScopeMode(forID id: String) -> ScreenScopeMode {
+        screenScopeModes[id] ?? .off
+    }
+
+    /// Sets the scope mode for display `id`. Setting `.off` removes the entry, so the
+    /// stored dictionary only ever holds displays that are actually scoped.
+    func setScreenScopeMode(_ mode: ScreenScopeMode, forID id: String) {
+        if mode == .off {
+            screenScopeModes.removeValue(forKey: id)
+        } else {
+            screenScopeModes[id] = mode
+        }
+    }
+
+    /// Whether any display is currently scoped. Used to coordinate with the mutually
+    /// exclusive "show on all displays" mirroring mode.
+    var hasAnyScreenScoped: Bool { !screenScopeModes.isEmpty }
 
     // MARK: Switch counter
 
