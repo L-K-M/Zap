@@ -935,16 +935,27 @@ final class SwitcherController {
             ?? NSScreen.screens.first
     }
 
-    /// The scope mode in effect for `screen`. Per-display scoping is suppressed while
-    /// "show on all displays" is on: that mirrors one shared panel onto every screen,
-    /// so a per-display app list can't apply coherently (the two are mutually
-    /// exclusive, with mirroring taking precedence).
+    /// The scope mode in effect for `screen`. Per-display scoping is a multi-display
+    /// feature: it's suppressed unless at least two displays are connected (with one
+    /// display there's no "other screen" to separate apps onto, and the Settings tab
+    /// that controls it is hidden — so leaving it active would strand the setting out
+    /// of reach). It's also suppressed while "show on all displays" mirroring is on,
+    /// which shares one panel across screens. The stored mode persists in both cases
+    /// and resumes once the condition holds again.
     private func scopeMode(for screen: NSScreen?) -> ScreenScopeMode {
-        guard !preferences.showOnAllScreens,
-              let screen,
-              let id = ScreenIdentity.persistentID(for: screen)
-        else { return .off }
-        return preferences.screenScopeMode(forID: id)
+        guard let screen, let id = ScreenIdentity.persistentID(for: screen) else { return .off }
+        return Self.effectiveScopeMode(stored: preferences.screenScopeMode(forID: id),
+                                       mirroring: preferences.showOnAllScreens,
+                                       displayCount: NSScreen.screens.count)
+    }
+
+    /// Pure rule for the mode that actually applies, given the stored per-display
+    /// mode, whether mirroring is on, and how many displays are connected. Scoping
+    /// only takes effect with 2+ displays and mirroring off. Extracted for testing.
+    static func effectiveScopeMode(stored: ScreenScopeMode, mirroring: Bool,
+                                   displayCount: Int) -> ScreenScopeMode {
+        guard !mirroring, displayCount >= 2 else { return .off }
+        return stored
     }
 
     /// Builds the app list for `screen`, applying its scope mode. A scoped display

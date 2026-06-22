@@ -93,15 +93,6 @@ struct GeneralView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Displays") {
-                Toggle("Show the switcher on all displays", isOn: $preferences.showOnAllScreens)
-                Text("When off, the switcher appears only on the display with the pointer. When on, the same panel is mirrored onto every display.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            DisplayScopeSection(preferences: preferences)
-
             Section("Feedback") {
                 Toggle("Haptic tick when scrolling the switcher", isOn: $preferences.scrollHapticsEnabled)
                 Text("A faint tick as each icon passes the centre while you scroll the row. Requires a Force Touch trackpad.")

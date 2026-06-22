@@ -363,6 +363,9 @@ Zap/
   the apps owning a window on that display — a straddling window counts for the display
   holding most of it. An empty scoped display falls back to the full list. Mutually
   exclusive with "show on all displays" mirroring, which shares one model across screens.
+  Both the **Displays** settings tab and the scoping effect are gated on **2+ connected
+  displays** (`SwitcherController.effectiveScopeMode`), making it a pure multi-display
+  feature; stored modes persist (dormant, keyed by display UUID) and resume on reconnect.
 - **Performance** → pre-warm overlay window; cache icons; avoid rebuilding the whole
   view on each Tab (only move the highlight).
 - **Conflicts with other switcher utilities** (e.g. user already remapped ⌘+Tab).
