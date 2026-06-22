@@ -355,7 +355,14 @@ Zap/
 - **Fullscreen / per-Space apps** → ensure overlay `collectionBehavior` shows it
   everywhere; `activate` may switch Spaces (matches native).
 - **Apps launching/quitting mid-switch** → guard against stale `pid`/bundle IDs.
-- **Multiple monitors** → show overlay on the active screen.
+- **Multiple monitors** → show overlay on the active screen. Optionally **scope the
+  app list per display**: each physical display has a `ScreenScopeMode` (off /
+  scoped-respecting-exclusions / scoped-ignoring-exclusions), stored by stable display
+  UUID (`ScreenIdentity`). When scoped, `ScreenWindowScoper` maps the Quartz on-screen
+  window list (`CGWindowListCopyWindowInfo`, no Screen Recording needed for geometry) to
+  the apps owning a window on that display — a straddling window counts for the display
+  holding most of it. An empty scoped display falls back to the full list. Mutually
+  exclusive with "show on all displays" mirroring, which shares one model across screens.
 - **Performance** → pre-warm overlay window; cache icons; avoid rebuilding the whole
   view on each Tab (only move the highlight).
 - **Conflicts with other switcher utilities** (e.g. user already remapped ⌘+Tab).

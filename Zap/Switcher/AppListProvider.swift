@@ -38,13 +38,23 @@ final class AppListProvider {
 
     /// The current switcher list: regular apps, MRU-ordered, with exclusions removed.
     func currentApps() -> [AppInfo] {
+        currentApps(mode: .off, pidsOnScreen: [])
+    }
+
+    /// The switcher list for a display with scope `mode`. When `mode` is `.off`,
+    /// this is the full list with exclusions applied. When scoped, only apps owning a
+    /// window on the display (`pidsOnScreen`) survive, and the user's exclusions are
+    /// applied unless the mode disregards them. Zap itself and non-regular apps are
+    /// always filtered out regardless of mode.
+    func currentApps(mode: ScreenScopeMode, pidsOnScreen: Set<pid_t>) -> [AppInfo] {
         // Always exclude Zap itself. While the Settings window is open the app
         // temporarily becomes `.regular`, which would otherwise let it satisfy
         // `AppInfo`'s activation-policy check and appear in its own switcher.
         let running = NSWorkspace.shared.runningApplications
             .compactMap(AppInfo.init(runningApplication:))
             .filter { !isOwnBundleID($0.bundleIdentifier) }
-        return Self.filtered(mru.ordered(running), excluding: preferences.excludedBundleIDs)
+        return Self.scoped(mru.ordered(running), mode: mode, pidsOnScreen: pidsOnScreen,
+                           excluding: preferences.excludedBundleIDs)
     }
 
     /// Resolves the live running application for an `AppInfo`.
@@ -66,6 +76,18 @@ final class AppListProvider {
     /// Pure exclusion filter — exposed for unit testing.
     static func filtered(_ apps: [AppInfo], excluding excluded: Set<String>) -> [AppInfo] {
         apps.filter { !excluded.contains($0.bundleIdentifier) }
+    }
+
+    /// Pure screen-scope + exclusion filter — exposed for unit testing. Applies the
+    /// screen filter first (keeping only apps in `pidsOnScreen`) when the mode is
+    /// scoped, then the exclusion list unless the mode disregards it. Order is
+    /// preserved throughout.
+    static func scoped(_ apps: [AppInfo], mode: ScreenScopeMode,
+                       pidsOnScreen: Set<pid_t>, excluding excluded: Set<String>) -> [AppInfo] {
+        let onScreen = mode.isScoped
+            ? apps.filter { pidsOnScreen.contains($0.processIdentifier) }
+            : apps
+        return mode.appliesExclusions ? filtered(onScreen, excluding: excluded) : onScreen
     }
 
     // MARK: Private
