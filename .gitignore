@@ -15,6 +15,7 @@ Icon
 # Xcode — user-specific & build artifacts
 ## Build generated
 build/
+dist/
 DerivedData/
 *.o
 *.hmap

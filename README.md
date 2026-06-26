@@ -31,6 +31,10 @@ to, switch **directly to individual windows**, and **customize the appearance** 
 
 ## Build & Run
 
+The quickest path is `scripts/build.sh`, which builds `Zap.app` and reveals it in
+Finder on success (incremental Release build by default; `scripts/build.sh --clean`
+for a clean rebuild). Or drive `xcodebuild` directly:
+
 ```bash
 # Build
 xcodebuild -project Zap.xcodeproj -scheme Zap -configuration Debug build

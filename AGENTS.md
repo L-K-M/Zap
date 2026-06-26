@@ -25,6 +25,9 @@ The Xcode project (`Zap.xcodeproj`) uses Xcode 16 file-system–synchronized gro
 so new files added under `Zap/` or `ZapTests/` are picked up automatically — no
 `project.pbxproj` edits needed. **Requires Xcode 16+.**
 
+`scripts/build.sh` builds `Zap.app` and reveals it in Finder (`scripts/build.sh
+--clean` for a clean rebuild). Or invoke `xcodebuild` directly:
+
 ```bash
 # Build
 xcodebuild -project Zap.xcodeproj -scheme Zap -configuration Debug build
