@@ -79,12 +79,13 @@ final class ScreenWindowScoperTests: XCTestCase {
     // MARK: Window-list entry parsing
 
     /// A Quartz window-list entry, mirroring `CGWindowListCopyWindowInfo`. Defaults
-    /// describe a normal, document-sized window.
+    /// describe a normal, document-sized window. `onscreen` adds `kCGWindowIsOnscreen`
+    /// only when provided, so the on-screen parsing tests stay unaffected.
     private func entry(pid: pid_t = 42, layer: Int = 0,
                        x: Double = 0, y: Double = 0,
                        width: Double = 800, height: Double = 600,
-                       alpha: Double = 1) -> [String: Any] {
-        [
+                       alpha: Double = 1, onscreen: Bool? = nil) -> [String: Any] {
+        var info: [String: Any] = [
             kCGWindowOwnerPID as String: NSNumber(value: pid),
             kCGWindowLayer as String: NSNumber(value: layer),
             kCGWindowAlpha as String: NSNumber(value: alpha),
@@ -93,6 +94,8 @@ final class ScreenWindowScoperTests: XCTestCase {
                 "Width": NSNumber(value: width), "Height": NSNumber(value: height),
             ],
         ]
+        if let onscreen { info[kCGWindowIsOnscreen as String] = NSNumber(value: onscreen) }
+        return info
     }
 
     func testNormalWindowParses() {
@@ -118,5 +121,66 @@ final class ScreenWindowScoperTests: XCTestCase {
         var info = entry()
         info.removeValue(forKey: kCGWindowBounds as String)
         XCTAssertNil(ScreenWindowScoper.scopedWindow(from: info))
+    }
+
+    // MARK: Off-Space full-screen windows
+
+    func testOffSpaceWindowParsesWhenNotOnscreen() {
+        // A window on another Space (e.g. full-screen) — onscreen flag false.
+        let window = ScreenWindowScoper.offSpaceScopedWindow(from: entry(onscreen: false))
+        XCTAssertEqual(window, ScreenWindowScoper.ScopedWindow(
+            pid: 42, cgBounds: CGRect(x: 0, y: 0, width: 800, height: 600)))
+    }
+
+    func testOffSpaceWindowParsesWhenOnscreenFlagAbsent() {
+        // No onscreen flag → treat as off-Space; the on-screen pass owns on-screen ones.
+        XCTAssertNotNil(ScreenWindowScoper.offSpaceScopedWindow(from: entry(onscreen: nil)))
+    }
+
+    func testOnscreenWindowRejectedFromOffSpacePass() {
+        // Already counted by the on-screen pass; don't double-handle it here.
+        XCTAssertNil(ScreenWindowScoper.offSpaceScopedWindow(from: entry(onscreen: true)))
+    }
+
+    func testTinyOffSpaceWindowRejected() {
+        // The off-Space pass inherits `scopedWindow`'s minimum-size filter.
+        XCTAssertNil(ScreenWindowScoper.offSpaceScopedWindow(from: entry(width: 40, height: 40, onscreen: false)))
+    }
+
+    // MARK: Full-screen coverage
+
+    func testFillsScreenTrueWhenWindowCoversDisplay() {
+        let screen = CGRect(x: 0, y: 0, width: 1000, height: 1000)
+        XCTAssertTrue(ScreenWindowScoper.fillsScreen(windowFrame: screen, screenFrame: screen))
+    }
+
+    func testFillsScreenTrueWhenWindowOverhangsDisplay() {
+        // Full-screen windows can overhang the menu-bar area; still counts.
+        let screen = CGRect(x: 0, y: 0, width: 1000, height: 1000)
+        let window = CGRect(x: -10, y: -10, width: 1020, height: 1020)
+        XCTAssertTrue(ScreenWindowScoper.fillsScreen(windowFrame: window, screenFrame: screen))
+    }
+
+    func testFillsScreenFalseForPartialWindow() {
+        // A window covering ~36% of the display is not full-screen.
+        let screen = CGRect(x: 0, y: 0, width: 1000, height: 1000)
+        let window = CGRect(x: 0, y: 0, width: 600, height: 600)
+        XCTAssertFalse(ScreenWindowScoper.fillsScreen(windowFrame: window, screenFrame: screen))
+    }
+
+    func testFullScreenPidsKeepOnlyDisplayFillingWindowsOnTarget() {
+        // pid 1 fills screen 0 (full-screen); pid 2 has a small window on screen 0;
+        // pid 3 fills screen 1. Target screen 0 ⇒ only pid 1. primaryHeight 1000.
+        let windows = [
+            ScreenWindowScoper.ScopedWindow(pid: 1, cgBounds: CGRect(x: 0, y: 0, width: 1000, height: 1000)),
+            ScreenWindowScoper.ScopedWindow(pid: 2, cgBounds: CGRect(x: 100, y: 100, width: 200, height: 200)),
+            ScreenWindowScoper.ScopedWindow(pid: 3, cgBounds: CGRect(x: 1000, y: 0, width: 1000, height: 1000)),
+        ]
+        let onScreen0 = ScreenWindowScoper.fullScreenPids(for: windows, targetScreenIndex: 0,
+                                                          screenFrames: screens, primaryHeight: 1000)
+        let onScreen1 = ScreenWindowScoper.fullScreenPids(for: windows, targetScreenIndex: 1,
+                                                          screenFrames: screens, primaryHeight: 1000)
+        XCTAssertEqual(onScreen0, [1])
+        XCTAssertEqual(onScreen1, [3])
     }
 }

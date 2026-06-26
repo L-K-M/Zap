@@ -36,6 +36,10 @@ struct DisplayScopeSection: View {
                     }
                 }
                 .disabled(mirroring)
+
+                Toggle("Include apps that are full-screen on the display",
+                       isOn: $preferences.scopeIncludesFullScreenApps)
+                    .disabled(mirroring)
             }
 
             Text(captionText)
@@ -54,8 +58,9 @@ struct DisplayScopeSection: View {
         return """
         Scope a display so its switcher lists only apps with a window on it. \
         “incl. excluded” also surfaces apps you’ve hidden under Exclusions when their \
-        window is on that display. A scoped display with nothing on it falls back to \
-        the full list.
+        window is on that display. A native full-screen app sits on its own Space; keep \
+        “Include apps that are full-screen on the display” on to list it on the display \
+        it fills. A scoped display with nothing on it falls back to the full list.
         """
     }
 

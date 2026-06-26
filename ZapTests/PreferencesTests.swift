@@ -174,6 +174,13 @@ final class PreferencesTests: XCTestCase {
         XCTAssertTrue(Preferences(defaults: defaults).includeFullScreenWindows)
     }
 
+    func testScopeIncludesFullScreenAppsDefaultsOnAndRoundTrips() {
+        XCTAssertTrue(Preferences(defaults: defaults).scopeIncludesFullScreenApps)
+
+        Preferences(defaults: defaults).scopeIncludesFullScreenApps = false
+        XCTAssertFalse(Preferences(defaults: defaults).scopeIncludesFullScreenApps)
+    }
+
     func testScrollHapticsDefaultsOffAndRoundTrips() {
         XCTAssertFalse(Preferences(defaults: defaults).scrollHapticsEnabled)
 

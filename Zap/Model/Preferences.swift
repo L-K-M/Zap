@@ -68,6 +68,7 @@ final class Preferences: ObservableObject {
         static let showOnAllScreens = "showOnAllScreens"
         static let screenScopeModes = "screenScopeModes"
         static let includeFullScreenWindows = "includeFullScreenWindows"
+        static let scopeIncludesFullScreenApps = "scopeIncludesFullScreenApps"
         static let scrollHapticsEnabled = "scrollHapticsEnabled"
         static let switchCountTotal = "switchCountTotal"
         static let switchCountToday = "switchCountToday"
@@ -228,6 +229,15 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(includeFullScreenWindows, forKey: Key.includeFullScreenWindows) }
     }
 
+    /// Whether per-display scoping also lists apps that are *full-screen* on the
+    /// display. A native full-screen app occupies its own Space, which the on-screen
+    /// window query that drives scoping can't see; when on, an extra all-Spaces pass
+    /// surfaces it. On by default — an app filling the display is very much "on" it,
+    /// so users expect it in that display's list.
+    @Published var scopeIncludesFullScreenApps: Bool {
+        didSet { defaults.set(scopeIncludesFullScreenApps, forKey: Key.scopeIncludesFullScreenApps) }
+    }
+
     /// Whether scrolling the icon row gives a faint haptic tick as the centred icon
     /// changes. Off by default; only does anything on a Force Touch trackpad.
     @Published var scrollHapticsEnabled: Bool {
@@ -287,6 +297,7 @@ final class Preferences: ObservableObject {
             .compactMapValues(ScreenScopeMode.init(rawValue:))
             .filter { $0.value != .off }   // `.off` is the absence of an entry; never store it
         includeFullScreenWindows = defaults.object(forKey: Key.includeFullScreenWindows) as? Bool ?? false
+        scopeIncludesFullScreenApps = defaults.object(forKey: Key.scopeIncludesFullScreenApps) as? Bool ?? true
         scrollHapticsEnabled = defaults.object(forKey: Key.scrollHapticsEnabled) as? Bool ?? false
         switchCountTotal = max(0, defaults.integer(forKey: Key.switchCountTotal))
         switchCountToday = max(0, defaults.integer(forKey: Key.switchCountToday))
