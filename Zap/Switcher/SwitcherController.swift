@@ -261,7 +261,7 @@ final class SwitcherController {
         if delay == 0 {
             presentOverlay()
         } else {
-            showTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            showTimer = Self.scheduleTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
                 self?.presentOverlay()
             }
         }
@@ -483,8 +483,8 @@ final class SwitcherController {
             // A key that types a digit can jump-and-commit, ending the session;
             // never arm a hold that would outlive it.
             guard isSessionActive else { return }
-            let timer = Timer.scheduledTimer(withTimeInterval: shortcutHoldDelay,
-                                             repeats: false) { [weak self] _ in
+            let timer = Self.scheduleTimer(withTimeInterval: shortcutHoldDelay,
+                                           repeats: false) { [weak self] _ in
                 self?.fireHeldShortcut()
             }
             pendingShortcut = PendingShortcut(key: key, bufferBefore: bufferBefore,
@@ -674,7 +674,7 @@ final class SwitcherController {
     private func scheduleQuitVerification(for runningApp: NSRunningApplication) {
         let pid = runningApp.processIdentifier
         pendingQuits[pid]?.timer.invalidate()
-        let timer = Timer.scheduledTimer(withTimeInterval: quitVerificationDelay, repeats: false) { [weak self] _ in
+        let timer = Self.scheduleTimer(withTimeInterval: quitVerificationDelay, repeats: false) { [weak self] _ in
             self?.verifyQuit(pid: pid)
         }
         pendingQuits[pid] = PendingQuit(runningApp: runningApp, timer: timer)
@@ -754,7 +754,7 @@ final class SwitcherController {
         else { return }
 
         let interval = max(0.1, preferences.windowDwellMs / 1000)
-        dwellTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+        dwellTimer = Self.scheduleTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
             self?.revealWindows()
         }
     }
@@ -901,7 +901,7 @@ final class SwitcherController {
 
     private func scheduleAutoCommit() {
         autoCommitTimer?.invalidate()
-        autoCommitTimer = Timer.scheduledTimer(withTimeInterval: autoCommitInterval, repeats: false) { [weak self] _ in
+        autoCommitTimer = Self.scheduleTimer(withTimeInterval: autoCommitInterval, repeats: false) { [weak self] _ in
             self?.commit()
         }
     }
@@ -933,6 +933,14 @@ final class SwitcherController {
         return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
             ?? NSScreen.main
             ?? NSScreen.screens.first
+    }
+
+    private static func scheduleTimer(withTimeInterval interval: TimeInterval,
+                                      repeats: Bool,
+                                      block: @escaping (Timer) -> Void) -> Timer {
+        let timer = Timer(timeInterval: interval, repeats: repeats, block: block)
+        RunLoop.main.add(timer, forMode: .common)
+        return timer
     }
 
     /// The scope mode in effect for `screen`. Per-display scoping is a multi-display
