@@ -18,13 +18,13 @@ private typealias CGSConnectionID = UInt32
 private func CGSMainConnectionID() -> CGSConnectionID
 
 @_silgen_name("CGSCopyManagedDisplaySpaces")
-private func CGSCopyManagedDisplaySpaces(_ cid: CGSConnectionID) -> CFArray
+private func CGSCopyManagedDisplaySpaces(_ cid: CGSConnectionID) -> CFArray?
 
 @_silgen_name("CGSCopyWindowsWithOptionsAndTags")
 private func CGSCopyWindowsWithOptionsAndTags(_ cid: CGSConnectionID, _ owner: Int,
                                               _ spaces: CFArray, _ options: Int,
                                               _ setTags: UnsafeMutablePointer<Int>,
-                                              _ clearTags: UnsafeMutablePointer<Int>) -> CFArray
+                                              _ clearTags: UnsafeMutablePointer<Int>) -> CFArray?
 
 /// Resolves which windows live on full-screen Spaces, via SkyLight.
 enum FullscreenSpaceWindows {
