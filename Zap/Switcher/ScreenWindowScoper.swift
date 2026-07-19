@@ -22,7 +22,13 @@ enum ScreenWindowScoper {
         /// `kCGWindowNumber`, when the window-list entry carried one. Identifies
         /// the window to SkyLight's per-Space queries; `nil` in hand-built test
         /// fixtures.
-        let windowID: CGWindowID? = nil
+        let windowID: CGWindowID?
+
+        init(pid: pid_t, cgBounds: CGRect, windowID: CGWindowID? = nil) {
+            self.pid = pid
+            self.cgBounds = cgBounds
+            self.windowID = windowID
+        }
     }
 
     /// Smallest window (points) that counts toward a screen — filters out tiny
