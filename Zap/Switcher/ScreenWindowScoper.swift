@@ -83,10 +83,13 @@ enum ScreenWindowScoper {
            let allList = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements],
                                                     kCGNullWindowID) as? [[String: Any]] {
             let offSpace = allList.compactMap { offSpaceScopedWindow(from: $0) }
-            result.formUnion(fullScreenPids(for: offSpace,
-                                            fullscreenWindowIDs: FullscreenSpaceWindows.fullscreenWindowIDs(),
-                                            targetScreenIndex: targetIndex,
-                                            screenFrames: screenFrames, primaryHeight: primaryHeight))
+            // Skip the SkyLight round-trip when nothing off-Space could qualify.
+            if !offSpace.isEmpty {
+                result.formUnion(fullScreenPids(for: offSpace,
+                                                fullscreenWindowIDs: FullscreenSpaceWindows.fullscreenWindowIDs(),
+                                                targetScreenIndex: targetIndex,
+                                                screenFrames: screenFrames, primaryHeight: primaryHeight))
+            }
         }
         return result
     }

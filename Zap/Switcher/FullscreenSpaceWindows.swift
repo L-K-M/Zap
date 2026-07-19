@@ -34,9 +34,11 @@ enum FullscreenSpaceWindows {
     /// View pair tiled side by side.
     static let fullscreenSpaceType = 4
 
-    /// `CGSCopyWindowsWithOptionsAndTags` option bits (invisible windows, both
-    /// sets) so windows on Spaces other than the current one are reported too —
-    /// a full-screen Space the user isn't looking at is exactly the case of interest.
+    /// `CGSCopyWindowsWithOptionsAndTags` option bits so windows on Spaces other
+    /// than the current one are reported too — a full-screen Space the user isn't
+    /// looking at is exactly the case of interest. Bit names per the community
+    /// reverse-engineering (AltTab): bit 0 = `invisible1`, bit 1 =
+    /// `screenSaverLevel1000`, bit 2 = `invisible2`.
     private static let includeInvisibleOptions = 0b111
 
     /// The IDs of every window on any full-screen Space, across all displays.
