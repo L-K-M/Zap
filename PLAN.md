@@ -361,7 +361,12 @@ Zap/
   UUID (`ScreenIdentity`). When scoped, `ScreenWindowScoper` maps the Quartz on-screen
   window list (`CGWindowListCopyWindowInfo`, no Screen Recording needed for geometry) to
   the apps owning a window on that display — a straddling window counts for the display
-  holding most of it. An empty scoped display falls back to the full list. Mutually
+  holding most of it. An empty scoped display falls back to the full list. Optionally,
+  apps *full-screen* on the display are included too: they live on their own Space, so
+  an all-Spaces window-list pass backfills them — matched by SkyLight full-screen
+  Space membership (`FullscreenSpaceWindows`, private SPI with geometric fallback),
+  which also covers Split View pairs whose tiled windows fill only half the display.
+  Mutually
   exclusive with "show on all displays" mirroring, which shares one model across screens.
   Both the **Displays** settings tab and the scoping effect are gated on **2+ connected
   displays** (`SwitcherController.effectiveScopeMode`), making it a pure multi-display
