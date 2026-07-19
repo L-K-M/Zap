@@ -59,11 +59,13 @@ enum FullscreenSpaceWindows {
         guard !spaceIDs.isEmpty else { return [] }
         var setTags = 0
         var clearTags = 0
-        guard let windowIDs = CGSCopyWindowsWithOptionsAndTags(
+        guard let rawIDs = CGSCopyWindowsWithOptionsAndTags(
             connection, 0, spaceIDs as CFArray, includeInvisibleOptions,
-            &setTags, &clearTags) as? [CGWindowID]
+            &setTags, &clearTags) as? [Any]
         else { return nil }
-        return Set(windowIDs)
+        // Extract per element rather than casting the whole array, so one
+        // malformed entry (private SPI, future macOS) doesn't void the rest.
+        return Set(rawIDs.compactMap { ($0 as? NSNumber)?.uint32Value })
     }
 
     /// The IDs of the full-screen-type Spaces in `displays`, the parsed form of
