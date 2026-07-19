@@ -183,4 +183,79 @@ final class ScreenWindowScoperTests: XCTestCase {
         XCTAssertEqual(onScreen0, [1])
         XCTAssertEqual(onScreen1, [3])
     }
+
+    // MARK: Split View (tiled full-screen)
+
+    func testSplitViewTilesIncludedWhenSkyLightReportsFullScreenSpace() {
+        // Two tiled windows on screen 0, each half the display: neither passes the
+        // "fills the screen" test, but SkyLight places both on a full-screen Space.
+        let windows = [
+            ScreenWindowScoper.ScopedWindow(pid: 1, cgBounds: CGRect(x: 0, y: 0, width: 500, height: 1000), windowID: 101),
+            ScreenWindowScoper.ScopedWindow(pid: 2, cgBounds: CGRect(x: 500, y: 0, width: 500, height: 1000), windowID: 102),
+        ]
+        let pids = ScreenWindowScoper.fullScreenPids(for: windows, fullscreenWindowIDs: [101, 102],
+                                                     targetScreenIndex: 0,
+                                                     screenFrames: screens, primaryHeight: 1000)
+        XCTAssertEqual(pids, [1, 2])
+    }
+
+    func testSplitViewTileOnOtherDisplayExcluded() {
+        // pid 1's tile is on screen 1; targeting screen 0 must not pick it up even
+        // though SkyLight lists its window on a full-screen Space.
+        let windows = [
+            ScreenWindowScoper.ScopedWindow(pid: 1, cgBounds: CGRect(x: 1000, y: 0, width: 500, height: 1000), windowID: 101),
+        ]
+        let pids = ScreenWindowScoper.fullScreenPids(for: windows, fullscreenWindowIDs: [101],
+                                                     targetScreenIndex: 0,
+                                                     screenFrames: screens, primaryHeight: 1000)
+        XCTAssertTrue(pids.isEmpty)
+    }
+
+    func testPartialWindowNotOnFullScreenSpaceExcluded() {
+        // SkyLight answered (non-nil set) but doesn't list this half-size window —
+        // an ordinary window parked on another Space stays out of the scoped list.
+        let windows = [
+            ScreenWindowScoper.ScopedWindow(pid: 1, cgBounds: CGRect(x: 0, y: 0, width: 500, height: 1000), windowID: 101),
+        ]
+        let pids = ScreenWindowScoper.fullScreenPids(for: windows, fullscreenWindowIDs: [999],
+                                                     targetScreenIndex: 0,
+                                                     screenFrames: screens, primaryHeight: 1000)
+        XCTAssertTrue(pids.isEmpty)
+    }
+
+    func testNilFullScreenWindowIDsFallsBackToGeometry() {
+        // SkyLight unavailable: a display-filling window still counts, a tiled one doesn't.
+        let windows = [
+            ScreenWindowScoper.ScopedWindow(pid: 1, cgBounds: CGRect(x: 0, y: 0, width: 1000, height: 1000), windowID: 101),
+            ScreenWindowScoper.ScopedWindow(pid: 2, cgBounds: CGRect(x: 0, y: 0, width: 500, height: 1000), windowID: 102),
+        ]
+        let pids = ScreenWindowScoper.fullScreenPids(for: windows, fullscreenWindowIDs: nil,
+                                                     targetScreenIndex: 0,
+                                                     screenFrames: screens, primaryHeight: 1000)
+        XCTAssertEqual(pids, [1])
+    }
+
+    // MARK: SkyLight full-screen Space parsing
+
+    func testFullscreenSpaceIDsKeepOnlyFullScreenSpaces() {
+        let displays: [[String: Any]] = [
+            ["Spaces": [
+                ["id64": NSNumber(value: 4), "type": NSNumber(value: 0)],   // user desktop
+                ["id64": NSNumber(value: 7), "type": NSNumber(value: 4)],   // full-screen
+            ]],
+            ["Spaces": [
+                ["id64": NSNumber(value: 12), "type": NSNumber(value: 4)],  // full-screen (Split View)
+                ["id64": NSNumber(value: 13), "type": NSNumber(value: 2)],  // system
+            ]],
+        ]
+        XCTAssertEqual(FullscreenSpaceWindows.fullscreenSpaceIDs(fromDisplaySpaces: displays), [7, 12])
+    }
+
+    func testFullscreenSpaceIDsTolerateMalformedEntries() {
+        let displays: [[String: Any]] = [
+            [:],                                        // no Spaces key
+            ["Spaces": [["type": NSNumber(value: 4)]]], // full-screen but no id64
+        ]
+        XCTAssertTrue(FullscreenSpaceWindows.fullscreenSpaceIDs(fromDisplaySpaces: displays).isEmpty)
+    }
 }

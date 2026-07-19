@@ -60,7 +60,8 @@ struct DisplayScopeSection: View {
         “incl. excluded” also surfaces apps you’ve hidden under Exclusions when their \
         window is on that display. A native full-screen app sits on its own Space; keep \
         “Include apps that are full-screen on the display” on to list it on the display \
-        it fills. A scoped display with nothing on it falls back to the full list.
+        it fills — this also covers two apps tiled full-screen side by side (Split View). \
+        A scoped display with nothing on it falls back to the full list.
         """
     }
 
