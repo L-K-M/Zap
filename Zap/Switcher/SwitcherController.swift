@@ -975,8 +975,8 @@ final class SwitcherController {
             return provider.currentApps(mode: .off, pidsOnScreen: [])
         }
         let pids = ScreenWindowScoper.pidsOwningWindows(
-            onScreen: screen,
-            includingFullScreen: preferences.scopeIncludesFullScreenApps)
+            onDisplay: screen,
+            includingFullScreenFromOtherSpaces: preferences.scopeIncludesFullScreenAppsFromOtherSpaces)
         let scoped = provider.currentApps(mode: mode, pidsOnScreen: pids)
         return scoped.isEmpty ? provider.currentApps(mode: .off, pidsOnScreen: []) : scoped
     }
