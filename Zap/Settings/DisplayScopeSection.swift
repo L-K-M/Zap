@@ -37,8 +37,8 @@ struct DisplayScopeSection: View {
                 }
                 .disabled(mirroring)
 
-                Toggle("Include apps that are full-screen on the display",
-                       isOn: $preferences.scopeIncludesFullScreenApps)
+                Toggle("Include full-screen apps from other Spaces",
+                       isOn: $preferences.scopeIncludesFullScreenAppsFromOtherSpaces)
                     .disabled(mirroring)
             }
 
@@ -56,11 +56,13 @@ struct DisplayScopeSection: View {
             return "Turn off “Show the switcher on all displays” to scope the app list per display."
         }
         return """
-        Scope a display so its switcher lists only apps with a window on it. \
+        Scope a display so its switcher lists apps with a window assigned to it across \
+        all regular desktop Spaces; hidden and minimized windows still count. \
         “incl. excluded” also surfaces apps you’ve hidden under Exclusions when their \
-        window is on that display. A native full-screen app sits on its own Space; keep \
-        “Include apps that are full-screen on the display” on to list it on the display \
-        it fills — this also covers two apps tiled full-screen side by side (Split View). \
+        window is on that display. The currently visible full-screen app always counts; \
+        keep “Include full-screen apps from other Spaces” on to include additional \
+        full-screen and Split View Spaces assigned to the display. \
+        If macOS cannot classify a Space, Zap keeps its apps reachable. \
         A scoped display with nothing on it falls back to the full list.
         """
     }

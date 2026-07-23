@@ -5,10 +5,9 @@ import CoreGraphics
 /// can scope its list to "what's living on this screen."
 ///
 /// Built on the Quartz window list (`CGWindowListCopyWindowInfo`), which reports
-/// every on-screen window across all apps in a single call and — unlike window
-/// *titles* — exposes geometry and owner PID without Screen Recording permission.
-/// `.optionOnScreenOnly` means only windows on the *current* Space count, so
-/// minimized/hidden apps and windows on other Spaces are naturally excluded.
+/// windows across all apps and Spaces in a single call and — unlike window *titles*
+/// — exposes geometry and owner PID without Screen Recording permission. Looking
+/// across Spaces keeps a display's app list stable when its visible Space changes.
 enum ScreenWindowScoper {
 
     /// A window reduced to the fields screen-scoping needs: its owner process and
@@ -35,10 +34,10 @@ enum ScreenWindowScoper {
     /// transient/helper surfaces while keeping real utility windows.
     private static let minWindowSide: CGFloat = 80
 
-    /// Minimum fraction of a display a window must cover to count as full-screen on
-    /// it. A native full-screen window fills the display exactly; the margin only
-    /// absorbs rounding and the menu-bar-area overhang.
-    private static let fullScreenCoverageRatio: CGFloat = 0.9
+    /// Absence of `.optionOnScreenOnly` is the important part: `.optionAll` has a
+    /// zero raw value, while `.excludeDesktopElements` removes wallpaper windows.
+    /// Internal so a regression test can lock the all-Spaces query contract.
+    static let windowListOptions: CGWindowListOption = [.optionAll, .excludeDesktopElements]
 
     // MARK: Public
 
@@ -47,15 +46,13 @@ enum ScreenWindowScoper {
     /// it, so each window is attributed to exactly one screen. Returns an empty set
     /// if `target` can't be located among the connected displays.
     ///
-    /// When `includeFullScreen` is on, apps that are *full-screen* on `target` are
-    /// also included. macOS gives each full-screen window its own Space, which the
-    /// on-screen pass can't see, so a second all-Spaces pass backfills them —
-    /// identified by SkyLight full-screen Space membership (covering Split View
-    /// pairs, whose tiles fill only part of the display) or, failing that, by
-    /// filling the display geometrically — without sweeping in ordinary windows
-    /// merely parked on another Space of it.
-    static func pidsOwningWindows(onScreen target: NSScreen,
-                                  includingFullScreen includeFullScreen: Bool = false,
+    /// Regular desktop windows count across every Space assigned to `target`, so
+    /// entering full-screen or Split View does not hide the apps on the display's
+    /// regular desktops. A full-screen app on the currently visible Space always
+    /// counts; `includeFullScreenFromOtherSpaces` controls whether full-screen apps
+    /// on inactive Spaces count too.
+    static func pidsOwningWindows(onDisplay target: NSScreen,
+                                  includingFullScreenFromOtherSpaces includeFullScreenFromOtherSpaces: Bool = false,
                                   allScreens: [NSScreen] = NSScreen.screens) -> Set<pid_t> {
         guard
             let targetID = ScreenIdentity.displayID(for: target),
@@ -64,34 +61,20 @@ enum ScreenWindowScoper {
         else { return [] }
         let screenFrames = allScreens.map(\.frame)
 
-        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
-        guard let infoList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+        // `.optionAll` is intentional: inactive regular desktops disappear from an
+        // on-screen-only snapshot whenever this display enters full-screen. Hidden
+        // and minimized windows remain assigned to their display and therefore count.
+        guard let infoList = CGWindowListCopyWindowInfo(windowListOptions, kCGNullWindowID) as? [[String: Any]] else {
             return []
         }
         let windows = infoList.compactMap { scopedWindow(from: $0) }
-        var result = pids(for: windows, targetScreenIndex: targetIndex,
-                          screenFrames: screenFrames, primaryHeight: primaryHeight)
-
-        // Full-screen apps live on their own Space, so the on-screen pass above never
-        // sees them. Take a second pass across *all* Spaces and keep only windows that
-        // are full-screen on the target display, so ordinary windows parked on another
-        // Space of this display don't leak in. "Full-screen" is decided two ways:
-        // SkyLight's Space membership (which also covers Split View pairs — each tiled
-        // window fills only half the display), and, as a fallback when SkyLight is
-        // unavailable, the geometric signature of a window that fills the display.
-        if includeFullScreen,
-           let allList = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements],
-                                                    kCGNullWindowID) as? [[String: Any]] {
-            let offSpace = allList.compactMap { offSpaceScopedWindow(from: $0) }
-            // Skip the SkyLight round-trip when nothing off-Space could qualify.
-            if !offSpace.isEmpty {
-                result.formUnion(fullScreenPids(for: offSpace,
-                                                fullscreenWindowIDs: FullscreenSpaceWindows.fullscreenWindowIDs(),
-                                                targetScreenIndex: targetIndex,
-                                                screenFrames: screenFrames, primaryHeight: primaryHeight))
-            }
-        }
-        return result
+        let inactiveFullscreenWindowIDs: Set<CGWindowID>? = includeFullScreenFromOtherSpaces || windows.isEmpty
+            ? nil
+            : FullscreenSpaceWindows.inactiveFullscreenWindowIDs()
+        return pids(for: windows, targetScreenIndex: targetIndex,
+                    screenFrames: screenFrames, primaryHeight: primaryHeight,
+                    includingFullScreenFromOtherSpaces: includeFullScreenFromOtherSpaces,
+                    inactiveFullscreenWindowIDs: inactiveFullscreenWindowIDs)
     }
 
     // MARK: Pure helpers (unit-tested)
@@ -114,65 +97,28 @@ enum ScreenWindowScoper {
         return ScopedWindow(pid: pid, cgBounds: cgBounds, windowID: windowID)
     }
 
-    /// The PIDs of `windows` whose dominant display is `targetScreenIndex`. Pure.
+    /// The PIDs of `windows` whose dominant display is `targetScreenIndex`. When
+    /// inactive full-screen Spaces are disabled, a window is removed only when
+    /// SkyLight definitively places its ID exclusively on an inactive full-screen
+    /// Space. Missing data fails open so regular desktop apps never disappear because
+    /// a private query failed. Pure.
     static func pids(for windows: [ScopedWindow], targetScreenIndex: Int,
-                     screenFrames: [CGRect], primaryHeight: CGFloat) -> Set<pid_t> {
-        var pids = Set<pid_t>()
-        for window in windows {
-            let appKit = appKitRect(fromCG: window.cgBounds, primaryHeight: primaryHeight)
-            if dominantScreenIndex(windowFrame: appKit, screenFrames: screenFrames) == targetScreenIndex {
-                pids.insert(window.pid)
-            }
-        }
-        return pids
-    }
-
-    /// Like `scopedWindow(from:)`, but only for windows that *aren't* on the current
-    /// Space (`kCGWindowIsOnscreen` false or absent) — the off-Space windows, chiefly
-    /// full-screen ones, that the on-screen pass omits. Skipping on-screen entries
-    /// avoids double-counting windows the on-screen pass already handled. Pure.
-    static func offSpaceScopedWindow(from info: [String: Any]) -> ScopedWindow? {
-        guard (info[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue != true else { return nil }
-        return scopedWindow(from: info)
-    }
-
-    /// The PIDs of off-Space `windows` that are full-screen on the target display,
-    /// whose own Space hid them from the on-screen pass. A window counts when
-    /// SkyLight places it on a full-screen Space (`fullscreenWindowIDs`) — the case
-    /// that also catches Split View pairs, whose tiled windows fill only part of
-    /// the display — or when it geometrically *fills* the display (the fallback
-    /// when SkyLight is unavailable, and a hedge for mid-transition states).
-    /// `nil` `fullscreenWindowIDs` means the SkyLight query failed and only the
-    /// geometric test applies. Pure.
-    static func fullScreenPids(for windows: [ScopedWindow],
-                               fullscreenWindowIDs: Set<CGWindowID>? = nil,
-                               targetScreenIndex: Int,
-                               screenFrames: [CGRect], primaryHeight: CGFloat) -> Set<pid_t> {
-        guard screenFrames.indices.contains(targetScreenIndex) else { return [] }
-        let targetFrame = screenFrames[targetScreenIndex]
+                     screenFrames: [CGRect], primaryHeight: CGFloat,
+                     includingFullScreenFromOtherSpaces: Bool = true,
+                     inactiveFullscreenWindowIDs: Set<CGWindowID>? = nil) -> Set<pid_t> {
         var pids = Set<pid_t>()
         for window in windows {
             let appKit = appKitRect(fromCG: window.cgBounds, primaryHeight: primaryHeight)
             guard dominantScreenIndex(windowFrame: appKit, screenFrames: screenFrames) == targetScreenIndex
             else { continue }
-            let onFullScreenSpace = window.windowID.map { fullscreenWindowIDs?.contains($0) ?? false } ?? false
-            guard onFullScreenSpace || fillsScreen(windowFrame: appKit, screenFrame: targetFrame)
-            else { continue }
+            if !includingFullScreenFromOtherSpaces,
+               let windowID = window.windowID,
+               inactiveFullscreenWindowIDs?.contains(windowID) == true {
+                continue
+            }
             pids.insert(window.pid)
         }
         return pids
-    }
-
-    /// Whether `windowFrame` covers nearly all of `screenFrame` (by intersection
-    /// area) — the test that tells a full-screen window apart from a smaller one that
-    /// happens to sit on another Space. A window overhanging the display (full-screen
-    /// windows can cover the menu-bar area) still qualifies. Pure.
-    static func fillsScreen(windowFrame: CGRect, screenFrame: CGRect) -> Bool {
-        let screenArea = screenFrame.width * screenFrame.height
-        guard screenArea > 0 else { return false }
-        let intersection = windowFrame.intersection(screenFrame)
-        guard !intersection.isNull else { return false }
-        return intersection.width * intersection.height >= screenArea * fullScreenCoverageRatio
     }
 
     /// Converts a CoreGraphics window rect (top-left origin, y-down, measured from the

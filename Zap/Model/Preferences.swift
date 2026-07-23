@@ -229,13 +229,16 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(includeFullScreenWindows, forKey: Key.includeFullScreenWindows) }
     }
 
-    /// Whether per-display scoping also lists apps that are *full-screen* on the
-    /// display. A native full-screen app occupies its own Space, which the on-screen
-    /// window query that drives scoping can't see; when on, an extra all-Spaces pass
-    /// surfaces it. On by default — an app filling the display is very much "on" it,
-    /// so users expect it in that display's list.
-    @Published var scopeIncludesFullScreenApps: Bool {
-        didSet { defaults.set(scopeIncludesFullScreenApps, forKey: Key.scopeIncludesFullScreenApps) }
+    /// Whether per-display scoping also lists apps on inactive full-screen Spaces.
+    /// The full-screen or Split View app currently visible on a display always
+    /// counts; this setting controls the additional full-screen Spaces assigned to
+    /// it. On by default so every app living on the display remains reachable. If
+    /// Space classification is unavailable, scoping fails open and retains the apps.
+    @Published var scopeIncludesFullScreenAppsFromOtherSpaces: Bool {
+        didSet {
+            defaults.set(scopeIncludesFullScreenAppsFromOtherSpaces,
+                         forKey: Key.scopeIncludesFullScreenApps)
+        }
     }
 
     /// Whether scrolling the icon row gives a faint haptic tick as the centred icon
@@ -297,7 +300,8 @@ final class Preferences: ObservableObject {
             .compactMapValues(ScreenScopeMode.init(rawValue:))
             .filter { $0.value != .off }   // `.off` is the absence of an entry; never store it
         includeFullScreenWindows = defaults.object(forKey: Key.includeFullScreenWindows) as? Bool ?? false
-        scopeIncludesFullScreenApps = defaults.object(forKey: Key.scopeIncludesFullScreenApps) as? Bool ?? true
+        scopeIncludesFullScreenAppsFromOtherSpaces = defaults.object(
+            forKey: Key.scopeIncludesFullScreenApps) as? Bool ?? true
         scrollHapticsEnabled = defaults.object(forKey: Key.scrollHapticsEnabled) as? Bool ?? false
         switchCountTotal = max(0, defaults.integer(forKey: Key.switchCountTotal))
         switchCountToday = max(0, defaults.integer(forKey: Key.switchCountToday))
