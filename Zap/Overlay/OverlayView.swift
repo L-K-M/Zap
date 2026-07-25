@@ -31,7 +31,10 @@ struct OverlayView: View {
                              isDropTarget: index == model.dropTargetIndex)
                         .contentShape(Rectangle())
                         .accessibilityLabel(Text(app.name))
-                        .accessibilityAddTraits(.isButton)
+                        // Announce the highlight too, so a client tracking the
+                        // row knows which app the keyboard is on.
+                        .accessibilityAddTraits(index == model.selectedIndex
+                                                ? [.isButton, .isSelected] : [.isButton])
                         .onTapGesture { model.onPick?(index) }
                         .onHover { hovering in
                             if hovering { model.onHoverApp?(index) }
