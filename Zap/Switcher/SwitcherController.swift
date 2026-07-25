@@ -367,8 +367,8 @@ final class SwitcherController {
     /// query badge. The badge is pushed *last* — after any `presentOverlay()`, whose
     /// `show()` resets the model — so a query typed during the show-delay survives.
     private func applyTypeQuery() {
-        if let index = Self.bestMatchIndex(query: typeBuffer, names: apps.map(\.name)),
-           !quittingPIDs.contains(apps[index].processIdentifier) {
+        let match = Self.bestMatchIndex(query: typeBuffer, names: apps.map(\.name))
+        if let index = match, !quittingPIDs.contains(apps[index].processIdentifier) {
             selectedIndex = index
             windowSelectedIndex = nil
             if overlay.isVisible {
@@ -380,7 +380,10 @@ final class SwitcherController {
         if !typeBuffer.isEmpty, !overlay.isVisible {
             presentOverlay()
         }
-        overlay.setTypeQuery(typeBuffer)
+        // Tell the badge whether the query landed anywhere. Without it, a typo
+        // just makes the highlight stop responding — which, with every keystroke
+        // swallowed mid-session, reads as the switcher having frozen.
+        overlay.setTypeQuery(typeBuffer, matched: match != nil)
     }
 
     /// Clears any in-progress type-to-search query and hides its badge.
@@ -402,13 +405,18 @@ final class SwitcherController {
     /// or `nil` if none match. Preference order, each taking the earliest (most
     /// recently used) candidate: a name that *starts with* the query, then a name
     /// with a *word* starting with the query ("co" → "Visual Studio **Co**de"),
-    /// then any *substring* match. Case-insensitive. Extracted for unit testing.
+    /// then any *substring* match, and finally an in-order *subsequence* of the
+    /// name's characters ("vsc" → "**V**isual **S**tudio **C**ode", "ppt" →
+    /// "Microsoft **P**ower**P**oin**t**) — how people type when they're in a
+    /// hurry, and safe as the last tier because an exact-ish match always wins.
+    /// Case-insensitive. Extracted for unit testing.
     static func bestMatchIndex(query: String, names: [String]) -> Int? {
         let needle = query.lowercased()
         guard !needle.isEmpty else { return nil }
 
         var wordPrefix: Int?
         var substring: Int?
+        var subsequence: Int?
         for (index, name) in names.enumerated() {
             let haystack = name.lowercased()
             if haystack.hasPrefix(needle) {
@@ -416,8 +424,26 @@ final class SwitcherController {
             }
             if wordPrefix == nil, hasWordPrefix(haystack, needle) { wordPrefix = index }
             if substring == nil, haystack.contains(needle) { substring = index }
+            // Only worth looking once no substring match has been found and no
+            // earlier name already qualified: a higher tier always outranks it.
+            if substring == nil, subsequence == nil, isSubsequence(needle, of: haystack) {
+                subsequence = index
+            }
         }
-        return wordPrefix ?? substring
+        return wordPrefix ?? substring ?? subsequence
+    }
+
+    /// Whether every character of `needle` appears in `haystack` in order (not
+    /// necessarily adjacently) — both already lowercased. An empty needle never
+    /// gets here (`bestMatchIndex` returns early), so this always requires at
+    /// least one character to land.
+    static func isSubsequence(_ needle: String, of haystack: String) -> Bool {
+        var remaining = Substring(needle)
+        for character in haystack {
+            guard let next = remaining.first else { break }
+            if character == next { remaining = remaining.dropFirst() }
+        }
+        return remaining.isEmpty
     }
 
     /// Whether any whitespace/punctuation-delimited word in `haystack` starts with

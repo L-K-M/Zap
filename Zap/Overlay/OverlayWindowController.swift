@@ -194,9 +194,10 @@ final class OverlayWindowController {
     /// appearing or disappearing changes the panel height, so re-fit the window on
     /// that transition; plain edits to the text don't resize it. The top edge stays
     /// fixed and the badge is below the row, so the icons never move.
-    func setTypeQuery(_ query: String) {
+    func setTypeQuery(_ query: String, matched: Bool = true) {
         let togglesBadge = query.isEmpty != model.typeQuery.isEmpty
         model.typeQuery = query
+        model.typeQueryMatched = matched
         guard togglesBadge, isVisible else { return }
         layout(keepTop: true)
         forceDisplay()
