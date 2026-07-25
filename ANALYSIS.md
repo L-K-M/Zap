@@ -299,7 +299,7 @@ with explicit transitions. That's also the unlock for C2. *(Extends
 `awesome.md`'s "split pure session logic out" and `ISSUES.md` Improvement #2.)*
 
 ### C2 — Test coverage stops exactly where the risk starts
-**Conf: high** — 25+ test files, all pure logic. Nothing covers session lifecycle,
+**Conf: high** — two dozen test files, all pure logic. Nothing covers session lifecycle,
 commit/cancel, quit verification, hold-vs-tap, or hover, because they're welded
 to AppKit and to `Timer`. Extracting the session machine (C1) plus a fake clock
 would make all of it testable. Specific gaps carried forward: reverse-cycling,
