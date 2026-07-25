@@ -210,6 +210,13 @@ struct OverlayView: View {
             .interpolation(.high)
             .aspectRatio(contentMode: .fit)
             .frame(width: preferences.iconSize, height: preferences.iconSize)
+            // A hidden app keeps its place in the row but reads as put away: the
+            // icon fades back and carries a badge. Drawn as an overlay on the
+            // icon's own frame, so it never changes the cell's footprint.
+            .opacity(app.isHidden && !isQuitting ? 0.45 : 1)
+            .overlay(alignment: .bottomTrailing) {
+                if app.isHidden { hiddenBadge }
+            }
             .padding(8)
             .background(
                 RoundedRectangle(cornerRadius: preferences.highlightCornerRadius, style: .continuous)
@@ -227,6 +234,20 @@ struct OverlayView: View {
             // Dim apps that are quitting until their fate is confirmed.
             .opacity(isQuitting ? 0.3 : 1)
             .animation(.easeOut(duration: 0.15), value: isQuitting)
+    }
+
+    /// Marker drawn on a hidden (⌘H) app's icon. Scales with the icon so it stays
+    /// legible at any size, and is bounded so it can't dominate a large icon.
+    private var hiddenBadge: some View {
+        let diameter = min(max(preferences.iconSize * 0.3, 14), 30)
+        return Image(systemName: "eye.slash.fill")
+            .font(.system(size: diameter * 0.55, weight: .semibold))
+            .foregroundStyle(Color(hexString: preferences.labelColorHex))
+            .frame(width: diameter, height: diameter)
+            .background(Circle().fill(Color.black.opacity(0.65)))
+            .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 1))
+            .offset(x: diameter * 0.15, y: diameter * 0.15)
+            .allowsHitTesting(false)
     }
 
     /// The type-to-search query, shown as a small capsule while the user types to
