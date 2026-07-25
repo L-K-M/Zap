@@ -30,8 +30,10 @@ final class HelpToggleTests: XCTestCase {
     }
 
     func testHelpKeyIsNotASearchCharacter() {
-        // The toggle is only free because the search query ignores punctuation:
-        // if that ever changes, "?" would start typing instead of toggling.
+        // Documents the *premise* that made "?" available to take — the search
+        // query accepts only letters, digits and spaces — not the routing, which
+        // is the tap checking togglesHelp before forwarding a typed character.
+        // If the query ever accepted punctuation, "?" would stop being free.
         let questionMark: Character = "?"
         XCTAssertFalse(questionMark.isLetter || questionMark.isNumber || questionMark == " ")
     }
@@ -55,8 +57,10 @@ final class HelpHintsTests: XCTestCase {
             let listed = hints(windowsShown: shown, windowFocused: focused)
             XCTAssertTrue(listed.contains { $0.contains("next") })
             XCTAssertTrue(listed.contains { $0.contains("type to search") })
-            XCTAssertTrue(listed.contains { $0.contains("quit") })
-            XCTAssertTrue(listed.contains { $0.contains("hide") })
+            // Match the key, not the verb: "hide" alone would also be satisfied
+            // by the always-present "? hide hints" entry.
+            XCTAssertTrue(listed.contains { $0.contains("⌘Q") })
+            XCTAssertTrue(listed.contains { $0.contains("⌘H") })
             XCTAssertTrue(listed.contains { $0.contains("esc") })
         }
     }
