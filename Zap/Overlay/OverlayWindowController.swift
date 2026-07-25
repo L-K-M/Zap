@@ -354,7 +354,9 @@ final class OverlayWindowController {
     private func scrollToCenter(on index: Int, animated: Bool) {
         let target = iconRowGeometry().centeredOffset(forIndex: index)
         guard target != model.scrollOffset else { return }
-        if animated {
+        // Reduced motion keeps the scroll — the selection still has to come into
+        // view — but jumps straight to it instead of sliding.
+        if animated, !AccessibilityDisplaySettings.shared.reduceMotion {
             withAnimation(.easeOut(duration: 0.18)) { model.scrollOffset = target }
         } else {
             model.scrollOffset = target
