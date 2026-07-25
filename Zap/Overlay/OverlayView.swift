@@ -296,7 +296,7 @@ struct OverlayView: View {
     private var helpHints: [String] {
         var hints = ["⇥ next", "⇧⇥ back", "1–9 jump", "type to search"]
         if model.windows.isEmpty {
-            if preferences.showWindowList { hints.append("wait for windows") }
+            if preferences.showWindowList { hints.append("pause for windows") }
         } else if model.windowSelectedIndex == nil {
             hints.append("↓ windows")
         } else {

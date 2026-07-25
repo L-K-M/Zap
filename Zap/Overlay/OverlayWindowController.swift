@@ -204,6 +204,11 @@ final class OverlayWindowController {
         syncMirrors()
     }
 
+    /// Whether the key-hints footer is currently showing. The model is the single
+    /// source of truth for it; the switcher reads this rather than tracking its own
+    /// copy, which `show()`/`hide()` would have to keep in sync.
+    var showsHelp: Bool { model.showsHelp }
+
     /// Shows or hides the key-hints footer. It sits at the bottom of the panel, so
     /// the panel grows downward from its fixed top edge and the icon row stays put
     /// — the same treatment the search badge and window list get.
