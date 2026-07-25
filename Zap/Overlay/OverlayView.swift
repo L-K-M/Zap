@@ -282,7 +282,7 @@ struct OverlayView: View {
     /// them in the README and none of them in the app.
     private var helpFooter: some View {
         Text(helpHints.joined(separator: "  ·  "))
-            .font(.system(size: 11))
+            .font(.system(size: HelpFooterMetrics.fontSize))
             .foregroundStyle(Color(hexString: preferences.labelColorHex).opacity(0.75))
             .multilineTextAlignment(.center)
             .lineLimit(3)
@@ -291,17 +291,27 @@ struct OverlayView: View {
             .frame(width: helpWidth)
     }
 
-    /// Hints for what's actually reachable right now: the window keys only appear
-    /// once there's a window list, and ⌘W only once a window is focused.
     private var helpHints: [String] {
+        Self.helpHints(windowsShown: !model.windows.isEmpty,
+                       windowFocused: model.windowSelectedIndex != nil,
+                       windowListEnabled: preferences.showWindowList)
+    }
+
+    /// Hints for what's actually reachable right now: the window keys only appear
+    /// once a window list is on screen, and ⌘W only once a window is focused.
+    /// Pure, so which keys are advertised in which state is unit-tested rather
+    /// than checked by eye.
+    static func helpHints(windowsShown: Bool, windowFocused: Bool,
+                          windowListEnabled: Bool) -> [String] {
         var hints = ["⇥ next", "⇧⇥ back", "1–9 jump", "type to search"]
-        if model.windows.isEmpty {
-            if preferences.showWindowList { hints.append("pause for windows") }
-        } else if model.windowSelectedIndex == nil {
-            hints.append("↓ windows")
-        } else {
+        if !windowsShown {
+            // No list yet — mention how to get one, but only if it can appear.
+            if windowListEnabled { hints.append("pause for windows") }
+        } else if windowFocused {
             hints.append("↑↓←→ move")
             hints.append("⌘W close")
+        } else {
+            hints.append("↓ windows")
         }
         hints.append("hold ⌘Q quit")
         hints.append("hold ⌘H hide")
@@ -519,10 +529,13 @@ struct OverlayView: View {
     /// so the estimate never under-reserves and lets the panel overflow.
     private var dividerReserve: CGFloat { vStackSpacing * 2 + 10 }
 
-    /// Room the key-hints footer takes below the window section (up to three
-    /// wrapped lines plus the stack gap), so a long window list scrolls instead of
-    /// pushing the footer off the bottom of the screen.
-    private var helpFooterReserve: CGFloat { vStackSpacing + 48 }
+    /// Room the key-hints footer takes below the window section, so a long window
+    /// list scrolls instead of pushing the footer off the bottom of the screen.
+    /// Derived from the footer's own font size (see `HelpFooterMetrics`) so the
+    /// two can't drift apart — the same analytic-sizing approach the window grid
+    /// and list use, which is what lets the panel be sized in one synchronous
+    /// pass with no SwiftUI measurement round-trip.
+    private var helpFooterReserve: CGFloat { vStackSpacing + HelpFooterMetrics.height }
 }
 
 /// Shared sizing for window previews: `maxDimension` bounds the captured image
@@ -547,6 +560,19 @@ enum WindowGridMetrics {
     static let spacing: CGFloat = 8
     static var cellWidth: CGFloat { thumbWidth + padding * 2 }
     static var cellHeight: CGFloat { thumbHeight + innerSpacing + titleHeight + padding * 2 }
+}
+
+/// Fixed sizing for the key-hints footer, kept exact for the same reason as
+/// `WindowGridMetrics`: the panel's height budget is computed analytically.
+enum HelpFooterMetrics {
+    static let fontSize: CGFloat = 11
+    /// Generous line height for the footer's font.
+    static let lineHeight: CGFloat = fontSize * 1.35
+    /// The footer wraps to at most three lines (`lineLimit(3)`).
+    static let maximumLines: CGFloat = 3
+    /// Upper bound on the footer's height — a *reserve*, not a measurement, so it
+    /// rounds up rather than tracking the actual wrap.
+    static var height: CGFloat { (lineHeight * maximumLines).rounded(.up) }
 }
 
 /// Fixed sizing for one row of the previews-off window list, kept exact for the
