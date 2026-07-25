@@ -49,8 +49,10 @@ final class HelpHintsTests: XCTestCase {
     }
 
     func testAppRowKeysAreAlwaysListed() {
-        for shown in [true, false] {
-            let listed = hints(windowsShown: shown, windowFocused: false)
+        // Every reachable state, including a focused window — the branch that adds
+        // the move/close hints must not quietly take a base key with it.
+        for (shown, focused) in [(false, false), (true, false), (true, true)] {
+            let listed = hints(windowsShown: shown, windowFocused: focused)
             XCTAssertTrue(listed.contains { $0.contains("next") })
             XCTAssertTrue(listed.contains { $0.contains("type to search") })
             XCTAssertTrue(listed.contains { $0.contains("quit") })
