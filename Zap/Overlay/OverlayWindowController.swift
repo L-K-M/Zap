@@ -59,7 +59,10 @@ final class OverlayWindowController {
     /// SwiftUI then delivers a hover for whatever icon landed there and the
     /// highlight would jump away from the pre-selected previous app, breaking the
     /// tap-to-toggle behavior without the user touching the mouse. Hover only
-    /// takes over once the pointer has genuinely moved (see `pointerMovedSinceShow`).
+    /// takes over once the pointer has genuinely moved (see `openHoverGateIfMoved`).
+    ///
+    /// One origin covers every window the panel is hosted in (including the
+    /// mirrors on other displays): there is only ever one pointer.
     private var pointerOriginAtShow: NSPoint?
 
     /// Client hover callbacks. The model's own hover hooks are wrapped (in `init`)
@@ -122,20 +125,22 @@ final class OverlayWindowController {
     /// appearing under a resting cursor can't hijack the selection.
     private func installHoverGate() {
         model.onHoverApp = { [weak self] index in
-            guard let self, self.pointerMovedSinceShow() else { return }
+            guard let self, self.openHoverGateIfMoved() else { return }
             self.hoverAppHandler?(index)
         }
         model.onHoverWindow = { [weak self] index in
-            guard let self, self.pointerMovedSinceShow() else { return }
+            guard let self, self.openHoverGateIfMoved() else { return }
             self.hoverWindowHandler?(index)
         }
     }
 
-    /// Whether the pointer has moved since the panel appeared. The first movement
-    /// opens the gate for the rest of the session (the origin is cleared), so
-    /// later hovers are answered immediately — including a return to the exact
-    /// spot the pointer started from.
-    private func pointerMovedSinceShow() -> Bool {
+    /// Whether the pointer has moved since the panel appeared — and, as a side
+    /// effect, opens the gate for the rest of the session the first time it has
+    /// (the origin is cleared). Later hovers are then answered immediately,
+    /// including a return to the exact spot the pointer started from. Named for
+    /// the mutation so it isn't mistaken for a read-only query.
+    @discardableResult
+    private func openHoverGateIfMoved() -> Bool {
         guard let origin = pointerOriginAtShow else { return true }
         guard Self.hoverShouldTakeOver(origin: origin, current: NSEvent.mouseLocation) else { return false }
         pointerOriginAtShow = nil
