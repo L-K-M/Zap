@@ -45,6 +45,10 @@ final class EventTapMonitor {
     /// that reports ⌘ going up, which is what commits a session — so the
     /// controller must reconcile its state against reality rather than keep
     /// waiting for an event that will never arrive.
+    ///
+    /// Invoked **synchronously from the tap callback**, which is exactly the
+    /// context that just ran long enough to get the tap disabled: this handler
+    /// must not block. Do the real work on a later run-loop turn.
     var onTapReEnabled: (() -> Void)?
 
     // MARK: State

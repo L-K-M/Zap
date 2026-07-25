@@ -90,6 +90,13 @@ final class SwitcherController {
     /// keyboard for more than a moment.
     private let strandedSessionCheckInterval: TimeInterval = 0.4
 
+    /// How many consecutive ⌘-is-up readings confirm a stranded session.
+    private static let strandedSessionConfirmations = 2
+
+    /// Consecutive ⌘-is-up readings so far. Reset whenever ⌘ is seen held
+    /// again, and at the start and end of every session.
+    private var commandUpObservations = 0
+
     /// Auto-commit delay used only in fallback mode.
     private let autoCommitInterval: TimeInterval = 0.8
 
@@ -238,7 +245,16 @@ final class SwitcherController {
         guard Self.shouldEndStrandedSession(isSessionActive: isSessionActive,
                                             usesEventTap: usesEventTap,
                                             commandDown: Self.isCommandHeld())
-        else { return }
+        else {
+            commandUpObservations = 0
+            return
+        }
+        // Require the observation to persist across two checks. A stranded
+        // session is a *sustained* state, so waiting one more tick costs the
+        // recovery ~0.4s and buys immunity to a single odd modifier reading (the
+        // legitimate key-up never waits on this — it commits from the event).
+        commandUpObservations += 1
+        guard commandUpObservations >= Self.strandedSessionConfirmations else { return }
         NSLog("Zap: switch session outlived its ⌘ hold (missed key-up); committing")
         commit()
     }
@@ -253,6 +269,12 @@ final class SwitcherController {
 
     /// The modifier state currently held on the keyboard, read from the system
     /// rather than from the (possibly interrupted) tap event stream.
+    ///
+    /// Best-effort, and used *only* as the safety net's input: the tap's
+    /// `flagsChanged` events remain the authoritative commit trigger. Input that
+    /// doesn't travel the normal HID path (synthesized events, some remapping
+    /// tools) can make the two disagree, which is why the caller demands a
+    /// sustained reading rather than acting on one.
     private static func isCommandHeld() -> Bool {
         NSEvent.modifierFlags.contains(.command)
     }
@@ -260,6 +282,7 @@ final class SwitcherController {
     /// Starts the watchdog for a freshly-begun event-tap session.
     private func startStrandedSessionWatchdog() {
         strandedSessionTimer?.invalidate()
+        commandUpObservations = 0
         guard usesEventTap else { return }
         strandedSessionTimer = Self.scheduleTimer(withTimeInterval: strandedSessionCheckInterval,
                                                   repeats: true) { [weak self] _ in
@@ -671,6 +694,7 @@ final class SwitcherController {
         autoCommitTimer?.invalidate(); autoCommitTimer = nil
         dwellTimer?.invalidate(); dwellTimer = nil
         strandedSessionTimer?.invalidate(); strandedSessionTimer = nil
+        commandUpObservations = 0
         cancelPendingShortcut()
         isSessionActive = false
         typeBuffer = ""
