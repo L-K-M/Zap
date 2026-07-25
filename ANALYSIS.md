@@ -21,19 +21,20 @@ Legend: **Sev** = user impact if hit · **Conf** = confidence the finding is rea
 
 ## 0. In flight
 
-Open PRs from the July 2026 pass. These leave the backlog when they merge; they
-are listed here so nothing is lost if one is closed instead.
+Open PRs from the July 2026 pass. These leave the backlog when they merge — so
+each row states **the problem**, not just the fix, and is enough to re-file the
+entry if its PR is closed instead.
 
-| PR | Entry | What it does |
-|----|-------|--------------|
-| [#16](https://github.com/L-K-M/Zap/pull/16) | B1 | Hover no longer takes the selection until the pointer actually moves |
-| [#17](https://github.com/L-K-M/Zap/pull/17) | B2 | Watchdog recovers a session stranded by a disabled event tap |
-| [#18](https://github.com/L-K-M/Zap/pull/18) | B3 | 250 ms AX messaging timeout, so a hung app can't freeze the switcher |
-| [#19](https://github.com/L-K-M/Zap/pull/19) | B4 | Q/H/W matched by character, fixing non-QWERTY layouts |
-| [#20](https://github.com/L-K-M/Zap/pull/20) | F1 (partial) | Hidden apps are faded and badged; ⌘H updates the row immediately |
-| [#21](https://github.com/L-K-M/Zap/pull/21) | F3, B5 | Subsequence matching ("vsc" → Visual Studio Code) + no-match badge state |
-| [#22](https://github.com/L-K-M/Zap/pull/22) | D1, U1 | `?` toggles a contextual key-hints footer |
-| [#23](https://github.com/L-K-M/Zap/pull/23) | A1, A2 | Reduce Transparency / Reduce Motion honoured; icons labelled |
+| PR | Entry | The problem it fixes |
+|----|-------|----------------------|
+| [#16](https://github.com/L-K-M/Zap/pull/16) | B1 | The panel appears under a resting cursor, so SwiftUI's hover moves the highlight and a plain ⌘-Tab tap lands on the wrong app — without the user touching the mouse. |
+| [#17](https://github.com/L-K-M/Zap/pull/17) | B2 | A session ends only on the ⌘-up event; the system drops events while it has the tap disabled, so that event can vanish, leaving the panel stuck and every keystroke swallowed. |
+| [#18](https://github.com/L-K-M/Zap/pull/18) | B3 | Window enumeration makes synchronous AX calls on the main thread with the default (multi-second) timeout, so dwelling on a beachballing app freezes the switcher. |
+| [#19](https://github.com/L-K-M/Zap/pull/19) | B4 | Q/H/W are matched by key *position*, so on AZERTY ⌘A quits the highlighted app and ⌘Q does nothing. |
+| [#20](https://github.com/L-K-M/Zap/pull/20) | F1 (partial) | Nothing distinguishes an app hidden with ⌘H from one with windows on screen — so Zap's own ⌘H looks like it did nothing. |
+| [#21](https://github.com/L-K-M/Zap/pull/21) | F3, B5 | **F3:** type-to-search can't match "vsc" → Visual Studio Code (prefix/substring only). **B5:** a query that matches nothing gives no feedback at all — the highlight just stops responding, which reads as a frozen switcher. |
+| [#22](https://github.com/L-K-M/Zap/pull/22) | D1, U1 | The whole in-switcher key vocabulary is documented in the README and nowhere in the app. |
+| [#23](https://github.com/L-K-M/Zap/pull/23) | A1, A2 | Reduce Transparency and Reduce Motion are ignored: Zap's tint sits on top of the blur at a user-chosen opacity, and every animation always runs. Icons carry no accessibility label. |
 
 Each wants a manual pass on a real machine before it's trusted — the unit tests
 cover the pure rules, not the AppKit behavior around them.
