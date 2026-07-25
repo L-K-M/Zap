@@ -31,6 +31,7 @@ struct OverlayView: View {
                              isDropTarget: index == model.dropTargetIndex)
                         .contentShape(Rectangle())
                         .accessibilityLabel(Text(app.name))
+                        .accessibilityAddTraits(.isButton)
                         .onTapGesture { model.onPick?(index) }
                         .onHover { hovering in
                             if hovering { model.onHoverApp?(index) }
@@ -84,7 +85,7 @@ struct OverlayView: View {
 
     /// `animation` unless the user has asked for reduced motion, in which case
     /// `nil` — the change still happens, just instantly.
-    private func animation(_ animation: Animation?) -> Animation? {
+    private func resolvedAnimation(_ animation: Animation?) -> Animation? {
         AccessibilityDisplaySettings.effectiveAnimation(animation,
                                                         reduceMotion: accessibility.reduceMotion)
     }
@@ -236,10 +237,10 @@ struct OverlayView: View {
                     .strokeBorder(Color(hexString: preferences.highlightColorHex),
                                   lineWidth: isDropTarget ? 3 : 0)
             )
-            .animation(animation(.easeOut(duration: 0.12)), value: isDropTarget)
+            .animation(resolvedAnimation(.easeOut(duration: 0.12)), value: isDropTarget)
             // Dim apps that are quitting until their fate is confirmed.
             .opacity(isQuitting ? 0.3 : 1)
-            .animation(animation(.easeOut(duration: 0.15)), value: isQuitting)
+            .animation(resolvedAnimation(.easeOut(duration: 0.15)), value: isQuitting)
     }
 
     /// The type-to-search query, shown as a small capsule while the user types to
@@ -320,7 +321,7 @@ struct OverlayView: View {
     /// already-visible cell doesn't jump). Falls back to the top when focus has
     /// returned to the app row.
     private func scrollSelectionIntoView(_ proxy: ScrollViewProxy) {
-        withAnimation(animation(.easeOut(duration: 0.15))) {
+        withAnimation(resolvedAnimation(.easeOut(duration: 0.15))) {
             if let index = model.windowSelectedIndex, model.windows.indices.contains(index) {
                 proxy.scrollTo(model.windows[index].id)
             } else if let first = model.windows.first {
