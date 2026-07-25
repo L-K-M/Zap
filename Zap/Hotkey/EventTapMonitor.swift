@@ -40,6 +40,12 @@ final class EventTapMonitor {
     /// Whether a switch session is currently active (overlay shown or pending).
     /// Drives commit/cancel behavior.
     var isSwitching: () -> Bool = { false }
+    /// Called right after the system disabled the tap and we re-enabled it. Every
+    /// event delivered while it was off is lost — including the `flagsChanged`
+    /// that reports ⌘ going up, which is what commits a session — so the
+    /// controller must reconcile its state against reality rather than keep
+    /// waiting for an event that will never arrive.
+    var onTapReEnabled: (() -> Void)?
 
     // MARK: State
 
@@ -110,9 +116,13 @@ final class EventTapMonitor {
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         // Re-enable if the system disabled our tap (e.g. slow callback / user input).
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            NSLog("Zap: event tap disabled by \(type == .tapDisabledByTimeout ? "timeout" : "user input"); re-enabling")
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
+            // Anything sent while the tap was off never reached us; let the
+            // controller re-sync a session that may have lost its ⌘ key-up.
+            onTapReEnabled?()
             return Unmanaged.passUnretained(event)
         }
 

@@ -81,6 +81,15 @@ final class SwitcherController {
     private var autoCommitTimer: Timer?
     private var dwellTimer: Timer?
 
+    /// Safety net for a session the event stream stranded — see
+    /// `endStrandedSessionIfNeeded()`. Runs only while an event-tap session is up.
+    private var strandedSessionTimer: Timer?
+
+    /// How often to check that a live event-tap session still has ⌘ held. Slow
+    /// enough to be free, quick enough that a stranded session can't lock the
+    /// keyboard for more than a moment.
+    private let strandedSessionCheckInterval: TimeInterval = 0.4
+
     /// Auto-commit delay used only in fallback mode.
     private let autoCommitInterval: TimeInterval = 0.8
 
@@ -205,6 +214,52 @@ final class SwitcherController {
         eventTap.onNavigateWindows = { [weak self] direction in self?.navigateWindows(direction) }
         eventTap.onType = { [weak self] character in self?.handleTypedCharacter(character) }
         eventTap.onDeleteBackward = { [weak self] in self?.handleTypeBackspace() }
+        eventTap.onTapReEnabled = { [weak self] in self?.endStrandedSessionIfNeeded() }
+    }
+
+    // MARK: Stranded-session recovery
+
+    /// Commits a session whose ⌘ key-up went missing.
+    ///
+    /// The only thing that ends an event-tap session is the `flagsChanged` event
+    /// reporting Command released. The system disables a tap whose callback ran
+    /// long (`kCGEventTapDisabledByTimeout`) and *drops* everything sent while it
+    /// was off — so that one event can be lost. The session would then stay live
+    /// forever: the panel stuck on screen and, worse, every unrecognised key
+    /// swallowed while `isSessionActive` is true, which reads as a dead keyboard
+    /// in every app. So don't trust the event stream: ask the system for the
+    /// modifier state that's actually held.
+    private func endStrandedSessionIfNeeded() {
+        guard Self.shouldEndStrandedSession(isSessionActive: isSessionActive,
+                                            usesEventTap: usesEventTap,
+                                            commandDown: Self.isCommandHeld())
+        else { return }
+        NSLog("Zap: switch session outlived its ⌘ hold (missed key-up); committing")
+        commit()
+    }
+
+    /// Pure rule for the recovery above: only an event-tap session can be
+    /// stranded this way (the Carbon fallback has no ⌘ to watch and auto-commits
+    /// on its own timer), and only once Command is no longer physically held.
+    static func shouldEndStrandedSession(isSessionActive: Bool, usesEventTap: Bool,
+                                         commandDown: Bool) -> Bool {
+        isSessionActive && usesEventTap && !commandDown
+    }
+
+    /// The modifier state currently held on the keyboard, read from the system
+    /// rather than from the (possibly interrupted) tap event stream.
+    private static func isCommandHeld() -> Bool {
+        NSEvent.modifierFlags.contains(.command)
+    }
+
+    /// Starts the watchdog for a freshly-begun event-tap session.
+    private func startStrandedSessionWatchdog() {
+        strandedSessionTimer?.invalidate()
+        guard usesEventTap else { return }
+        strandedSessionTimer = Self.scheduleTimer(withTimeInterval: strandedSessionCheckInterval,
+                                                  repeats: true) { [weak self] _ in
+            self?.endStrandedSessionIfNeeded()
+        }
     }
 
     @discardableResult
@@ -256,6 +311,7 @@ final class SwitcherController {
         selectedIndex = defaultSelection(forward: forward, apps: apps,
                                          frontmostBundleID: provider.frontmostBundleID())
         isSessionActive = true
+        startStrandedSessionWatchdog()
 
         let delay = max(0, preferences.showDelayMs / 1000)
         if delay == 0 {
@@ -609,6 +665,7 @@ final class SwitcherController {
         showTimer?.invalidate(); showTimer = nil
         autoCommitTimer?.invalidate(); autoCommitTimer = nil
         dwellTimer?.invalidate(); dwellTimer = nil
+        strandedSessionTimer?.invalidate(); strandedSessionTimer = nil
         cancelPendingShortcut()
         isSessionActive = false
         typeBuffer = ""
