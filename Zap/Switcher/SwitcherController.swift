@@ -41,6 +41,10 @@ final class SwitcherController {
     /// moment later (after `showDelayMs`).
     private var sessionScreen: NSScreen?
 
+    /// Whether the key-hints footer is showing, toggled by "?" during a session
+    /// and reset with it.
+    private var showsHelp = false
+
     /// The current type-to-search query. Typing letters/digits jumps the highlight
     /// to the best-matching app; a leading digit with an empty query instead jumps
     /// straight to that app and commits (number-key shortcut). Reset on commit,
@@ -248,6 +252,7 @@ final class SwitcherController {
         apps = appList(for: screen)
         guard !apps.isEmpty else { return }
         typeBuffer = ""
+        showsHelp = false
 
         // Pre-select the previous app so a single press toggles the two
         // most-recent apps, like the native switcher. Normally that's index 1,
@@ -342,6 +347,11 @@ final class SwitcherController {
         // A new character resolves any armed Q/H press as a tap (key rollover).
         cancelPendingShortcut()
 
+        if Self.togglesHelp(character) {
+            toggleHelp()
+            return
+        }
+
         if typeBuffer.isEmpty, let digit = character.wholeNumberValue, (1...9).contains(digit) {
             jumpAndCommit(toNumber: digit)
             return
@@ -381,6 +391,23 @@ final class SwitcherController {
             presentOverlay()
         }
         overlay.setTypeQuery(typeBuffer)
+    }
+
+    /// Whether `character` is the key-hints toggle. The event tap reports the
+    /// *unshifted* character (it clears the modifiers before translating), so the
+    /// "?" key arrives as "/" wherever "?" is a shifted key — accept both. Neither
+    /// extends the search query, so the key was free to take.
+    static func togglesHelp(_ character: Character) -> Bool {
+        character == "?" || character == "/"
+    }
+
+    /// Shows or hides the key-hints footer, forcing the panel up first so the
+    /// hints are visible even during the show delay.
+    private func toggleHelp() {
+        showsHelp.toggle()
+        if showsHelp, !overlay.isVisible { presentOverlay() }
+        // Pushed after any `presentOverlay()`, whose `show()` resets the model.
+        overlay.setShowsHelp(showsHelp)
     }
 
     /// Clears any in-progress type-to-search query and hides its badge.
@@ -612,6 +639,7 @@ final class SwitcherController {
         cancelPendingShortcut()
         isSessionActive = false
         typeBuffer = ""
+        showsHelp = false
         quittingPIDs.removeAll()
         windows = []
         windowSelectedIndex = nil

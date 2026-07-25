@@ -61,6 +61,12 @@ struct OverlayView: View {
                     .frame(maxWidth: max(panelContentWidth, windowSectionWidth))
                 windowSection
             }
+
+            // Key hints last, so the panel keeps growing downward from its fixed
+            // top edge and nothing above the footer ever moves.
+            if model.showsHelp {
+                helpFooter
+            }
         }
         .padding(outerPadding)
         .background(panelBackground)
@@ -269,6 +275,47 @@ struct OverlayView: View {
         }
     }
 
+    // MARK: Key hints
+
+    /// The contextual key vocabulary, shown while `showsHelp` is on. Zap has an
+    /// unusually deep set of in-switcher keys and, until this, documented all of
+    /// them in the README and none of them in the app.
+    private var helpFooter: some View {
+        Text(helpHints.joined(separator: "  ·  "))
+            .font(.system(size: 11))
+            .foregroundStyle(Color(hexString: preferences.labelColorHex).opacity(0.75))
+            .multilineTextAlignment(.center)
+            .lineLimit(3)
+            .minimumScaleFactor(0.85)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(width: helpWidth)
+    }
+
+    /// Hints for what's actually reachable right now: the window keys only appear
+    /// once there's a window list, and ⌘W only once a window is focused.
+    private var helpHints: [String] {
+        var hints = ["⇥ next", "⇧⇥ back", "1–9 jump", "type to search"]
+        if model.windows.isEmpty {
+            if preferences.showWindowList { hints.append("wait for windows") }
+        } else if model.windowSelectedIndex == nil {
+            hints.append("↓ windows")
+        } else {
+            hints.append("↑↓←→ move")
+            hints.append("⌘W close")
+        }
+        hints.append("hold ⌘Q quit")
+        hints.append("hold ⌘H hide")
+        hints.append("esc cancel")
+        hints.append("? hide hints")
+        return hints
+    }
+
+    /// Footer width: as wide as the panel already is, so showing hints never makes
+    /// the panel wider (only taller, downward).
+    private var helpWidth: CGFloat {
+        min(max(panelContentWidth, windowSectionWidth), model.maxContentWidth)
+    }
+
     // MARK: Window list / grid
 
     /// The window area below the icon row: a preview **grid** when previews are on,
@@ -460,7 +507,7 @@ struct OverlayView: View {
     /// panel's screen-derived height budget minus everything above it (header, the
     /// inter-section gaps, and the divider).
     private var windowListBudget: CGFloat {
-        let reserved = headerHeight + dividerReserve
+        let reserved = headerHeight + dividerReserve + (model.showsHelp ? helpFooterReserve : 0)
         let minimum = preferences.showWindowPreviews
             ? WindowGridMetrics.cellHeight
             : WindowRowMetrics.height
@@ -471,6 +518,11 @@ struct OverlayView: View {
     /// (icon row↔divider, divider↔section) plus the divider line, rounded up a touch
     /// so the estimate never under-reserves and lets the panel overflow.
     private var dividerReserve: CGFloat { vStackSpacing * 2 + 10 }
+
+    /// Room the key-hints footer takes below the window section (up to three
+    /// wrapped lines plus the stack gap), so a long window list scrolls instead of
+    /// pushing the footer off the bottom of the screen.
+    private var helpFooterReserve: CGFloat { vStackSpacing + 48 }
 }
 
 /// Shared sizing for window previews: `maxDimension` bounds the captured image

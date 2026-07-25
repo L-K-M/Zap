@@ -155,6 +155,7 @@ final class OverlayWindowController {
         model.windowThumbnails = [:]
         model.dropTargetIndex = nil
         model.typeQuery = ""
+        model.showsHelp = false
 
         currentScreen = screen
         lastHapticIndex = nil
@@ -198,6 +199,18 @@ final class OverlayWindowController {
         let togglesBadge = query.isEmpty != model.typeQuery.isEmpty
         model.typeQuery = query
         guard togglesBadge, isVisible else { return }
+        layout(keepTop: true)
+        forceDisplay()
+        syncMirrors()
+    }
+
+    /// Shows or hides the key-hints footer. It sits at the bottom of the panel, so
+    /// the panel grows downward from its fixed top edge and the icon row stays put
+    /// — the same treatment the search badge and window list get.
+    func setShowsHelp(_ shows: Bool) {
+        guard model.showsHelp != shows else { return }
+        model.showsHelp = shows
+        guard isVisible else { return }
         layout(keepTop: true)
         forceDisplay()
         syncMirrors()
@@ -293,6 +306,7 @@ final class OverlayWindowController {
         model.selectedIndex = 0
         model.dropTargetIndex = nil
         model.typeQuery = ""
+        model.showsHelp = false
         model.scrollOffset = 0
         model.quittingPIDs = []
         model.windows = []

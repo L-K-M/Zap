@@ -56,6 +56,10 @@ final class OverlayModel: ObservableObject {
     /// types to jump the selection. Empty when no query is active.
     @Published var typeQuery: String = ""
 
+    /// Whether the key-hints footer is showing. Toggled by "?" mid-session — a
+    /// key type-to-search ignores anyway, so it costs nothing to hand over.
+    @Published var showsHelp = false
+
     /// Called when the user clicks an icon. The argument is the app's index.
     var onPick: ((Int) -> Void)?
     /// Called when the pointer hovers an app icon. The argument is the app's index.
