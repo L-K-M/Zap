@@ -285,7 +285,7 @@ struct OverlayView: View {
             .font(.system(size: HelpFooterMetrics.fontSize))
             .foregroundStyle(Color(hexString: preferences.labelColorHex).opacity(0.75))
             .multilineTextAlignment(.center)
-            .lineLimit(3)
+            .lineLimit(HelpFooterMetrics.maximumLines)
             .minimumScaleFactor(0.85)
             .fixedSize(horizontal: false, vertical: true)
             .frame(width: helpWidth)
@@ -568,11 +568,12 @@ enum HelpFooterMetrics {
     static let fontSize: CGFloat = 11
     /// Generous line height for the footer's font.
     static let lineHeight: CGFloat = fontSize * 1.35
-    /// The footer wraps to at most three lines (`lineLimit(3)`).
-    static let maximumLines: CGFloat = 3
+    /// How far the footer may wrap. Drives both the view's `lineLimit` and the
+    /// height reserve, so the cap and the space set aside for it can't drift.
+    static let maximumLines = 3
     /// Upper bound on the footer's height — a *reserve*, not a measurement, so it
     /// rounds up rather than tracking the actual wrap.
-    static var height: CGFloat { (lineHeight * maximumLines).rounded(.up) }
+    static var height: CGFloat { (lineHeight * CGFloat(maximumLines)).rounded(.up) }
 }
 
 /// Fixed sizing for one row of the previews-off window list, kept exact for the
