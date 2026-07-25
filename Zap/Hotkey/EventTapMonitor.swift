@@ -116,10 +116,12 @@ final class EventTapMonitor {
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         // Re-enable if the system disabled our tap (e.g. slow callback / user input).
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            NSLog("Zap: event tap disabled by \(type == .tapDisabledByTimeout ? "timeout" : "user input"); re-enabling")
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
+            // Logged after re-enabling, so getting events flowing again is never
+            // behind a (synchronous) log write.
+            NSLog("Zap: event tap disabled by \(type == .tapDisabledByTimeout ? "timeout" : "user input"); re-enabled")
             // Anything sent while the tap was off never reached us; let the
             // controller re-sync a session that may have lost its ⌘ key-up.
             onTapReEnabled?()

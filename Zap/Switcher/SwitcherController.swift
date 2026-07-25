@@ -214,7 +214,12 @@ final class SwitcherController {
         eventTap.onNavigateWindows = { [weak self] direction in self?.navigateWindows(direction) }
         eventTap.onType = { [weak self] character in self?.handleTypedCharacter(character) }
         eventTap.onDeleteBackward = { [weak self] in self?.handleTypeBackspace() }
-        eventTap.onTapReEnabled = { [weak self] in self?.endStrandedSessionIfNeeded() }
+        // Hop off the tap callback before reconciling: the tap was disabled
+        // because a callback ran long, so the recovery — which can run a full
+        // commit, overlay teardown included — must not happen inside the next one.
+        eventTap.onTapReEnabled = { [weak self] in
+            DispatchQueue.main.async { self?.endStrandedSessionIfNeeded() }
+        }
     }
 
     // MARK: Stranded-session recovery
