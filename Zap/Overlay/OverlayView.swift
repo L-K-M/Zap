@@ -6,6 +6,9 @@ import AppKit
 struct OverlayView: View {
     @ObservedObject var model: OverlayModel
     @ObservedObject var preferences: Preferences
+    /// System accessibility display settings. Defaulted, so existing call sites
+    /// construct the view unchanged.
+    @ObservedObject var accessibility: AccessibilityDisplaySettings = .shared
 
     private var iconSpacing: CGFloat { IconRowMetrics.spacing }
     private var outerPadding: CGFloat { preferences.contentPadding }
@@ -27,6 +30,11 @@ struct OverlayView: View {
                              isQuitting: model.quittingPIDs.contains(app.processIdentifier),
                              isDropTarget: index == model.dropTargetIndex)
                         .contentShape(Rectangle())
+                        .accessibilityLabel(Text(app.name))
+                        // Announce the highlight too, so a client tracking the
+                        // row knows which app the keyboard is on.
+                        .accessibilityAddTraits(index == model.selectedIndex
+                                                ? [.isButton, .isSelected] : [.isButton])
                         .onTapGesture { model.onPick?(index) }
                         .onHover { hovering in
                             if hovering { model.onHoverApp?(index) }
@@ -78,6 +86,13 @@ struct OverlayView: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
+    /// `animation` unless the user has asked for reduced motion, in which case
+    /// `nil` — the change still happens, just instantly.
+    private func resolvedAnimation(_ animation: Animation?) -> Animation? {
+        AccessibilityDisplaySettings.effectiveAnimation(animation,
+                                                        reduceMotion: accessibility.reduceMotion)
+    }
+
     /// The icon row width, capped so the panel never exceeds the screen.
     private var panelContentWidth: CGFloat {
         min(maxRowWidth, model.maxContentWidth)
@@ -109,7 +124,9 @@ struct OverlayView: View {
         ZStack {
             VisualEffectBlur()
             backgroundFill
-                .opacity(preferences.backgroundOpacity)
+                .opacity(AccessibilityDisplaySettings.effectiveBackgroundOpacity(
+                    configured: preferences.backgroundOpacity,
+                    reduceTransparency: accessibility.reduceTransparency))
             decoration
                 .opacity(preferences.decorationOpacity)
         }
@@ -230,10 +247,10 @@ struct OverlayView: View {
                     .strokeBorder(Color(hexString: preferences.highlightColorHex),
                                   lineWidth: isDropTarget ? 3 : 0)
             )
-            .animation(.easeOut(duration: 0.12), value: isDropTarget)
+            .animation(resolvedAnimation(.easeOut(duration: 0.12)), value: isDropTarget)
             // Dim apps that are quitting until their fate is confirmed.
             .opacity(isQuitting ? 0.3 : 1)
-            .animation(.easeOut(duration: 0.15), value: isQuitting)
+            .animation(resolvedAnimation(.easeOut(duration: 0.15)), value: isQuitting)
     }
 
     /// Marker drawn on a hidden (⌘H) app's icon. Scales with the icon so it stays
@@ -334,7 +351,7 @@ struct OverlayView: View {
     /// already-visible cell doesn't jump). Falls back to the top when focus has
     /// returned to the app row.
     private func scrollSelectionIntoView(_ proxy: ScrollViewProxy) {
-        withAnimation(.easeOut(duration: 0.15)) {
+        withAnimation(resolvedAnimation(.easeOut(duration: 0.15))) {
             if let index = model.windowSelectedIndex, model.windows.indices.contains(index) {
                 proxy.scrollTo(model.windows[index].id)
             } else if let first = model.windows.first {
