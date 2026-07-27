@@ -81,6 +81,22 @@ final class SwitcherController {
     private var autoCommitTimer: Timer?
     private var dwellTimer: Timer?
 
+    /// Safety net for a session the event stream stranded — see
+    /// `endStrandedSessionIfNeeded()`. Runs only while an event-tap session is up.
+    private var strandedSessionTimer: Timer?
+
+    /// How often to check that a live event-tap session still has ⌘ held. Slow
+    /// enough to be free, quick enough that a stranded session can't lock the
+    /// keyboard for more than a moment.
+    private let strandedSessionCheckInterval: TimeInterval = 0.4
+
+    /// How many consecutive ⌘-is-up readings confirm a stranded session.
+    private static let strandedSessionConfirmations = 2
+
+    /// Consecutive ⌘-is-up readings so far. Reset whenever ⌘ is seen held
+    /// again, and at the start and end of every session.
+    private var commandUpObservations = 0
+
     /// Auto-commit delay used only in fallback mode.
     private let autoCommitInterval: TimeInterval = 0.8
 
@@ -205,6 +221,73 @@ final class SwitcherController {
         eventTap.onNavigateWindows = { [weak self] direction in self?.navigateWindows(direction) }
         eventTap.onType = { [weak self] character in self?.handleTypedCharacter(character) }
         eventTap.onDeleteBackward = { [weak self] in self?.handleTypeBackspace() }
+        // Hop off the tap callback before reconciling: the tap was disabled
+        // because a callback ran long, so the recovery — which can run a full
+        // commit, overlay teardown included — must not happen inside the next one.
+        eventTap.onTapReEnabled = { [weak self] in
+            DispatchQueue.main.async { self?.endStrandedSessionIfNeeded() }
+        }
+    }
+
+    // MARK: Stranded-session recovery
+
+    /// Commits a session whose ⌘ key-up went missing.
+    ///
+    /// The only thing that ends an event-tap session is the `flagsChanged` event
+    /// reporting Command released. The system disables a tap whose callback ran
+    /// long (`kCGEventTapDisabledByTimeout`) and *drops* everything sent while it
+    /// was off — so that one event can be lost. The session would then stay live
+    /// forever: the panel stuck on screen and, worse, every unrecognised key
+    /// swallowed while `isSessionActive` is true, which reads as a dead keyboard
+    /// in every app. So don't trust the event stream: ask the system for the
+    /// modifier state that's actually held.
+    private func endStrandedSessionIfNeeded() {
+        guard Self.shouldEndStrandedSession(isSessionActive: isSessionActive,
+                                            usesEventTap: usesEventTap,
+                                            commandDown: Self.isCommandHeld())
+        else {
+            commandUpObservations = 0
+            return
+        }
+        // Require the observation to persist across two checks. A stranded
+        // session is a *sustained* state, so waiting one more tick costs the
+        // recovery ~0.4s and buys immunity to a single odd modifier reading (the
+        // legitimate key-up never waits on this — it commits from the event).
+        commandUpObservations += 1
+        guard commandUpObservations >= Self.strandedSessionConfirmations else { return }
+        NSLog("Zap: switch session outlived its ⌘ hold (missed key-up); committing")
+        commit()
+    }
+
+    /// Pure rule for the recovery above: only an event-tap session can be
+    /// stranded this way (the Carbon fallback has no ⌘ to watch and auto-commits
+    /// on its own timer), and only once Command is no longer physically held.
+    static func shouldEndStrandedSession(isSessionActive: Bool, usesEventTap: Bool,
+                                         commandDown: Bool) -> Bool {
+        isSessionActive && usesEventTap && !commandDown
+    }
+
+    /// The modifier state currently held on the keyboard, read from the system
+    /// rather than from the (possibly interrupted) tap event stream.
+    ///
+    /// Best-effort, and used *only* as the safety net's input: the tap's
+    /// `flagsChanged` events remain the authoritative commit trigger. Input that
+    /// doesn't travel the normal HID path (synthesized events, some remapping
+    /// tools) can make the two disagree, which is why the caller demands a
+    /// sustained reading rather than acting on one.
+    private static func isCommandHeld() -> Bool {
+        NSEvent.modifierFlags.contains(.command)
+    }
+
+    /// Starts the watchdog for a freshly-begun event-tap session.
+    private func startStrandedSessionWatchdog() {
+        strandedSessionTimer?.invalidate()
+        commandUpObservations = 0
+        guard usesEventTap else { return }
+        strandedSessionTimer = Self.scheduleTimer(withTimeInterval: strandedSessionCheckInterval,
+                                                  repeats: true) { [weak self] _ in
+            self?.endStrandedSessionIfNeeded()
+        }
     }
 
     @discardableResult
@@ -256,6 +339,7 @@ final class SwitcherController {
         selectedIndex = defaultSelection(forward: forward, apps: apps,
                                          frontmostBundleID: provider.frontmostBundleID())
         isSessionActive = true
+        startStrandedSessionWatchdog()
 
         let delay = max(0, preferences.showDelayMs / 1000)
         if delay == 0 {
@@ -609,6 +693,8 @@ final class SwitcherController {
         showTimer?.invalidate(); showTimer = nil
         autoCommitTimer?.invalidate(); autoCommitTimer = nil
         dwellTimer?.invalidate(); dwellTimer = nil
+        strandedSessionTimer?.invalidate(); strandedSessionTimer = nil
+        commandUpObservations = 0
         cancelPendingShortcut()
         isSessionActive = false
         typeBuffer = ""
