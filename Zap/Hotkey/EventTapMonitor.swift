@@ -46,6 +46,16 @@ final class EventTapMonitor {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
 
+    /// Action keys currently held down, keyed by the *key code* that produced them.
+    ///
+    /// The key-down is matched by the character it types (so the action lands on
+    /// the user's real Q/H/W wherever their layout puts them), but the matching
+    /// key-up must be recognised even if the event carries no text — otherwise a
+    /// quick tap would never resolve and its armed hold would fire, quitting an
+    /// app the user only meant to type a letter for. The key code is the one thing
+    /// guaranteed to match across the pair.
+    private var heldShortcutKeyCodes: [Int64: ShortcutKey] = [:]
+
     var isRunning: Bool { eventTap != nil }
 
     // MARK: Lifecycle
@@ -164,17 +174,6 @@ final class EventTapMonitor {
             case KeyCode.escape:
                 onEscape?()
                 return nil
-            case KeyCode.q:
-                // Q/H/W double as shortcuts (quit/hide/close window) and search
-                // letters; forward both readings for the controller to route.
-                onShortcutKey?(.quit, typedCharacter(for: event), isRepeat)
-                return nil
-            case KeyCode.h:
-                onShortcutKey?(.hide, typedCharacter(for: event), isRepeat)
-                return nil
-            case KeyCode.w:
-                onShortcutKey?(.closeWindow, typedCharacter(for: event), isRepeat)
-                return nil
             case KeyCode.arrowDown:
                 onNavigateWindows?(.down)
                 return nil
@@ -192,37 +191,57 @@ final class EventTapMonitor {
                 onDeleteBackward?()
                 return nil
             default:
+                let character = typedCharacter(for: event)
+                // Q/H/W double as shortcuts (quit/hide/close window) and search
+                // letters; forward both readings for the controller to route. They
+                // are matched on the character the key *types*, not its position,
+                // so ⌘Q quits on AZERTY/Dvorak/QWERTZ too — matching how macOS
+                // itself resolves menu shortcuts.
+                if let key = Self.shortcutKey(for: character) {
+                    heldShortcutKeyCodes[keyCode] = key
+                    onShortcutKey?(key, character, isRepeat)
+                    return nil
+                }
                 // Forward a printable character for type-to-search / number-key
                 // jumps; otherwise swallow the key so it doesn't leak to the front
                 // app mid-switch.
-                if let character = typedCharacter(for: event) {
+                if let character {
                     onType?(character)
                 }
                 return nil
             }
 
         case .keyUp:
-            guard isSwitching() else {
-                return Unmanaged.passUnretained(event)
-            }
+            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
             // Releasing a dual-purpose key resolves its tap-vs-hold; consume the
-            // key-up for symmetry with its consumed key-down.
-            switch event.getIntegerValueField(.keyboardEventKeycode) {
-            case KeyCode.q:
-                onShortcutKeyUp?(.quit)
-                return nil
-            case KeyCode.h:
-                onShortcutKeyUp?(.hide)
-                return nil
-            case KeyCode.w:
-                onShortcutKeyUp?(.closeWindow)
-                return nil
-            default:
+            // key-up for symmetry with its consumed key-down. Always clear the
+            // held-key bookkeeping, even when the session ended under the finger.
+            guard let key = heldShortcutKeyCodes.removeValue(forKey: keyCode), isSwitching() else {
                 return Unmanaged.passUnretained(event)
             }
+            onShortcutKeyUp?(key)
+            return nil
 
         default:
             return Unmanaged.passUnretained(event)
+        }
+    }
+
+    /// The in-switcher action key a typed character stands for, or `nil` for an
+    /// ordinary letter.
+    ///
+    /// Matched on the character rather than the key's physical position: the
+    /// position of `q` on a US keyboard types `a` on AZERTY, so a position-based
+    /// match had a French user's ⌘A quitting the highlighted app while ⌘Q did
+    /// nothing. macOS resolves its own ⌘Q/⌘W/⌘H the same character-based way.
+    /// Pure, so the mapping is unit-testable.
+    static func shortcutKey(for character: Character?) -> ShortcutKey? {
+        guard let character, let lowered = character.lowercased().first else { return nil }
+        switch lowered {
+        case "q": return .quit
+        case "h": return .hide
+        case "w": return .closeWindow
+        default: return nil
         }
     }
 
