@@ -230,10 +230,13 @@ struct OverlayView: View {
     }
 
     /// The type-to-search query, shown as a small capsule while the user types to
-    /// jump the selection. Dims when nothing matches so a typo is legible.
+    /// jump the selection. Reads as a miss when nothing matches — the highlight
+    /// deliberately stays put in that case, so without this the switcher looks
+    /// frozen rather than unmatched.
     private var searchBadge: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "magnifyingglass")
+        let matched = model.typeQueryMatched
+        return HStack(spacing: 5) {
+            Image(systemName: matched ? "magnifyingglass" : "magnifyingglass.circle")
                 .font(.system(size: 11, weight: .semibold))
             Text(model.typeQuery)
                 .font(.system(size: 12, weight: .medium))
@@ -245,17 +248,20 @@ struct OverlayView: View {
                     .opacity(0.6)
             }
         }
-        .foregroundStyle(Color(hexString: preferences.labelColorHex))
+        .foregroundStyle(matched
+                         ? Color(hexString: preferences.labelColorHex)
+                         : Color(hexString: preferences.labelColorHex).opacity(0.55))
         .padding(.horizontal, 9)
         .padding(.vertical, 3)
         .background(
             Capsule(style: .continuous)
-                .fill(Color.black.opacity(0.25))
+                .fill(matched ? Color.black.opacity(0.25) : Color.red.opacity(0.28))
         )
         .overlay(
             Capsule(style: .continuous)
                 .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
         )
+        .animation(.easeOut(duration: 0.12), value: matched)
     }
 
     /// Discoverability nudge for the dual-purpose action keys: right after the
