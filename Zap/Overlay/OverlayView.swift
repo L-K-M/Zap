@@ -6,6 +6,9 @@ import AppKit
 struct OverlayView: View {
     @ObservedObject var model: OverlayModel
     @ObservedObject var preferences: Preferences
+    /// System accessibility display settings. Defaulted, so existing call sites
+    /// construct the view unchanged.
+    @ObservedObject var accessibility: AccessibilityDisplaySettings = .shared
 
     private var iconSpacing: CGFloat { IconRowMetrics.spacing }
     private var outerPadding: CGFloat { preferences.contentPadding }
@@ -27,6 +30,11 @@ struct OverlayView: View {
                              isQuitting: model.quittingPIDs.contains(app.processIdentifier),
                              isDropTarget: index == model.dropTargetIndex)
                         .contentShape(Rectangle())
+                        .accessibilityLabel(Text(app.name))
+                        // Announce the highlight too, so a client tracking the
+                        // row knows which app the keyboard is on.
+                        .accessibilityAddTraits(index == model.selectedIndex
+                                                ? [.isButton, .isSelected] : [.isButton])
                         .onTapGesture { model.onPick?(index) }
                         .onHover { hovering in
                             if hovering { model.onHoverApp?(index) }
@@ -84,6 +92,13 @@ struct OverlayView: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
+    /// `animation` unless the user has asked for reduced motion, in which case
+    /// `nil` — the change still happens, just instantly.
+    private func resolvedAnimation(_ animation: Animation?) -> Animation? {
+        AccessibilityDisplaySettings.effectiveAnimation(animation,
+                                                        reduceMotion: accessibility.reduceMotion)
+    }
+
     /// The icon row width, capped so the panel never exceeds the screen.
     private var panelContentWidth: CGFloat {
         min(maxRowWidth, model.maxContentWidth)
@@ -115,7 +130,9 @@ struct OverlayView: View {
         ZStack {
             VisualEffectBlur()
             backgroundFill
-                .opacity(preferences.backgroundOpacity)
+                .opacity(AccessibilityDisplaySettings.effectiveBackgroundOpacity(
+                    configured: preferences.backgroundOpacity,
+                    reduceTransparency: accessibility.reduceTransparency))
             decoration
                 .opacity(preferences.decorationOpacity)
         }
@@ -216,6 +233,13 @@ struct OverlayView: View {
             .interpolation(.high)
             .aspectRatio(contentMode: .fit)
             .frame(width: preferences.iconSize, height: preferences.iconSize)
+            // A hidden app keeps its place in the row but reads as put away: the
+            // icon fades back and carries a badge. Drawn as an overlay on the
+            // icon's own frame, so it never changes the cell's footprint.
+            .opacity(app.isHidden && !isQuitting ? 0.45 : 1)
+            .overlay(alignment: .bottomTrailing) {
+                if app.isHidden { hiddenBadge }
+            }
             .padding(8)
             .background(
                 RoundedRectangle(cornerRadius: preferences.highlightCornerRadius, style: .continuous)
@@ -229,17 +253,34 @@ struct OverlayView: View {
                     .strokeBorder(Color(hexString: preferences.highlightColorHex),
                                   lineWidth: isDropTarget ? 3 : 0)
             )
-            .animation(.easeOut(duration: 0.12), value: isDropTarget)
+            .animation(resolvedAnimation(.easeOut(duration: 0.12)), value: isDropTarget)
             // Dim apps that are quitting until their fate is confirmed.
             .opacity(isQuitting ? 0.3 : 1)
-            .animation(.easeOut(duration: 0.15), value: isQuitting)
+            .animation(resolvedAnimation(.easeOut(duration: 0.15)), value: isQuitting)
+    }
+
+    /// Marker drawn on a hidden (⌘H) app's icon. Scales with the icon so it stays
+    /// legible at any size, and is bounded so it can't dominate a large icon.
+    private var hiddenBadge: some View {
+        let diameter = min(max(preferences.iconSize * 0.3, 14), 30)
+        return Image(systemName: "eye.slash.fill")
+            .font(.system(size: diameter * 0.55, weight: .semibold))
+            .foregroundStyle(Color(hexString: preferences.labelColorHex))
+            .frame(width: diameter, height: diameter)
+            .background(Circle().fill(Color.black.opacity(0.65)))
+            .overlay(Circle().strokeBorder(Color.white.opacity(0.15), lineWidth: 1))
+            .offset(x: diameter * 0.15, y: diameter * 0.15)
+            .allowsHitTesting(false)
     }
 
     /// The type-to-search query, shown as a small capsule while the user types to
-    /// jump the selection. Dims when nothing matches so a typo is legible.
+    /// jump the selection. Reads as a miss when nothing matches — the highlight
+    /// deliberately stays put in that case, so without this the switcher looks
+    /// frozen rather than unmatched.
     private var searchBadge: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "magnifyingglass")
+        let matched = model.typeQueryMatched
+        return HStack(spacing: 5) {
+            Image(systemName: matched ? "magnifyingglass" : "magnifyingglass.circle")
                 .font(.system(size: 11, weight: .semibold))
             Text(model.typeQuery)
                 .font(.system(size: 12, weight: .medium))
@@ -251,17 +292,20 @@ struct OverlayView: View {
                     .opacity(0.6)
             }
         }
-        .foregroundStyle(Color(hexString: preferences.labelColorHex))
+        .foregroundStyle(matched
+                         ? Color(hexString: preferences.labelColorHex)
+                         : Color(hexString: preferences.labelColorHex).opacity(0.55))
         .padding(.horizontal, 9)
         .padding(.vertical, 3)
         .background(
             Capsule(style: .continuous)
-                .fill(Color.black.opacity(0.25))
+                .fill(matched ? Color.black.opacity(0.25) : Color.red.opacity(0.28))
         )
         .overlay(
             Capsule(style: .continuous)
                 .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
         )
+        .animation(.easeOut(duration: 0.12), value: matched)
     }
 
     /// Discoverability nudge for the dual-purpose action keys: right after the
@@ -364,7 +408,7 @@ struct OverlayView: View {
     /// already-visible cell doesn't jump). Falls back to the top when focus has
     /// returned to the app row.
     private func scrollSelectionIntoView(_ proxy: ScrollViewProxy) {
-        withAnimation(.easeOut(duration: 0.15)) {
+        withAnimation(resolvedAnimation(.easeOut(duration: 0.15))) {
             if let index = model.windowSelectedIndex, model.windows.indices.contains(index) {
                 proxy.scrollTo(model.windows[index].id)
             } else if let first = model.windows.first {

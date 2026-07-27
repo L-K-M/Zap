@@ -42,6 +42,19 @@ enum WindowEnumerator {
 
     private static let finderBundleID = "com.apple.finder"
 
+    /// How long a single Accessibility round-trip to another process may take
+    /// before it gives up.
+    ///
+    /// Every `AXUIElementCopyAttributeValue` below is a *synchronous* IPC call to
+    /// the target app, made on the main thread from the dwell timer. With no
+    /// explicit timeout the system default applies — seconds — so dwelling on an
+    /// app that is beachballing would freeze Zap's run loop with it: the panel
+    /// stops responding and the ⌘+Tab event tap gets disabled by timeout, which
+    /// costs the session its commit. A quarter-second is an eternity for an
+    /// attribute read (typical replies are single-digit milliseconds) and bounds
+    /// the damage a wedged app can do to "its window list doesn't appear".
+    private static let messagingTimeout: Float = 0.25
+
     // MARK: Enumeration
 
     /// The standard, user-facing windows of the process `pid`, in AX order. When
@@ -49,6 +62,12 @@ enum WindowEnumerator {
     /// Spaces that the Accessibility API omits.
     static func windows(forPID pid: pid_t, includeFullScreenWindows: Bool = false) -> [WindowInfo] {
         let app = AXUIElementCreateApplication(pid)
+        // Set on the application element, so it also bounds the calls made against
+        // the window elements it hands back (raise, close, attribute reads).
+        let timeoutResult = AXUIElementSetMessagingTimeout(app, messagingTimeout)
+        if timeoutResult != .success {
+            NSLog("Zap: could not set AX messaging timeout for pid \(pid) (AX error \(timeoutResult.rawValue))")
+        }
         let isFinder = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == finderBundleID
 
         var axWindows = windowInfos(from: elementsAttribute(app, kAXWindowsAttribute), allowFinderFallback: isFinder)

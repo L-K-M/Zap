@@ -81,6 +81,22 @@ final class SwitcherController {
     private var autoCommitTimer: Timer?
     private var dwellTimer: Timer?
 
+    /// Safety net for a session the event stream stranded — see
+    /// `endStrandedSessionIfNeeded()`. Runs only while an event-tap session is up.
+    private var strandedSessionTimer: Timer?
+
+    /// How often to check that a live event-tap session still has ⌘ held. Slow
+    /// enough to be free, quick enough that a stranded session can't lock the
+    /// keyboard for more than a moment.
+    private let strandedSessionCheckInterval: TimeInterval = 0.4
+
+    /// How many consecutive ⌘-is-up readings confirm a stranded session.
+    private static let strandedSessionConfirmations = 2
+
+    /// Consecutive ⌘-is-up readings so far. Reset whenever ⌘ is seen held
+    /// again, and at the start and end of every session.
+    private var commandUpObservations = 0
+
     /// Auto-commit delay used only in fallback mode.
     private let autoCommitInterval: TimeInterval = 0.8
 
@@ -206,6 +222,73 @@ final class SwitcherController {
         eventTap.onType = { [weak self] character in self?.handleTypedCharacter(character) }
         eventTap.onDeleteBackward = { [weak self] in self?.handleTypeBackspace() }
         eventTap.onToggleHelp = { [weak self] in self?.toggleHelp() }
+        // Hop off the tap callback before reconciling: the tap was disabled
+        // because a callback ran long, so the recovery — which can run a full
+        // commit, overlay teardown included — must not happen inside the next one.
+        eventTap.onTapReEnabled = { [weak self] in
+            DispatchQueue.main.async { self?.endStrandedSessionIfNeeded() }
+        }
+    }
+
+    // MARK: Stranded-session recovery
+
+    /// Commits a session whose ⌘ key-up went missing.
+    ///
+    /// The only thing that ends an event-tap session is the `flagsChanged` event
+    /// reporting Command released. The system disables a tap whose callback ran
+    /// long (`kCGEventTapDisabledByTimeout`) and *drops* everything sent while it
+    /// was off — so that one event can be lost. The session would then stay live
+    /// forever: the panel stuck on screen and, worse, every unrecognised key
+    /// swallowed while `isSessionActive` is true, which reads as a dead keyboard
+    /// in every app. So don't trust the event stream: ask the system for the
+    /// modifier state that's actually held.
+    private func endStrandedSessionIfNeeded() {
+        guard Self.shouldEndStrandedSession(isSessionActive: isSessionActive,
+                                            usesEventTap: usesEventTap,
+                                            commandDown: Self.isCommandHeld())
+        else {
+            commandUpObservations = 0
+            return
+        }
+        // Require the observation to persist across two checks. A stranded
+        // session is a *sustained* state, so waiting one more tick costs the
+        // recovery ~0.4s and buys immunity to a single odd modifier reading (the
+        // legitimate key-up never waits on this — it commits from the event).
+        commandUpObservations += 1
+        guard commandUpObservations >= Self.strandedSessionConfirmations else { return }
+        NSLog("Zap: switch session outlived its ⌘ hold (missed key-up); committing")
+        commit()
+    }
+
+    /// Pure rule for the recovery above: only an event-tap session can be
+    /// stranded this way (the Carbon fallback has no ⌘ to watch and auto-commits
+    /// on its own timer), and only once Command is no longer physically held.
+    static func shouldEndStrandedSession(isSessionActive: Bool, usesEventTap: Bool,
+                                         commandDown: Bool) -> Bool {
+        isSessionActive && usesEventTap && !commandDown
+    }
+
+    /// The modifier state currently held on the keyboard, read from the system
+    /// rather than from the (possibly interrupted) tap event stream.
+    ///
+    /// Best-effort, and used *only* as the safety net's input: the tap's
+    /// `flagsChanged` events remain the authoritative commit trigger. Input that
+    /// doesn't travel the normal HID path (synthesized events, some remapping
+    /// tools) can make the two disagree, which is why the caller demands a
+    /// sustained reading rather than acting on one.
+    private static func isCommandHeld() -> Bool {
+        NSEvent.modifierFlags.contains(.command)
+    }
+
+    /// Starts the watchdog for a freshly-begun event-tap session.
+    private func startStrandedSessionWatchdog() {
+        strandedSessionTimer?.invalidate()
+        commandUpObservations = 0
+        guard usesEventTap else { return }
+        strandedSessionTimer = Self.scheduleTimer(withTimeInterval: strandedSessionCheckInterval,
+                                                  repeats: true) { [weak self] _ in
+            self?.endStrandedSessionIfNeeded()
+        }
     }
 
     @discardableResult
@@ -257,6 +340,7 @@ final class SwitcherController {
         selectedIndex = defaultSelection(forward: forward, apps: apps,
                                          frontmostBundleID: provider.frontmostBundleID())
         isSessionActive = true
+        startStrandedSessionWatchdog()
 
         let delay = max(0, preferences.showDelayMs / 1000)
         if delay == 0 {
@@ -368,8 +452,8 @@ final class SwitcherController {
     /// query badge. The badge is pushed *last* — after any `presentOverlay()`, whose
     /// `show()` resets the model — so a query typed during the show-delay survives.
     private func applyTypeQuery() {
-        if let index = Self.bestMatchIndex(query: typeBuffer, names: apps.map(\.name)),
-           !quittingPIDs.contains(apps[index].processIdentifier) {
+        let match = Self.bestMatchIndex(query: typeBuffer, names: apps.map(\.name))
+        if let index = match, !quittingPIDs.contains(apps[index].processIdentifier) {
             selectedIndex = index
             windowSelectedIndex = nil
             if overlay.isVisible {
@@ -381,7 +465,10 @@ final class SwitcherController {
         if !typeBuffer.isEmpty, !overlay.isVisible {
             presentOverlay()
         }
-        overlay.setTypeQuery(typeBuffer)
+        // Tell the badge whether the query landed anywhere. Without it, a typo
+        // just makes the highlight stop responding — which, with every keystroke
+        // swallowed mid-session, reads as the switcher having frozen.
+        overlay.setTypeQuery(typeBuffer, matched: match != nil)
     }
 
     /// Shows or hides the key-hints footer, forcing the panel up first so the
@@ -414,13 +501,18 @@ final class SwitcherController {
     /// or `nil` if none match. Preference order, each taking the earliest (most
     /// recently used) candidate: a name that *starts with* the query, then a name
     /// with a *word* starting with the query ("co" → "Visual Studio **Co**de"),
-    /// then any *substring* match. Case-insensitive. Extracted for unit testing.
+    /// then any *substring* match, and finally an in-order *subsequence* of the
+    /// name's characters ("vsc" → "**V**isual **S**tudio **C**ode", "ppt" →
+    /// "Microsoft **P**ower**P**oin**t**) — how people type when they're in a
+    /// hurry, and safe as the last tier because an exact-ish match always wins.
+    /// Case-insensitive. Extracted for unit testing.
     static func bestMatchIndex(query: String, names: [String]) -> Int? {
         let needle = query.lowercased()
         guard !needle.isEmpty else { return nil }
 
         var wordPrefix: Int?
         var substring: Int?
+        var subsequence: Int?
         for (index, name) in names.enumerated() {
             let haystack = name.lowercased()
             if haystack.hasPrefix(needle) {
@@ -428,8 +520,26 @@ final class SwitcherController {
             }
             if wordPrefix == nil, hasWordPrefix(haystack, needle) { wordPrefix = index }
             if substring == nil, haystack.contains(needle) { substring = index }
+            // Only worth looking once no substring match has been found and no
+            // earlier name already qualified: a higher tier always outranks it.
+            if substring == nil, subsequence == nil, isSubsequence(needle, of: haystack) {
+                subsequence = index
+            }
         }
-        return wordPrefix ?? substring
+        return wordPrefix ?? substring ?? subsequence
+    }
+
+    /// Whether every character of `needle` appears in `haystack` in order (not
+    /// necessarily adjacently) — both already lowercased. An empty needle never
+    /// gets here (`bestMatchIndex` returns early), so this always requires at
+    /// least one character to land.
+    static func isSubsequence(_ needle: String, of haystack: String) -> Bool {
+        var remaining = Substring(needle)
+        for character in haystack {
+            guard let next = remaining.first else { break }
+            if character == next { remaining = remaining.dropFirst() }
+        }
+        return remaining.isEmpty
     }
 
     /// Whether any whitespace/punctuation-delimited word in `haystack` starts with
@@ -621,6 +731,8 @@ final class SwitcherController {
         showTimer?.invalidate(); showTimer = nil
         autoCommitTimer?.invalidate(); autoCommitTimer = nil
         dwellTimer?.invalidate(); dwellTimer = nil
+        strandedSessionTimer?.invalidate(); strandedSessionTimer = nil
+        commandUpObservations = 0
         cancelPendingShortcut()
         isSessionActive = false
         typeBuffer = ""
@@ -674,12 +786,32 @@ final class SwitcherController {
         // Don't toggle an app that's on its way out.
         guard !quittingPIDs.contains(target.processIdentifier) else { return }
         guard let runningApp = provider.runningApplication(for: target) else { return }
-        if runningApp.isHidden {
-            runningApp.unhide()
-        } else {
+        // Decide the intended state up front: `isHidden` is KVO-updated
+        // asynchronously, so re-reading it right after the call would still
+        // report the old value.
+        let willHide = !runningApp.isHidden
+        if willHide {
             runningApp.hide()
+        } else {
+            runningApp.unhide()
         }
+        // Mark the row immediately, so ⌘H visibly does something instead of the
+        // app appearing to be unchanged (the list is a session snapshot).
+        setHidden(willHide, at: selectedIndex)
         restartDwell()
+    }
+
+    /// Updates the cached hidden state of the app at `index` and re-renders the
+    /// row. Cheap: the row's geometry is unchanged, so the panel isn't re-laid-out.
+    private func setHidden(_ hidden: Bool, at index: Int) {
+        guard apps.indices.contains(index), apps[index].isHidden != hidden else { return }
+        let app = apps[index]
+        apps[index] = AppInfo(bundleIdentifier: app.bundleIdentifier,
+                              name: app.name,
+                              processIdentifier: app.processIdentifier,
+                              icon: app.icon,
+                              isHidden: hidden)
+        overlay.refreshApps(apps)
     }
 
     /// Starts the one-shot timer that checks whether `runningApp` actually quit.

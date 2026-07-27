@@ -53,6 +53,23 @@ final class OverlayWindowController {
     /// outside it, when `preferences.closeOnClickOutside` is on.
     private var clickOutsideMonitors: [Any] = []
 
+    /// Where the pointer was when the panel was last presented, or `nil` once the
+    /// user has actually moved it. The panel appears on the screen holding the
+    /// pointer, so it regularly materializes *underneath* a resting cursor —
+    /// SwiftUI then delivers a hover for whatever icon landed there and the
+    /// highlight would jump away from the pre-selected previous app, breaking the
+    /// tap-to-toggle behavior without the user touching the mouse. Hover only
+    /// takes over once the pointer has genuinely moved (see `openHoverGateIfMoved`).
+    ///
+    /// One origin covers every window the panel is hosted in (including the
+    /// mirrors on other displays): there is only ever one pointer.
+    private var pointerOriginAtShow: NSPoint?
+
+    /// Client hover callbacks. The model's own hover hooks are wrapped (in `init`)
+    /// so every hover passes the moved-pointer gate first.
+    private var hoverAppHandler: ((Int) -> Void)?
+    private var hoverWindowHandler: ((Int) -> Void)?
+
     /// Extra windows mirroring the panel onto the other screens, when
     /// `preferences.showOnAllScreens` is on. They host the same `model`, so they
     /// render identically and stay interactive (clicks/hover/drops work on any of
@@ -69,9 +86,10 @@ final class OverlayWindowController {
     }
 
     /// Invoked when the pointer hovers an app icon. Argument is the app's index.
+    /// Only delivered once the pointer has moved since the panel appeared.
     var onHoverApp: ((Int) -> Void)? {
-        get { model.onHoverApp }
-        set { model.onHoverApp = newValue }
+        get { hoverAppHandler }
+        set { hoverAppHandler = newValue }
     }
 
     /// Invoked when the user clicks a window row. Argument is the window's index.
@@ -81,9 +99,10 @@ final class OverlayWindowController {
     }
 
     /// Invoked when the pointer hovers a window row. Argument is the window's index.
+    /// Only delivered once the pointer has moved since the panel appeared.
     var onHoverWindow: ((Int) -> Void)? {
-        get { model.onHoverWindow }
-        set { model.onHoverWindow = newValue }
+        get { hoverWindowHandler }
+        set { hoverWindowHandler = newValue }
     }
 
     /// Invoked when files are dropped on an app icon. Arguments: index and file URLs.
@@ -99,6 +118,42 @@ final class OverlayWindowController {
         hostingView = created.hostingView
         installScrollMonitor()
         installClickOutsideMonitor()
+        installHoverGate()
+    }
+
+    /// Routes the view's hover callbacks through the moved-pointer gate, so a panel
+    /// appearing under a resting cursor can't hijack the selection.
+    private func installHoverGate() {
+        model.onHoverApp = { [weak self] index in
+            guard let self, self.openHoverGateIfMoved() else { return }
+            self.hoverAppHandler?(index)
+        }
+        model.onHoverWindow = { [weak self] index in
+            guard let self, self.openHoverGateIfMoved() else { return }
+            self.hoverWindowHandler?(index)
+        }
+    }
+
+    /// Whether the pointer has moved since the panel appeared — and, as a side
+    /// effect, opens the gate for the rest of the session the first time it has
+    /// (the origin is cleared). Later hovers are then answered immediately,
+    /// including a return to the exact spot the pointer started from. Named for
+    /// the mutation so it isn't mistaken for a read-only query.
+    @discardableResult
+    private func openHoverGateIfMoved() -> Bool {
+        guard let origin = pointerOriginAtShow else { return true }
+        guard Self.hoverShouldTakeOver(origin: origin, current: NSEvent.mouseLocation) else { return false }
+        pointerOriginAtShow = nil
+        return true
+    }
+
+    /// Pure rule: hover takes over the selection only once the pointer has moved
+    /// more than `threshold` points (either axis) from where it rested when the
+    /// panel was presented. Extracted so the gate is unit-testable.
+    static func hoverShouldTakeOver(origin: NSPoint?, current: NSPoint,
+                                    threshold: CGFloat = 3) -> Bool {
+        guard let origin else { return true }
+        return abs(current.x - origin.x) > threshold || abs(current.y - origin.y) > threshold
     }
 
     deinit {
@@ -159,6 +214,8 @@ final class OverlayWindowController {
 
         currentScreen = screen
         lastHapticIndex = nil
+        // Arm the hover gate: hovers are ignored until the pointer leaves this spot.
+        pointerOriginAtShow = NSEvent.mouseLocation
         // Reassigning the root view is cheap (the model stays the same) and nudges
         // SwiftUI/AppKit to rebuild a host that may have stopped drawing while idle.
         hostingView.rootView = OverlayView(model: model, preferences: preferences)
@@ -195,9 +252,10 @@ final class OverlayWindowController {
     /// appearing or disappearing changes the panel height, so re-fit the window on
     /// that transition; plain edits to the text don't resize it. The top edge stays
     /// fixed and the badge is below the row, so the icons never move.
-    func setTypeQuery(_ query: String) {
+    func setTypeQuery(_ query: String, matched: Bool = true) {
         let togglesBadge = query.isEmpty != model.typeQuery.isEmpty
         model.typeQuery = query
+        model.typeQueryMatched = matched
         guard togglesBadge, isVisible else { return }
         layout(keepTop: true)
         forceDisplay()
@@ -242,6 +300,16 @@ final class OverlayWindowController {
         scrollToCenter(on: selectedIndex, animated: false)
         forceDisplay()
         syncMirrors()
+    }
+
+    /// Replaces the app row in place, *without* re-laying-out or re-scrolling the
+    /// panel. For state that changes how a row draws but not how big it is — an
+    /// app being hidden or un-hidden mid-session — where a full `updateApps` would
+    /// needlessly re-centre a row the user may have scrolled by hand.
+    func refreshApps(_ apps: [AppInfo]) {
+        model.apps = apps
+        guard isVisible else { return }
+        forceDisplay()
     }
 
     // MARK: Window list
@@ -320,6 +388,7 @@ final class OverlayWindowController {
         anchorTop = nil
         currentScreen = nil
         lastHapticIndex = nil
+        pointerOriginAtShow = nil
     }
 
     private func refreshWindowIfNeeded() {
@@ -373,7 +442,9 @@ final class OverlayWindowController {
     private func scrollToCenter(on index: Int, animated: Bool) {
         let target = iconRowGeometry().centeredOffset(forIndex: index)
         guard target != model.scrollOffset else { return }
-        if animated {
+        // Reduced motion keeps the scroll — the selection still has to come into
+        // view — but jumps straight to it instead of sliding.
+        if animated, !AccessibilityDisplaySettings.shared.reduceMotion {
             withAnimation(.easeOut(duration: 0.18)) { model.scrollOffset = target }
         } else {
             model.scrollOffset = target
