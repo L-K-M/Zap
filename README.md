@@ -17,6 +17,7 @@ to, switch **directly to individual windows**, and **customize the appearance** 
 - Native-feeling MRU ordering (single tap toggles the two most-recent apps); the order persists across launches.
 - **Type to search** while switching — start typing an app's name and the highlight jumps to it. **Number keys** <kbd>1</kbd>–<kbd>9</kbd> switch straight to the Nth app.
 - **Spring-loaded switching:** start dragging a file, hit <kbd>⌘</kbd>+<kbd>Tab</kbd> mid-drag, and drop it on an app's icon to open it there — like the Dock, but for every app. (See [Tips](#tips).)
+- Press <kbd>?</kbd> while switching for a footer of the keys that work right now.
 - Per-app exclusions — hide apps you never switch to.
 - **Per-display app list** — scope the switcher on a chosen monitor to apps with a window assigned to that monitor across all of its regular desktop Spaces (optionally surfacing even excluded apps that live there). The visible full-screen app always counts; a best-effort toggle can omit apps on additional full-screen and Split View Spaces. Set it per display under **Settings → Displays** — a tab that appears only when you have more than one display, since scoping (and panel mirroring) only apply with multiple monitors. Mutually exclusive with mirroring onto all displays.
 - Dwell on an app to see its windows; switch straight to one with the arrow keys or a click. A long window list scrolls instead of overflowing the panel.
@@ -71,6 +72,9 @@ Accessibility permission prompt behave correctly.
   "Wave", or "Hammerspoon" work; quit and hide answer to a *hold* instead.
 - **Number keys:** press <kbd>1</kbd>–<kbd>9</kbd> to jump straight to the Nth app and
   switch — faster than tabbing.
+- **Forgot a key? Press <kbd>?</kbd>** while the switcher is up and it lists what's
+  available right now — the window keys appear only once a window list is showing,
+  <kbd>⌘</kbd>+<kbd>W</kbd> only once a window is picked. Press it again to hide them.
 - **In-switcher actions:** hold <kbd>⌘</kbd>+<kbd>Q</kbd> for half a second to quit
   the highlighted app, hold <kbd>⌘</kbd>+<kbd>H</kbd> to hide it (or un-hide) — a
   quick tap types into the search instead — and with a window selected,

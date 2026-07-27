@@ -221,6 +221,7 @@ final class SwitcherController {
         eventTap.onNavigateWindows = { [weak self] direction in self?.navigateWindows(direction) }
         eventTap.onType = { [weak self] character in self?.handleTypedCharacter(character) }
         eventTap.onDeleteBackward = { [weak self] in self?.handleTypeBackspace() }
+        eventTap.onToggleHelp = { [weak self] in self?.toggleHelp() }
         // Hop off the tap callback before reconciling: the tap was disabled
         // because a callback ran long, so the recovery — which can run a full
         // commit, overlay teardown included — must not happen inside the next one.
@@ -468,6 +469,17 @@ final class SwitcherController {
         // just makes the highlight stop responding — which, with every keystroke
         // swallowed mid-session, reads as the switcher having frozen.
         overlay.setTypeQuery(typeBuffer, matched: match != nil)
+    }
+
+    /// Shows or hides the key-hints footer, forcing the panel up first so the
+    /// hints are visible even during the show delay. The overlay owns the state,
+    /// so there's nothing here to keep in sync with it.
+    private func toggleHelp() {
+        guard isSessionActive else { return }
+        let shows = !overlay.showsHelp
+        if shows, !overlay.isVisible { presentOverlay() }
+        // Pushed after any `presentOverlay()`, whose `show()` resets the state.
+        overlay.setShowsHelp(shows)
     }
 
     /// Clears any in-progress type-to-search query and hides its badge.

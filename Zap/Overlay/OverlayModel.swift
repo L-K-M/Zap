@@ -56,6 +56,9 @@ final class OverlayModel: ObservableObject {
     /// types to jump the selection. Empty when no query is active.
     @Published var typeQuery: String = ""
 
+    /// Whether the key-hints footer is showing. Toggled by "?" mid-session — a
+    /// key type-to-search ignores anyway, so it costs nothing to hand over.
+    @Published var showsHelp = false
     /// Whether `typeQuery` currently matches an app. `false` makes the badge read
     /// as a miss, so a typo is legible instead of the highlight just going quiet.
     @Published var typeQueryMatched = true

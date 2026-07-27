@@ -37,6 +37,10 @@ final class EventTapMonitor {
     /// Called when the user presses Delete/Backspace mid-session, to edit the
     /// type-to-search query.
     var onDeleteBackward: (() -> Void)?
+    /// Called when the user presses "?" mid-session, to show or hide the key
+    /// hints. Reported separately from `onType` because recognising it needs the
+    /// event's Shift state (see `togglesHelp(shiftedCharacter:)`).
+    var onToggleHelp: (() -> Void)?
     /// Whether a switch session is currently active (overlay shown or pending).
     /// Drives commit/cancel behavior.
     var isSwitching: () -> Bool = { false }
@@ -207,6 +211,13 @@ final class EventTapMonitor {
                 onDeleteBackward?()
                 return nil
             default:
+                // "?" toggles the key hints. Checked before type-to-search because
+                // it needs the *shifted* reading of the key, which the plain
+                // character (modifiers cleared) can't provide.
+                if Self.togglesHelp(shiftedCharacter: typedCharacter(for: event, keepingShift: true)) {
+                    onToggleHelp?()
+                    return nil
+                }
                 let character = typedCharacter(for: event)
                 // Q/H/W double as shortcuts (quit/hide/close window) and search
                 // letters; forward both readings for the controller to route. They
@@ -267,16 +278,27 @@ final class EventTapMonitor {
     /// position — unlike the position-based `KeyCode` constants. Clearing the flags
     /// first also avoids Command suppressing text generation. Returns `nil` for keys
     /// that produce no text (function keys, etc.).
-    private func typedCharacter(for event: CGEvent) -> Character? {
+    private func typedCharacter(for event: CGEvent, keepingShift: Bool = false) -> Character? {
         var length = 0
         var characters = [UniChar](repeating: 0, count: 4)
         let savedFlags = event.flags
-        event.flags = []
+        event.flags = keepingShift ? savedFlags.intersection(.maskShift) : []
         event.keyboardGetUnicodeString(maxStringLength: characters.count,
                                        actualStringLength: &length,
                                        unicodeString: &characters)
         event.flags = savedFlags
         guard length > 0 else { return nil }
         return String(decoding: characters.prefix(length), as: UTF16.self).first
+    }
+
+    /// Whether a key press means "toggle the key hints".
+    ///
+    /// Matched on the character the key types **with Shift honoured**, because
+    /// "?" is a shifted key almost everywhere and its unshifted twin is a
+    /// different character on every layout — "/" on US, "ß" on QWERTZ, "," on
+    /// AZERTY. Asking what the key would type with Shift is the only reading that
+    /// means the same thing everywhere. Pure, so the rule is unit-testable.
+    static func togglesHelp(shiftedCharacter: Character?) -> Bool {
+        shiftedCharacter == "?"
     }
 }
