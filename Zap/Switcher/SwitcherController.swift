@@ -774,12 +774,32 @@ final class SwitcherController {
         // Don't toggle an app that's on its way out.
         guard !quittingPIDs.contains(target.processIdentifier) else { return }
         guard let runningApp = provider.runningApplication(for: target) else { return }
-        if runningApp.isHidden {
-            runningApp.unhide()
-        } else {
+        // Decide the intended state up front: `isHidden` is KVO-updated
+        // asynchronously, so re-reading it right after the call would still
+        // report the old value.
+        let willHide = !runningApp.isHidden
+        if willHide {
             runningApp.hide()
+        } else {
+            runningApp.unhide()
         }
+        // Mark the row immediately, so ⌘H visibly does something instead of the
+        // app appearing to be unchanged (the list is a session snapshot).
+        setHidden(willHide, at: selectedIndex)
         restartDwell()
+    }
+
+    /// Updates the cached hidden state of the app at `index` and re-renders the
+    /// row. Cheap: the row's geometry is unchanged, so the panel isn't re-laid-out.
+    private func setHidden(_ hidden: Bool, at index: Int) {
+        guard apps.indices.contains(index), apps[index].isHidden != hidden else { return }
+        let app = apps[index]
+        apps[index] = AppInfo(bundleIdentifier: app.bundleIdentifier,
+                              name: app.name,
+                              processIdentifier: app.processIdentifier,
+                              icon: app.icon,
+                              isHidden: hidden)
+        overlay.refreshApps(apps)
     }
 
     /// Starts the one-shot timer that checks whether `runningApp` actually quit.

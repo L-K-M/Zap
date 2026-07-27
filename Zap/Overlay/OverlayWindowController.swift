@@ -284,6 +284,16 @@ final class OverlayWindowController {
         syncMirrors()
     }
 
+    /// Replaces the app row in place, *without* re-laying-out or re-scrolling the
+    /// panel. For state that changes how a row draws but not how big it is — an
+    /// app being hidden or un-hidden mid-session — where a full `updateApps` would
+    /// needlessly re-centre a row the user may have scrolled by hand.
+    func refreshApps(_ apps: [AppInfo]) {
+        model.apps = apps
+        guard isVisible else { return }
+        forceDisplay()
+    }
+
     // MARK: Window list
 
     /// Replaces the window list and re-lays-out the panel keeping its top fixed.
