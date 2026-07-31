@@ -300,12 +300,21 @@ Zap/
 │   │   ├── OverlayModel.swift
 │   │   ├── OverlayView.swift     # SwiftUI
 │   │   └── VisualEffectView.swift
+│   ├── Icons/                    # un-squircled icons — see UNJAILED.md
+│   │   ├── IconResolver.swift    # bundleID → NSImage; all the hot path touches
+│   │   ├── BundleArtwork.swift   # reads .icns / Assets.car out of an app bundle
+│   │   ├── IconShapeClassifier.swift  # alpha analysis, pure
+│   │   ├── AlphaMask.swift       # downsampled alpha grid the classifier measures
+│   │   ├── IconImageValidator.swift   # format / dimension / security gate
+│   │   ├── IconStore.swift       # Application Support layout, manifest I/O
+│   │   └── IconManifest.swift    # Codable + validation (mirrors AppearancePreset)
 │   ├── Settings/
 │   │   ├── SettingsWindowController.swift
 │   │   ├── SettingsView.swift
 │   │   ├── GeneralView.swift
 │   │   ├── ExclusionsView.swift
 │   │   ├── AppearanceView.swift
+│   │   ├── IconsView.swift
 │   │   └── PermissionsView.swift
 │   ├── Updates/
 │   │   ├── UpdateChecker.swift   # GitHub release check + update alert (reusable)
@@ -316,6 +325,7 @@ Zap/
 │   ├── Model/
 │   │   ├── Preferences.swift     # UserDefaults wrapper
 │   │   ├── AppInfo.swift
+│   │   ├── IconSourceMode.swift
 │   │   └── ColorHex.swift
 │   └── Resources/
 │       └── Assets.xcassets      # Info.plist is generated

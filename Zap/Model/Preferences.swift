@@ -35,6 +35,9 @@ final class Preferences: ObservableObject {
         static let contentPadding = 20.0
         static let showDelayMs = 150.0
         static let windowDwellMs = 400.0
+        /// Un-jailing is only on where it does something — see
+        /// `IconSourceMode.systemDefault`.
+        static var iconSourceMode: IconSourceMode { .systemDefault }
     }
 
     private enum Key {
@@ -73,6 +76,7 @@ final class Preferences: ObservableObject {
         static let switchCountTotal = "switchCountTotal"
         static let switchCountToday = "switchCountToday"
         static let switchCountDay = "switchCountDay"
+        static let iconSourceMode = "iconSourceMode"
     }
 
     // MARK: Stored settings
@@ -247,6 +251,13 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(scrollHapticsEnabled, forKey: Key.scrollHapticsEnabled) }
     }
 
+    /// Where the switcher's icons come from: the system's (squircle-masked on
+    /// macOS 26+), the app's own artwork, or the user's own files. Applies to
+    /// Zap's panel only — see `IconSourceMode` and `UNJAILED.md`.
+    @Published var iconSourceMode: IconSourceMode {
+        didSet { defaults.set(iconSourceMode.rawValue, forKey: Key.iconSourceMode) }
+    }
+
     // MARK: Switch counter
 
     /// Total number of switches Zap has performed, all-time. A telemetry-free bit
@@ -303,6 +314,8 @@ final class Preferences: ObservableObject {
         scopeIncludesFullScreenAppsFromOtherSpaces = defaults.object(
             forKey: Key.scopeIncludesFullScreenApps) as? Bool ?? true
         scrollHapticsEnabled = defaults.object(forKey: Key.scrollHapticsEnabled) as? Bool ?? false
+        iconSourceMode = IconSourceMode(rawValue: defaults.string(forKey: Key.iconSourceMode) ?? "")
+            ?? Default.iconSourceMode
         switchCountTotal = max(0, defaults.integer(forKey: Key.switchCountTotal))
         switchCountToday = max(0, defaults.integer(forKey: Key.switchCountToday))
         switchCountDay = defaults.string(forKey: Key.switchCountDay) ?? ""

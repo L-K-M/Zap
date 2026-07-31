@@ -124,9 +124,9 @@ final class SwitcherController {
     /// Whether the switcher is currently driven by the real ⌘+Tab event tap.
     var isUsingEventTap: Bool { usesEventTap }
 
-    init(preferences: Preferences) {
+    init(preferences: Preferences, iconResolver: IconResolver? = nil) {
         self.preferences = preferences
-        self.provider = AppListProvider(preferences: preferences)
+        self.provider = AppListProvider(preferences: preferences, iconResolver: iconResolver)
         self.overlay = OverlayWindowController(preferences: preferences)
         wireEventTap()
         overlay.onPick = { [weak self] index in self?.pick(index) }
