@@ -46,6 +46,16 @@ struct AppInfo: Identifiable, Equatable {
         )
     }
 
+    /// Returns a copy drawing `icon` instead of the one captured from the running
+    /// application. Lets `AppListProvider` swap in un-jailed artwork while
+    /// `AppInfo` stays a dumb value type that knows nothing about icon resolution.
+    /// Identity is unaffected — `==` ignores the icon — so a substitution can't
+    /// perturb selection or the MRU order.
+    func replacingIcon(_ icon: NSImage?) -> AppInfo {
+        AppInfo(bundleIdentifier: bundleIdentifier, name: name,
+                processIdentifier: processIdentifier, icon: icon, isHidden: isHidden)
+    }
+
     static func == (lhs: AppInfo, rhs: AppInfo) -> Bool {
         lhs.bundleIdentifier == rhs.bundleIdentifier &&
         lhs.processIdentifier == rhs.processIdentifier

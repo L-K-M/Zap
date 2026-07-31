@@ -11,16 +11,19 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let preferences: Preferences
     private let inputMode: InputModeReporter
     private let updateChecker: UpdateChecker
+    private let iconResolver: IconResolver
 
     /// The app that was frontmost when Settings opened. Closing Settings hands
     /// activation back to it so Zap doesn't linger as the active app — see
     /// `windowWillClose`.
     private weak var appToRestoreOnClose: NSRunningApplication?
 
-    init(preferences: Preferences, inputMode: InputModeReporter, updateChecker: UpdateChecker) {
+    init(preferences: Preferences, inputMode: InputModeReporter,
+         updateChecker: UpdateChecker, iconResolver: IconResolver) {
         self.preferences = preferences
         self.inputMode = inputMode
         self.updateChecker = updateChecker
+        self.iconResolver = iconResolver
     }
 
     func show() {
@@ -34,7 +37,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
 
         if window == nil {
-            let hosting = NSHostingController(rootView: SettingsView(preferences: preferences, inputMode: inputMode, updateChecker: updateChecker))
+            let hosting = NSHostingController(rootView: SettingsView(
+                preferences: preferences, inputMode: inputMode,
+                updateChecker: updateChecker, iconResolver: iconResolver))
             // Only let the SwiftUI content drive the window's *minimum* size; the
             // user is free to make it larger. Without this the hosting controller
             // pins min == max, which both blocks resizing and leaves the fixed-size

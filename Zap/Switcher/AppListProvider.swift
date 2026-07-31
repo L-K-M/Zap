@@ -12,15 +12,22 @@ final class AppListProvider {
     private let ownBundleID = Bundle.main.bundleIdentifier
     private var activationObserver: NSObjectProtocol?
 
+    /// Supplies un-jailed artwork, if the feature is wired up. Absent in tests and
+    /// whenever icon substitution is off, in which case the system icon captured
+    /// by `AppInfo` is used unchanged.
+    private let iconResolver: IconResolver?
+
     /// `UserDefaults` key under which the MRU order is persisted across launches.
     private static let mruOrderKey = "mruOrder"
     /// How many bundle identifiers to persist — generous for any realistic app set
     /// while keeping the stored array bounded.
     private static let mruPersistLimit = 50
 
-    init(preferences: Preferences, defaults: UserDefaults = .standard) {
+    init(preferences: Preferences, defaults: UserDefaults = .standard,
+         iconResolver: IconResolver? = nil) {
         self.preferences = preferences
         self.defaults = defaults
+        self.iconResolver = iconResolver
         // Seed from the previous session's order so the first ⌘-Tab after launch
         // highlights a sensible "previous" app instead of process-table order.
         self.mru = MRUTracker(order: defaults.stringArray(forKey: Self.mruOrderKey) ?? [])
@@ -53,6 +60,7 @@ final class AppListProvider {
         let running = NSWorkspace.shared.runningApplications
             .compactMap(AppInfo.init(runningApplication:))
             .filter { !isOwnBundleID($0.bundleIdentifier) }
+            .map(substitutingIcon)
         return Self.scoped(mru.ordered(running), mode: mode, pidsOnScreen: pidsOnScreen,
                            excluding: preferences.excludedBundleIDs)
     }
@@ -91,6 +99,14 @@ final class AppListProvider {
     }
 
     // MARK: Private
+
+    /// Swaps in un-jailed artwork when the resolver already has it. A cache miss
+    /// leaves the system icon in place and warms in the background, so this stays
+    /// a dictionary lookup on the ⌘-Tab path (`UNJAILED.md §8.2`).
+    private func substitutingIcon(_ info: AppInfo) -> AppInfo {
+        guard let icon = iconResolver?.icon(forBundleID: info.bundleIdentifier) else { return info }
+        return info.replacingIcon(icon)
+    }
 
     private func seedMRU() {
         if let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,

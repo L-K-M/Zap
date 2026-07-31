@@ -1,6 +1,7 @@
 # UNJAILED — custom, un-squircled icons for the Zap switcher
 
-*A design study, July 2026. Nothing here is implemented.*
+*A design study, July 2026. **Phase 1 (§10) is implemented**; phases 2–5 are not.
+Sections describing shipped behaviour are marked; everything else is still design.*
 
 macOS 26 puts every app icon in the same rounded-rectangle mask. Zap draws its own
 icon row, so it is not obliged to. This document works out what it would take for
@@ -143,6 +144,8 @@ Notes worth carrying into the implementation:
 
 ### 4.2 Deciding whether substitution is even worth it
 
+*(Implemented: `IconShapeClassifier`, `AlphaMask`.)*
+
 Naively swapping in the raw artwork makes some icons *worse*. A modern full-bleed
 square icon, un-masked, becomes a hard-cornered square — sharper corners than
 anything else on screen. So classify the artwork's alpha channel first:
@@ -158,6 +161,37 @@ This is pure arithmetic over an alpha channel with no AppKit involved, so it is
 straightforwardly unit-testable against synthetic bitmaps (§9). It also gives
 Settings something honest to say per app: *"Original artwork available
 (free-form)"* vs *"Already square — nothing to un-jail"*.
+
+**Correction from implementing it: "plate" and "already squircle" are one class.**
+Two of the four rows above cannot be told apart. Measured on the 64² grid the
+classifier samples, over two metrics — the fraction of its own bounding box the
+shape fills, and how far the corners round off along the diagonal:
+
+| Shape | Fill ratio | Corner reach |
+|---|---|---|
+| Opaque square | 1.000 | 0.000 |
+| Rounded rect, r = 0.225 × side (Big Sur plate) | **0.957** | **0.113** |
+| Superellipse, n = 5 (Tahoe squircle) | **0.951** | **0.113** |
+| Circle | 0.788 | 0.273 |
+
+A 0.6% gap in fill ratio and none at all in corner reach — inside the noise of
+anti-aliasing and resampling. The intuition that a superellipse is "visibly
+rounder" than a Big Sur plate is wrong; that is the point of the superellipse.
+Any threshold splitting those two rows would be a coin flip presented as a
+measurement, so they are reported as one **rounded-square** class.
+
+The merge costs nothing, which is why it is the right call rather than a
+concession: both rows take the *same action* in the table above (substitute), and
+substituting genuinely Tahoe-native artwork draws the same picture the system
+would have drawn from it. The boundaries that do change what appears on screen —
+hard square vs rounded, rounded vs free-form — are wide, and those are the ones
+the classifier is actually deciding.
+
+The shipped classes are therefore **free-form**, **rounded-square**,
+**full-bleed** and **empty**, the last being "no readable alpha at all", which is
+the real "nothing to do here" case. `ZapTests/IconShapeClassifierTests` asserts
+both the separations and the non-separation, so if a future macOS makes the two
+shapes distinguishable the test that merged them is the one that fails.
 
 ### 4.3 What Level 2 cannot fix
 
@@ -621,7 +655,7 @@ whether the feature works at all:
 
 | Phase | Scope | Ships |
 |---|---|---|
-| **1** | `BundleArtwork` + `IconShapeClassifier` + `IconResolver` + `IconStore`/manifest + Icons tab with Original / System / Choose File… | **The actual fix.** Offline, no network code, no API key, no new formats, no dependency. Most users need nothing else. |
+| **1** ✅ | `BundleArtwork` + `IconShapeClassifier` + `IconResolver` + `IconStore`/manifest + Icons tab with Original / System / Choose File… | **The actual fix.** Offline, no network code, no API key, no new formats, no dependency. Most users need nothing else. |
 | **2** | `IconNormalizer` + bleed/trim/shadow in `IconRowMetrics` + Appearance controls; **drag-a-URL / drag-from-browser ingestion** + the §6.4 untrusted-decode hardening it requires | Makes mixed shapes look deliberate rather than ragged, and lets the user search the web where searching the web is still free (§5.3) |
 | **3** | macOSicons search (BYO key), attribution plumbing, privacy sheet | The "don't make me leave the app" part — strictly optional once phase 2 exists |
 | **4** | WKWebView SVG rasterisation → Iconify / SVGL providers | Large keyless corpus |
@@ -629,6 +663,28 @@ whether the feature works at all:
 
 Phase 1 stands alone and is worth shipping alone. Everything after it is optional
 polish on a problem already solved for the majority of apps.
+
+**What phase 1 actually shipped**, against the plan above:
+
+- All five components, plus `AlphaMask` (the sampling step, split out of the
+  classifier so the arithmetic is testable without Core Graphics) and
+  `IconImageValidator` — pulled forward from phase 2, because *Choose File…*
+  accepts a file from the user and the §6.4 decode bounds are the whole reason
+  that is safe to do. No network code came with it, so phase 1 keeps its
+  "no network at all" property.
+- Full-bleed corner masking (§4.2) with a **fixed** radius rather than a
+  configurable one. §8.4 puts that control on the Appearance tab next to the
+  other layout knobs, and those arrive together in phase 2.
+- Per-app pinning to the system icon, stored as a manifest entry with no file.
+  §3 asks for a per-app pin to *any* rung; only the "leave it alone" rung is
+  reachable so far, which is the one with a use case.
+- **Not** the four-class shape table — see the correction in §4.2.
+
+Still open from §12, unchanged by shipping: the load-bearing
+`Bundle.image(forResource:)` claim (question 1) has still never been run against a
+foreign `Assets.car`. The code treats a `nil` from it as "fall through", so if the
+claim is false the feature quietly degrades to `CFBundleIconFile` apps rather than
+breaking — but the framing in §4.1 would need rewriting.
 
 Note the shape of 2 vs 3: **phase 2 makes phase 3 optional.** Once a user can
 drag an image in from a browser, an in-app search saves them a window switch and

@@ -4,11 +4,12 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let preferences = Preferences.shared
-    private lazy var switcher = SwitcherController(preferences: preferences)
+    private lazy var iconResolver = IconResolver(preferences: preferences)
+    private lazy var switcher = SwitcherController(preferences: preferences, iconResolver: iconResolver)
     private let updateChecker = UpdateChecker(
         configuration: .init(owner: "L-K-M", repo: "Zap", appName: "Zap")
     )
-    private lazy var settingsWindow = SettingsWindowController(preferences: preferences, inputMode: switcher.inputMode, updateChecker: updateChecker)
+    private lazy var settingsWindow = SettingsWindowController(preferences: preferences, inputMode: switcher.inputMode, updateChecker: updateChecker, iconResolver: iconResolver)
 
     private var statusItem: NSStatusItem?
     private var pauseMenuItem: NSMenuItem?
@@ -23,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setUpStatusItem()
         switcher.start()
         updateChecker.start()   // check GitHub for a newer release on launch + daily
+        warmIconCache()         // so the first ⌘-Tab already has un-jailed artwork
         promptForAccessibilityIfNeeded()
     }
 
@@ -121,6 +123,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: Helpers
+
+    /// Resolves artwork for everything already running, off the main thread, so
+    /// the icon row doesn't change under the user partway through their first
+    /// switch. Cheap to call even when un-jailing is off — the resolver returns
+    /// early for `.system`.
+    private func warmIconCache() {
+        iconResolver.warm(bundleIDs: NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+    }
 
     private func promptForAccessibilityIfNeeded() {
         // The user deliberately chose the ⌥-Tab fallback — don't nag for a
