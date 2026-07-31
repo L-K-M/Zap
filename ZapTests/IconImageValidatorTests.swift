@@ -150,20 +150,3 @@ final class IconImageValidatorTests: XCTestCase {
         XCTAssertEqual(reloaded.width, 300)
     }
 }
-
-// MARK: - Result conveniences
-
-extension Result {
-    /// The success value, or `nil` — so a test can `XCTUnwrap` it. Named to stay
-    /// clear of the `success`/`failure` cases themselves.
-    var successValue: Success? {
-        guard case .success(let value) = self else { return nil }
-        return value
-    }
-
-    /// The failure value, or `nil`.
-    var failureValue: Failure? {
-        guard case .failure(let error) = self else { return nil }
-        return error
-    }
-}

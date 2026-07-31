@@ -45,6 +45,7 @@ final class IconResolver {
     private let lock = NSLock()
     private var cancellables: Set<AnyCancellable> = []
     private var workspaceObserver: NSObjectProtocol?
+    private var screenObserver: NSObjectProtocol?
 
     /// A resolved icon, or a resolved *absence* of one — distinguishing "we looked
     /// and there's nothing" from "we haven't looked yet".
@@ -66,20 +67,26 @@ final class IconResolver {
     /// Mirrors of main-thread-owned state, so background resolution never reads
     /// `Preferences` or `NSScreen` off the main thread.
     private var mode: IconSourceMode
+    private var iconSize: Double
     private var targetPixelSize: Int
     private var backingScale: CGFloat
 
     // MARK: Lifecycle
 
     init(preferences: Preferences, store: IconStore = IconStore()) {
+        let scale = Self.maximumBackingScale()
         self.store = store
         self.mode = preferences.iconSourceMode
-        self.backingScale = Self.maximumBackingScale()
-        self.targetPixelSize = Self.pixelSize(forIconSize: preferences.iconSize,
-                                              scale: Self.maximumBackingScale())
+        self.iconSize = preferences.iconSize
+        self.backingScale = scale
+        self.targetPixelSize = Self.pixelSize(forIconSize: preferences.iconSize, scale: scale)
+
+        // `dropFirst` on both: a `@Published` publisher replays its current value
+        // on subscribe, and both are already mirrored above.
 
         // The source mode changes what gets drawn, so it invalidates immediately.
         preferences.$iconSourceMode
+            .dropFirst()
             .removeDuplicates()
             .sink { [weak self] mode in
                 self?.apply(mode: mode)
@@ -89,6 +96,7 @@ final class IconResolver {
         // Icon size only changes the resolution icons are cached at. Debounced
         // because it's driven by a slider.
         preferences.$iconSize
+            .dropFirst()
             .removeDuplicates()
             .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
             .sink { [weak self] iconSize in
@@ -103,11 +111,22 @@ final class IconResolver {
                   let bundleID = app.bundleIdentifier else { return }
             self?.warm(bundleIDs: [bundleID])
         }
+
+        // Plugging in a sharper display makes every cached icon too soft for it,
+        // and the icon size alone would never notice.
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.refreshTargetSize()
+        }
     }
 
     deinit {
         if let workspaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver)
+        }
+        if let screenObserver {
+            NotificationCenter.default.removeObserver(screenObserver)
         }
     }
 
@@ -266,9 +285,21 @@ final class IconResolver {
     }
 
     private func apply(iconSize: Double) {
-        let scale = Self.maximumBackingScale()
-        let pixelSize = Self.pixelSize(forIconSize: iconSize, scale: scale)
         lock.lock()
+        self.iconSize = iconSize
+        lock.unlock()
+        refreshTargetSize()
+    }
+
+    /// Recomputes the resolution icons are cached at, from the current icon size
+    /// and the sharpest attached display. Invalidates only when it really changed,
+    /// so an irrelevant display change doesn't throw the cache away.
+    ///
+    /// Main thread only — `NSScreen` is.
+    private func refreshTargetSize() {
+        let scale = Self.maximumBackingScale()
+        lock.lock()
+        let pixelSize = Self.pixelSize(forIconSize: iconSize, scale: scale)
         let unchanged = pixelSize == targetPixelSize && scale == backingScale
         targetPixelSize = pixelSize
         backingScale = scale

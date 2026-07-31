@@ -161,6 +161,10 @@ final class IconManifestTests: XCTestCase {
             "with spaces and /slashes/",
             String(repeating: "x", count: 500),
             "emoji-🙂-id",
+            // A trailing dot survives sanitising untouched, then meets ".png" and
+            // makes a ".." — every character in it is otherwise allowed.
+            "com.example.app.",
+            "trailing...",
         ]
         for bundleID in hostile {
             let name = IconManifest.fileName(forBundleID: bundleID)

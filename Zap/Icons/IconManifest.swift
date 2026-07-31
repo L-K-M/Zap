@@ -140,10 +140,13 @@ struct IconManifest: Codable, Equatable {
         var stem = String(bundleID.prefix(200).map { allowed.contains($0) ? $0 : "_" })
 
         // Dots survive so the common case reads as the identifier itself
-        // (`com.apple.Safari.png`), but never as a relative component or a
-        // leading dot. Each pass strictly shortens the string, so this terminates.
+        // (`com.apple.Safari.png`), but never as a relative component, a leading
+        // dot, or a trailing one — a trailing dot would meet the ".png" suffix and
+        // make a ".." that this function's own safety check rejects. Each pass
+        // strictly shortens the string, so this terminates.
         while stem.contains("..") { stem = stem.replacingOccurrences(of: "..", with: "_") }
         while stem.hasPrefix(".") { stem.removeFirst() }
+        while stem.hasSuffix(".") { stem.removeLast() }
         if stem.isEmpty { stem = "icon" }
 
         // Sanitising can map two different identifiers onto one stem, which would

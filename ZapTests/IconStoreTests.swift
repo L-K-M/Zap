@@ -7,21 +7,31 @@ final class IconStoreTests: XCTestCase {
     private var directory: URL!
     private var store: IconStore!
 
+    /// Where `sourcePNG()` writes the files under import. Deliberately *not* the
+    /// store's own directory: `testRemoveAllClearsEverything` asserts that no PNGs
+    /// are left there, which a source file sitting alongside them would defeat.
+    private var sourceDirectory: URL!
+
     override func setUp() {
         super.setUp()
         directory = IconTestSupport.makeTemporaryDirectory()
+        sourceDirectory = IconTestSupport.makeTemporaryDirectory()
         store = IconStore(directory: directory)
     }
 
     override func tearDown() {
         store = nil
         try? FileManager.default.removeItem(at: directory)
+        try? FileManager.default.removeItem(at: sourceDirectory)
         directory = nil
+        sourceDirectory = nil
         super.tearDown()
     }
 
+    /// One directory for the whole test, one file per call — so repeated calls
+    /// don't strand a temp directory apiece.
     private func sourcePNG(width: Int = 512, height: Int = 512, filled: Bool = false) -> URL {
-        let url = IconTestSupport.makeTemporaryDirectory().appendingPathComponent("source.png")
+        let url = sourceDirectory.appendingPathComponent("source-\(UUID().uuidString).png")
         return IconTestSupport.writePNG(width: width, height: height, to: url, filled: filled)
     }
 
@@ -60,7 +70,7 @@ final class IconStoreTests: XCTestCase {
     }
 
     func testAdoptingAnUnreadableFileIsRejected() {
-        let junk = IconTestSupport.makeTemporaryDirectory().appendingPathComponent("junk.png")
+        let junk = sourceDirectory.appendingPathComponent("junk.png")
         try? Data("not an image".utf8).write(to: junk)
         XCTAssertEqual(store.setCustomIcon(from: junk, forBundleID: "a.b").failureValue, .unreadable)
         XCTAssertNil(store.entry(forBundleID: "a.b"))

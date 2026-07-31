@@ -38,10 +38,13 @@ enum IconTestSupport {
 
     // MARK: Directories
 
+    /// Callers must remove this in `tearDown`. `try!` rather than `try?` so a
+    /// fixture that can't be set up fails as itself, instead of as a confusing
+    /// "file not found" further downstream.
     static func makeTemporaryDirectory() -> URL {
         let url = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("ZapIconTests-\(UUID().uuidString)", isDirectory: true)
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
 
@@ -72,4 +75,22 @@ enum IconTestSupport {
 
     /// Placeholder bytes for a file whose *existence* is what a test is asserting.
     static let placeholderBytes = Data("not really an icns".utf8)
+}
+
+// MARK: - Result conveniences
+
+/// Lives here rather than in one test file, since several of them use it.
+extension Result {
+    /// The success value, or `nil` — so a test can `XCTUnwrap` it. Named to stay
+    /// clear of the `success`/`failure` cases themselves.
+    var successValue: Success? {
+        guard case .success(let value) = self else { return nil }
+        return value
+    }
+
+    /// The failure value, or `nil`.
+    var failureValue: Failure? {
+        guard case .failure(let error) = self else { return nil }
+        return error
+    }
 }

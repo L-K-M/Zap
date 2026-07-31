@@ -119,8 +119,13 @@ final class IconShapeClassifierTests: XCTestCase {
         let plate = profile(inset(0.8, roundedRect(radius: 0.225)))
         XCTAssertEqual(plate.boundsWidth, 0.8, accuracy: 0.02)
         XCTAssertEqual(plate.boundsHeight, 0.8, accuracy: 0.02)
-        XCTAssertEqual(plate.fillRatio, 0.957, accuracy: 0.02)
-        XCTAssertEqual(plate.cornerReach, 0.113, accuracy: 0.02)
+        XCTAssertEqual(plate.fillRatio, 0.947, accuracy: 0.02)
+        // 0.141, not the 0.132 a continuous rounded rect of this radius would
+        // give, and not the 0.113 the *full-canvas* plate measures below: an inset
+        // shape's bounding box is 52 cells, so one grid cell is 0.027 of the
+        // half-diagonal and the measurement lands a third of a cell out. Well
+        // clear of the 0.20 rounded-square boundary either way.
+        XCTAssertEqual(plate.cornerReach, 0.141, accuracy: 0.005)
 
         let solid = profile(square)
         XCTAssertEqual(solid.fillRatio, 1, accuracy: 0.001)
