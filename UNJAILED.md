@@ -179,14 +179,41 @@ Zap's own storage immediately anyway (§7), so a later move or delete can't brea
 anything.
 
 Drag-and-drop onto a row in Settings should work too — `.dropDestination` is
-already wired up elsewhere in the codebase.
+already wired up elsewhere in the codebase. Note that a drag *from a browser*
+carries a URL (or raw image data) on the pasteboard rather than a file, which is
+a meaningfully different ingestion path and a more important one than it first
+appears — see §5.3.
 
 ### 5.2 The search problem, honestly
 
 "Built-in image search" sounds like one feature and is actually four decisions:
 which corpus, whose API key, what licence, and what leaves the machine.
 
-**Corpus survey.**
+The obvious first instinct is **general web image search** — a Google Images box
+inside Zap. It is the right instinct on coverage: a curated icon corpus has tens
+of thousands of icons, the web has everything, and if someone wants a Companion
+Cube for Terminal the web definitely has one. It also has a real answer to the
+objection that web results are opaque JPEGs, which is the next section. It runs
+into a different wall.
+
+**Every general web image search API has closed or gone behind a credit card in
+the last 18 months.**
+
+| Provider | Status, July 2026 |
+|---|---|
+| Bing Image Search | **Retired 11 Aug 2025**, with the rest of the Bing Search family ([1][bingdead]) |
+| Google Custom Search JSON | **"Closed to new customers"**, and the service **shuts down 1 Jan 2027** — [Google's own docs][gcse]. Existing customers get 100 queries/day free. |
+| Brave Search API | Images endpoint exists; the 2,000/month free tier was **removed in February 2026**, replaced by prepaid credits with a **card required and no spending cap** |
+| SerpApi / scraper-as-a-service | Live, ~$50/month, and a legally grey resale of someone else's results |
+| DuckDuckGo | No official API; the endpoint people use is undocumented and against its terms |
+| SearXNG | Self-host, or hammer a stranger's public instance |
+
+So the honest position is not "a curated corpus is nicer than the web". It is
+that **there is no free, keyless, durable general image search left to build
+on** — and designing a July 2026 feature on an API that new users cannot sign up
+for and that dies in five months would be malpractice.
+
+**Corpus survey, for what remains.**
 
 | Source | Corpus | Key? | Free limit | Format | Fit |
 |---|---|---|---|---|---|
@@ -194,24 +221,63 @@ which corpus, whose API key, what licence, and what leaves the machine.
 | [Iconify][iconify] | ~300k icons, 200+ open sets (incl. `logos`, ~2k full-colour brand marks) | **No** | Generous public API, MIT | SVG only | ★★★☆☆ — needs a rasteriser |
 | [SVGL][svgl] | ~400 curated brand logos, light/dark variants | **No** | Public, open source | SVG only | ★★☆☆☆ — small, needs a rasteriser |
 | [Openverse][ov] | CC-licensed media, photo-weighted | No (optional OAuth) | 100/day, 5/hour anonymous | Raster | ★★☆☆☆ — wrong corpus for icons |
-| Google Programmable Search | The web | Yes | 100 queries/day | Mixed | ★☆☆☆☆ — unknown licences, unknown alpha |
-| Bing Image Search | — | — | — | — | **Retired 11 Aug 2025** ([1][bingdead]) |
 
 **Conclusions.**
 
-1. **macOSicons is the primary provider.** It is the only source whose corpus is
-   *this problem*: someone has already drawn an un-squircled Safari icon, and it
-   is filed under "Safari".
+1. **macOSicons is the primary provider.** It is the only *live* source whose
+   corpus is this problem: someone has already drawn an un-squircled Safari icon,
+   and it is filed under "Safari".
 2. **A shared API key is not viable.** 50 requests/month free means one Zap user
    exhausts the quota in an afternoon. The model has to be **bring-your-own-key**:
    Settings links to the macOSicons dashboard, the user pastes a key, Zap stores
    it in the **Keychain** (not `UserDefaults`). Search is simply unavailable until
-   they do. That is not ideal, and it is the honest constraint — the alternative
-   is Zap paying per user, which a free open-source utility can't.
+   they do. That is the honest constraint — the alternative is Zap paying per
+   user, which a free open-source utility can't.
 3. **Iconify is the keyless fallback** and unlocks a much larger corpus, but only
    once SVG rasterisation exists (§6.3). Sequence it after macOSicons.
-4. **Openverse and Google are not worth building.** Wrong corpus, and Google
-   returns images of unknown provenance with no alpha channel and no licence.
+4. **Keep the provider behind a protocol.** `IconSearchProvider` costs nothing
+   now and means that if a viable general provider appears — or Zap ever gets a
+   backend to hold a key — it slots in without touching anything else.
+
+### 5.3 What survives from "just search the web": the transparency filter
+
+The strongest argument for web search was never the raw index — it was that
+Google Images can *filter* it. The Custom Search API exposed exactly the
+parameters this feature wants ([reference][gcseparams]):
+
+| Parameter | Value | Why it matters here |
+|---|---|---|
+| `imgColorType` | **`trans`** | **Transparent background only.** This is the whole ballgame — it is what turns "a page of opaque JPEG screenshots" into "a page of alpha-channel PNGs". |
+| `imgType` | `clipart` | Excludes photos and stock imagery; icon-shaped art is clipart-shaped |
+| `fileType` | `png` | Alpha-capable container |
+| `imgSize` | `large` / `xlarge` | Clears the 512 px floor in §6.2 |
+| `rights` | `cc_*` | Licence filtering — known to be unreliable, but better than nothing |
+
+The API is going away; **the idea is not**. Two things to carry forward:
+
+- **"Transparent only" is the correct default filter for any image source Zap
+  ever searches.** It is the machine-checkable form of "is this un-jailable?" —
+  and it is the same question the alpha classifier in §4.2 asks of bundle
+  artwork. One concept, two places.
+- **The search can happen where search is still free: the user's browser.**
+  Google Images itself has the transparency filter in its UI (Tools → Color →
+  Transparent), unmetered and with no key. So the pragmatic substitute for
+  in-app web search is **in-app web search *ingestion***: the user searches in
+  the browser and **drags the image straight onto the app's row in Settings**, or
+  pastes a URL. Zap does the fetch, validation (§6), normalisation (§8.3),
+  storage and attribution capture.
+
+That last point deserves emphasis, because it is a better trade than it looks:
+it delivers most of the value of a built-in web search for a fraction of the
+code, with **no API key, no quota, no ToS exposure, no per-user cost, and
+nothing that can be shut down underneath it**. The user does the one part they
+are better at than any API — judging whether an icon looks right — and Zap does
+the parts it is better at.
+
+The cost is honest and worth stating: accepting a dragged URL means fetching
+remote bytes, which pulls the untrusted-decode hardening in §6.4 forward from
+phase 3 to phase 2. Phase 1's "no network code at all" property is worth keeping
+intact for one release, so URL ingestion is sequenced after it (§10).
 
 **A cheap keyless bonus.** Most bundle IDs are reverse-DNS:
 `com.apple.Safari` → `apple.com`, `com.tinyspeck.slackmacgap` → `tinyspeck.com`.
@@ -221,7 +287,7 @@ opaque — so this yields a *correct* icon that is still a square, which does no
 help the actual complaint. Worth ~30 lines as a last-resort suggestion in the
 search sheet; not worth more.
 
-### 5.3 Attribution and licensing
+### 5.4 Attribution and licensing
 
 macOSicons requires crediting **both** macOSicons.com and the individual icon's
 author, and prohibits commercial use on the free tier ([docs][mi]). Zap is free
@@ -236,10 +302,12 @@ hard requirement with a concrete design consequence:
 
 If attribution can't be plumbed through, the provider shouldn't be built.
 
-### 5.4 Privacy
+### 5.5 Privacy
 
 A search sends the app's name to a third party, which is a small but real
-disclosure of what the user has installed. Rules:
+disclosure of what the user has installed. (Drag-and-drop ingestion per §5.3 has
+none of this exposure — the query never leaves the browser the user typed it in.)
+Rules:
 
 - **Never search automatically.** Not on launch, not on first run, not "let's
   pre-fetch icons for your top ten apps". Only in response to a click.
@@ -554,13 +622,17 @@ whether the feature works at all:
 | Phase | Scope | Ships |
 |---|---|---|
 | **1** | `BundleArtwork` + `IconShapeClassifier` + `IconResolver` + `IconStore`/manifest + Icons tab with Original / System / Choose File… | **The actual fix.** Offline, no network code, no API key, no new formats, no dependency. Most users need nothing else. |
-| **2** | `IconNormalizer` + bleed/trim/shadow in `IconRowMetrics` + Appearance controls | Makes mixed shapes look deliberate rather than ragged |
-| **3** | macOSicons search (BYO key), attribution plumbing, privacy sheet, §6.4 hardening | The "don't make me go find a PNG" part |
+| **2** | `IconNormalizer` + bleed/trim/shadow in `IconRowMetrics` + Appearance controls; **drag-a-URL / drag-from-browser ingestion** + the §6.4 untrusted-decode hardening it requires | Makes mixed shapes look deliberate rather than ragged, and lets the user search the web where searching the web is still free (§5.3) |
+| **3** | macOSicons search (BYO key), attribution plumbing, privacy sheet | The "don't make me leave the app" part — strictly optional once phase 2 exists |
 | **4** | WKWebView SVG rasterisation → Iconify / SVGL providers | Large keyless corpus |
 | **5** | `.zapicons` pack export/import | Sharing, and the same shape as theme presets |
 
 Phase 1 stands alone and is worth shipping alone. Everything after it is optional
 polish on a problem already solved for the majority of apps.
+
+Note the shape of 2 vs 3: **phase 2 makes phase 3 optional.** Once a user can
+drag an image in from a browser, an in-app search saves them a window switch and
+nothing else. If phase 3 never gets built, the feature is still complete.
 
 ---
 
@@ -594,13 +666,28 @@ Detect the plate, crop, upscale. Brittle (the plate is a colour, not a marker),
 lossy (the inset artwork is already downscaled), and strictly worse than reading
 the source artwork, which is right there in the bundle.
 
-### 11.4 AI icon generation
+### 11.4 Building on a general web image search API
+
+Evaluated properly (§5.2) rather than dismissed, because the coverage argument is
+genuinely strong and Google Images' `imgColorType=trans` filter answers the
+"web results have no alpha" objection cleanly.
+
+It fails on availability, not on merit. Bing's API is retired; Google's Custom
+Search JSON API is closed to new customers and **shuts down 1 Jan 2027**
+([Google's docs][gcse]) — a new Zap user could not obtain a key today even if
+Zap shipped the integration tomorrow; Brave dropped its free tier in Feb 2026 and
+now wants a card on file with no spending cap. What's left is paid scrapers.
+
+The salvage is §5.3: keep the transparency filter as a design principle, and let
+the browser be the search box.
+
+### 11.5 AI icon generation
 
 macOSicons exposes `/editor/generate`. It needs a paid key, produces
 unpredictable results, and Zap has no LLM/inference story of any kind. Out of
 character for a switcher.
 
-### 11.5 CoreSVG SPI
+### 11.6 CoreSVG SPI
 
 See §6.3. The repo already tolerates SPI, but WKWebView is public, roughly the
 same amount of code, and doesn't throw on gradients.
@@ -617,8 +704,10 @@ same amount of code, and doesn't throw on gradients.
    and the users who install a third-party switcher are the ones who dislike the
    mask. Arguments for off: surprise. Leaning on, with a first-run note.
 3. **Is BYO-key search worth building at all?** Phase 1 solves the stated problem
-   offline. Phase 3 asks users to sign up for a third-party service to fix the
-   remainder. That may be a worse trade than "drag a PNG in".
+   offline and phase 2 covers the remainder by letting the browser do the
+   searching (§5.3). Phase 3 then asks users to sign up for a third-party service
+   to save a window switch. Leaning towards: build the protocol, defer the
+   provider, and see whether anyone actually asks for it.
 4. **Bleed default.** 8 % is a guess. Needs eyes on a real row.
 5. **Per-app or global?** This document allows per-app `bleed`/`trim` overrides.
    That may be one knob too many for a first pass.
@@ -634,6 +723,8 @@ same amount of code, and doesn't throw on gradients.
 - [Apple Should Eliminate the App Icon 'Squircle Jail' — Daring Fireball, July 2026][df2026]
 - [macOSicons API documentation][mi]
 - [Iconify API][iconify] · [SVGL][svgl] · [Openverse API][ov]
+- [Custom Search JSON API — "closed to new customers", shutdown 1 Jan 2027][gcse]
+  · [image search parameters (`imgColorType`, `imgType`, `rights`)][gcseparams]
 - [Bing Search API retirement, 11 Aug 2025][bingdead]
 - [SDWebImageSVGCoder — CoreSVG-based SVG rendering][sdsvg]
 - [NSWorkspace setIcon and code-signing detritus — Apple Developer Forums][seticon]
@@ -648,5 +739,7 @@ same amount of code, and doesn't throw on gradients.
 [svgl]: https://svgl.app/
 [ov]: https://api.openverse.org/v1/
 [bingdead]: https://cloro.dev/blog/bing-search-api-key/
+[gcse]: https://developers.google.com/custom-search/v1/overview
+[gcseparams]: https://developers.google.com/custom-search/v1/reference/rest/v1/cse/list
 [sdsvg]: https://github.com/SDWebImage/SDWebImageSVGCoder
 [seticon]: https://developer.apple.com/forums/thread/126175
