@@ -150,10 +150,20 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
     /// RGB *is* `α·C`, which is the black pass unchanged. Only the alpha channel is
     /// computed.
     ///
-    /// This is exact rather than a heuristic, and it doesn't care what WebKit paints
-    /// beneath the page — the document's own opaque background hides it in both
-    /// passes, so it cancels. That is why this replaced trying to talk WebKit into
-    /// a transparent render, which failed twice in two different ways.
+    /// Exact under sRGB compositing rather than a heuristic — and the qualifier is
+    /// load-bearing. The subtraction is linear in whatever space the two passes were
+    /// composited in, so it recovers α precisely while that space is the one the
+    /// bytes are encoded in. sRGB is the default for compositing an SVG over a page
+    /// background, and `color-interpolation-filters: linearRGB` only governs what
+    /// happens *inside* a filter, not the composite that lands on the backdrop. An
+    /// SVG that pushed the final composite into linear light would make the
+    /// recovered alpha drift in the midtones, which is worth knowing before trusting
+    /// the word "exact" further than it goes.
+    ///
+    /// What it does not depend on at all is what WebKit paints beneath the page —
+    /// the document's own opaque background hides that in both passes, so it
+    /// cancels. That is why this replaced trying to talk WebKit into a transparent
+    /// render, which failed twice in two different ways.
     static func alphaRecovered(black: CGImage, white: CGImage) -> CGImage? {
         let width = black.width
         let height = black.height
@@ -163,7 +173,10 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
 
         for pixel in stride(from: 0, to: onBlack.count, by: 4) {
             // Averaged over the three channels: they agree in theory, and rounding
-            // in an 8-bit render is what makes that "almost" in practice.
+            // in an 8-bit render is what makes that "almost" in practice. The `+ 1`
+            // is the usual integer-division trick for rounding to nearest instead
+            // of truncating; a negative sum, which only noise produces, truncates
+            // toward zero and is caught by the clamp below either way.
             let opacityLoss = (Int(onWhite[pixel]) - Int(onBlack[pixel])
                 + Int(onWhite[pixel + 1]) - Int(onBlack[pixel + 1])
                 + Int(onWhite[pixel + 2]) - Int(onBlack[pixel + 2]) + 1) / 3
