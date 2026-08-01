@@ -134,7 +134,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// switch. Cheap to call even when un-jailing is off — the resolver returns
     /// early for `.system`.
     private func warmIconCache() {
-        iconResolver.warm(bundleIDs: NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        iconResolver.warm(NSWorkspace.shared.runningApplications.compactMap { app in
+            app.bundleIdentifier.map {
+                IconIdentity(bundleIdentifier: $0, bundleURL: app.bundleURL)
+            }
+        })
     }
 
     private func promptForAccessibilityIfNeeded() {

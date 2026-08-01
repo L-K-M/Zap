@@ -104,7 +104,7 @@ final class AppListProvider {
     /// leaves the system icon in place and warms in the background, so this stays
     /// a dictionary lookup on the ⌘-Tab path (`UNJAILED.md §8.2`).
     private func substitutingIcon(_ info: AppInfo) -> AppInfo {
-        guard let icon = iconResolver?.icon(forBundleID: info.bundleIdentifier) else { return info }
+        guard let icon = iconResolver?.icon(for: info.iconIdentity) else { return info }
         return info.replacingIcon(icon)
     }
 

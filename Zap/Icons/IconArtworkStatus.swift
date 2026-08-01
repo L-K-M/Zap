@@ -29,24 +29,28 @@ struct IconArtworkStatus: Equatable {
 
     /// Describes one app. Decodes its bundle artwork, so it blocks — call it off
     /// the main thread.
-    static func describe(bundleID: String, store: IconStore) -> IconArtworkStatus {
-        if store.entry(forBundleID: bundleID)?.origin == .system {
+    static func describe(_ identity: IconIdentity, store: IconStore) -> IconArtworkStatus {
+        if store.entry(for: identity)?.origin == .system {
             return IconArtworkStatus(shape: nil, hasCustomIcon: false, isPinnedToSystemIcon: true)
         }
-        if store.imageURL(forBundleID: bundleID) != nil {
+        if store.imageURL(for: identity) != nil {
             return IconArtworkStatus(shape: nil, hasCustomIcon: true, isPinnedToSystemIcon: false)
         }
-        let shape = BundleArtwork.image(forBundleID: bundleID).map { IconShapeClassifier.classify($0) }
+        // By identifier: this rung is about the app bundle's *own* artwork, and a
+        // wrapper that borrowed an identifier shows what's behind it.
+        let shape = BundleArtwork.image(forBundleID: identity.bundleIdentifier)
+            .map { IconShapeClassifier.classify($0) }
         return IconArtworkStatus(shape: shape, hasCustomIcon: false, isPinnedToSystemIcon: false)
     }
 
     /// Describes several apps off the main thread, calling `completion` back on it.
-    static func load(forBundleIDs bundleIDs: [String], store: IconStore,
+    /// Keyed by `IconIdentity.storageKey`, which is what the rows look them up by.
+    static func load(for identities: [IconIdentity], store: IconStore,
                      completion: @escaping ([String: IconArtworkStatus]) -> Void) {
         queue.async {
             var result: [String: IconArtworkStatus] = [:]
-            for bundleID in bundleIDs {
-                result[bundleID] = describe(bundleID: bundleID, store: store)
+            for identity in identities {
+                result[identity.storageKey] = describe(identity, store: store)
             }
             DispatchQueue.main.async { completion(result) }
         }

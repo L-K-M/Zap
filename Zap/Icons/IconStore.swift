@@ -74,6 +74,70 @@ final class IconStore {
         }
     }
 
+    // MARK: Reading by identity
+
+    /// The operations Settings and the resolver actually use.
+    ///
+    /// Each tries the app's own key first and the identifier it may have been
+    /// stored under before overrides were keyed by path (`IconIdentity`). Reads
+    /// fall back; writes land on the current key and retire the old one, so a
+    /// stale entry can never win a later lookup.
+
+    func entry(for identity: IconIdentity) -> IconManifest.Entry? {
+        for key in identity.lookupKeys {
+            if let entry = entry(forBundleID: key) { return entry }
+        }
+        return nil
+    }
+
+    func isPinnedToSystemIcon(_ identity: IconIdentity) -> Bool {
+        entry(for: identity)?.origin == .system
+    }
+
+    func imageURL(for identity: IconIdentity) -> URL? {
+        for key in identity.lookupKeys {
+            if let url = imageURL(forBundleID: key) { return url }
+        }
+        return nil
+    }
+
+    func customImage(for identity: IconIdentity) -> CGImage? {
+        guard let url = imageURL(for: identity) else { return nil }
+        switch IconImageValidator.decode(contentsOf: url) {
+        case .success(let image): return image
+        case .failure: return nil
+        }
+    }
+
+    // MARK: Writing by identity
+
+    @discardableResult
+    func setCustomIcon(_ image: CGImage, for identity: IconIdentity,
+                       origin: IconManifest.Origin = .file,
+                       credit: String? = nil, creditURL: String? = nil,
+                       provider: String? = nil, license: String? = nil,
+                       now: Date = Date()) -> Result<IconManifest.Entry, IconImageValidator.Rejection> {
+        let result = setCustomIcon(image, forBundleID: identity.storageKey, origin: origin,
+                                   credit: credit, creditURL: creditURL, provider: provider,
+                                   license: license, now: now)
+        if case .success = result, let legacyKey = identity.legacyKey {
+            clearOverride(forBundleID: legacyKey)
+        }
+        return result
+    }
+
+    func pinToSystemIcon(for identity: IconIdentity, now: Date = Date()) {
+        pinToSystemIcon(forBundleID: identity.storageKey, now: now)
+        if let legacyKey = identity.legacyKey { clearOverride(forBundleID: legacyKey) }
+    }
+
+    /// Clears **every** key this app could be stored under. Clearing only the
+    /// current one would leave an older entry to surface on the next lookup, which
+    /// reads as an icon that refuses to go away.
+    func clearOverride(for identity: IconIdentity) {
+        for key in identity.lookupKeys { clearOverride(forBundleID: key) }
+    }
+
     /// Re-reads the manifest from disk, discarding any in-memory state.
     func reload() {
         let loaded = Self.loadManifest(from: manifestURL)
