@@ -1,7 +1,8 @@
 # UNJAILED — custom, un-squircled icons for the Zap switcher
 
-*A design study, July 2026. **Phase 1 (§10) is implemented**; phases 2–5 are not.
-Sections describing shipped behaviour are marked; everything else is still design.*
+*A design study, July 2026. **Phases 1 and 2 (§10) are implemented**; phases 3–5 are
+not. Sections describing shipped behaviour are marked; everything else is still
+design.*
 
 macOS 26 puts every app icon in the same rounded-rectangle mask. Zap draws its own
 icon row, so it is not obliged to. This document works out what it would take for
@@ -656,7 +657,7 @@ whether the feature works at all:
 | Phase | Scope | Ships |
 |---|---|---|
 | **1** ✅ | `BundleArtwork` + `IconShapeClassifier` + `IconResolver` + `IconStore`/manifest + Icons tab with Original / System / Choose File… | **The actual fix.** Offline, no network code, no API key, no new formats, no dependency. Most users need nothing else. |
-| **2** | `IconNormalizer` + bleed/trim/shadow in `IconRowMetrics` + Appearance controls; **drag-a-URL / drag-from-browser ingestion** + the §6.4 untrusted-decode hardening it requires | Makes mixed shapes look deliberate rather than ragged, and lets the user search the web where searching the web is still free (§5.3) |
+| **2** ✅ | `IconNormalizer` + bleed/trim/shadow in `IconRowMetrics` + Appearance controls; **drag-a-URL / drag-from-browser ingestion** + the §6.4 untrusted-decode hardening it requires | Makes mixed shapes look deliberate rather than ragged, and lets the user search the web where searching the web is still free (§5.3) |
 | **3** | macOSicons search (BYO key), attribution plumbing, privacy sheet | The "don't make me leave the app" part — strictly optional once phase 2 exists |
 | **4** | WKWebView SVG rasterisation → Iconify / SVGL providers | Large keyless corpus |
 | **5** | `.zapicons` pack export/import | Sharing, and the same shape as theme presets |
@@ -679,6 +680,27 @@ polish on a problem already solved for the majority of apps.
   §3 asks for a per-app pin to *any* rung; only the "leave it alone" rung is
   reachable so far, which is the one with a use case.
 - **Not** the four-class shape table — see the correction in §4.2.
+
+**What phase 2 shipped**, and the one place it improves on §8.3:
+
+- `IconNormalizer` (trim → equal-ink scale → bleed clamp → baked shadow),
+  `iconBleed`/`iconTrimTransparentEdges`/`iconShadow` on the Appearance tab, and
+  drag-from-browser ingestion with `RemoteIconFetcher` counting bytes as they
+  arrive rather than trusting `Content-Length`.
+- **The two clips stop being a problem.** §8.3 item 4 expects bleeding art to be
+  cut by `HorizontallyScrollable`'s `.clipped()` and the panel's `clipShape`, and
+  proposes clamping the bleed against `contentPadding`. Deriving the cell as
+  `max(imageExtent, iconSize + cellPadding)` avoids the situation entirely: the
+  image is always *contained* by its cell, so neither clip can reach it, and no
+  clamp against `contentPadding` is needed. What the art bleeds past is the
+  selection highlight — which is the look §8.3 is actually after. At the default
+  bleed this also costs no extra row width, matching the "~14pt each side is free"
+  observation. A test asserts containment across every icon size and bleed.
+- The hidden-app badge is inset back to the nominal icon frame rather than the
+  bled one, which is the "floating in space beside a narrow icon" case §8.3 flags.
+- Not done: `iconBleed`/trim/shadow are **not** in `AppearancePreset`. Adding
+  non-optional fields to it would break importing older theme `.json` files, so a
+  shared theme doesn't carry them yet; it wants optional fields with defaults.
 
 Still open from §12, unchanged by shipping: the load-bearing
 `Bundle.image(forResource:)` claim (question 1) has still never been run against a

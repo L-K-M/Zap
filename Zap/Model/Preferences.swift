@@ -38,6 +38,9 @@ final class Preferences: ObservableObject {
         /// Un-jailing is only on where it does something — see
         /// `IconSourceMode.systemDefault`.
         static var iconSourceMode: IconSourceMode { .systemDefault }
+        static let iconBleed = 0.08
+        static let iconTrimTransparentEdges = true
+        static let iconShadow = true
     }
 
     private enum Key {
@@ -77,6 +80,9 @@ final class Preferences: ObservableObject {
         static let switchCountToday = "switchCountToday"
         static let switchCountDay = "switchCountDay"
         static let iconSourceMode = "iconSourceMode"
+        static let iconBleed = "iconBleed"
+        static let iconTrimTransparentEdges = "iconTrimTransparentEdges"
+        static let iconShadow = "iconShadow"
     }
 
     // MARK: Stored settings
@@ -258,6 +264,28 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(iconSourceMode.rawValue, forKey: Key.iconSourceMode) }
     }
 
+    /// Headroom, as a fraction of the icon size on each side, for artwork that
+    /// normalises larger than a square — a circle needs ~13% more width to carry
+    /// the same ink. Spent on the icon cell's existing padding first, so the
+    /// default costs no extra row width (`UNJAILED.md §8.3`).
+    @Published var iconBleed: Double {
+        didSet { defaults.set(iconBleed, forKey: Key.iconBleed) }
+    }
+
+    /// Whether artwork is trimmed to its alpha bounding box before scaling. Source
+    /// art often carries transparent margin, which would leave it floating small
+    /// inside its cell.
+    @Published var iconTrimTransparentEdges: Bool {
+        didSet { defaults.set(iconTrimTransparentEdges, forKey: Key.iconTrimTransparentEdges) }
+    }
+
+    /// Whether a soft drop shadow is baked behind un-jailed artwork. Free-form art
+    /// on a translucent blurred panel loses its edges without one; the system's own
+    /// icons get a silhouette for free from the grey plate.
+    @Published var iconShadow: Bool {
+        didSet { defaults.set(iconShadow, forKey: Key.iconShadow) }
+    }
+
     // MARK: Switch counter
 
     /// Total number of switches Zap has performed, all-time. A telemetry-free bit
@@ -316,6 +344,11 @@ final class Preferences: ObservableObject {
         scrollHapticsEnabled = defaults.object(forKey: Key.scrollHapticsEnabled) as? Bool ?? false
         iconSourceMode = IconSourceMode(rawValue: defaults.string(forKey: Key.iconSourceMode) ?? "")
             ?? Default.iconSourceMode
+        iconBleed = Self.clamp(defaults.object(forKey: Key.iconBleed) as? Double ?? Default.iconBleed,
+                               0, Double(IconRowMetrics.maximumBleed), Default.iconBleed)
+        iconTrimTransparentEdges = defaults.object(forKey: Key.iconTrimTransparentEdges) as? Bool
+            ?? Default.iconTrimTransparentEdges
+        iconShadow = defaults.object(forKey: Key.iconShadow) as? Bool ?? Default.iconShadow
         switchCountTotal = max(0, defaults.integer(forKey: Key.switchCountTotal))
         switchCountToday = max(0, defaults.integer(forKey: Key.switchCountToday))
         switchCountDay = defaults.string(forKey: Key.switchCountDay) ?? ""

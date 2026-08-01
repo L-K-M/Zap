@@ -429,7 +429,8 @@ final class OverlayWindowController {
     /// natural width capped at `maxContentWidth` (which `layout` keeps current).
     /// Both sides derive their cell/spacing inputs from `IconRowMetrics`.
     private func iconRowGeometry() -> IconRowGeometry {
-        let cellWidth = IconRowMetrics.cellWidth(iconSize: preferences.iconSize)
+        let cellWidth = IconRowMetrics.cellWidth(iconSize: preferences.iconSize,
+                                                 bleed: preferences.iconBleed)
         let spacing = IconRowMetrics.spacing
         let count = model.apps.count
         let contentWidth = count > 0 ? CGFloat(count) * cellWidth + CGFloat(count - 1) * spacing : 0

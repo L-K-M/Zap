@@ -70,6 +70,9 @@ final class IconResolver {
     private var iconSize: Double
     private var targetPixelSize: Int
     private var backingScale: CGFloat
+    private var bleed: Double
+    private var trimsTransparentEdges: Bool
+    private var drawsShadow: Bool
 
     // MARK: Lifecycle
 
@@ -80,6 +83,9 @@ final class IconResolver {
         self.iconSize = preferences.iconSize
         self.backingScale = scale
         self.targetPixelSize = Self.pixelSize(forIconSize: preferences.iconSize, scale: scale)
+        self.bleed = preferences.iconBleed
+        self.trimsTransparentEdges = preferences.iconTrimTransparentEdges
+        self.drawsShadow = preferences.iconShadow
 
         // `dropFirst` on both: a `@Published` publisher replays its current value
         // on subscribe, and both are already mirrored above.
@@ -101,6 +107,33 @@ final class IconResolver {
             .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
             .sink { [weak self] iconSize in
                 self?.apply(iconSize: iconSize)
+            }
+            .store(in: &cancellables)
+
+        // Layout settings change the cached bitmap itself, so each one invalidates.
+        // Bleed is debounced along with the icon size — both come off sliders.
+        preferences.$iconBleed
+            .dropFirst()
+            .removeDuplicates()
+            .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
+            .sink { [weak self] bleed in
+                self?.applyLayout { $0.bleed = bleed }
+            }
+            .store(in: &cancellables)
+
+        preferences.$iconTrimTransparentEdges
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] trims in
+                self?.applyLayout { $0.trimsTransparentEdges = trims }
+            }
+            .store(in: &cancellables)
+
+        preferences.$iconShadow
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] shadow in
+                self?.applyLayout { $0.drawsShadow = shadow }
             }
             .store(in: &cancellables)
 
@@ -242,6 +275,9 @@ final class IconResolver {
         let mode = self.mode
         let pixelSize = self.targetPixelSize
         let scale = self.backingScale
+        let bleed = self.bleed
+        let trims = self.trimsTransparentEdges
+        let shadow = self.drawsShadow
         lock.unlock()
 
         guard mode.usesBundleArtwork else { return .useSystemIcon }
@@ -270,7 +306,12 @@ final class IconResolver {
             }
         }
 
-        let sized = Self.downsample(image, longestEdge: pixelSize)
+        // Normalising resamples straight into the target canvas, so there is no
+        // separate downsample step. Unlike `downsample` it may scale *up* — equal-ink
+        // normalisation of a sparse shape requires it — which is why the validator's
+        // 64px floor and the bleed clamp both matter.
+        let sized = IconNormalizer.normalize(image, targetExtent: pixelSize, bleed: bleed,
+                                             trim: trims, shadow: shadow)
         let points = NSSize(width: CGFloat(sized.width) / scale, height: CGFloat(sized.height) / scale)
         return .image(NSImage(cgImage: sized, size: points))
     }
@@ -280,6 +321,14 @@ final class IconResolver {
     private func apply(mode: IconSourceMode) {
         lock.lock()
         self.mode = mode
+        lock.unlock()
+        invalidate()
+    }
+
+    /// Updates one of the layout mirrors under the lock and re-renders everything.
+    private func applyLayout(_ change: (IconResolver) -> Void) {
+        lock.lock()
+        change(self)
         lock.unlock()
         invalidate()
     }
