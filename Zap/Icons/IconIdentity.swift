@@ -65,6 +65,12 @@ struct IconIdentity: Equatable, Hashable {
 
     /// A key the same app may already be stored under, from before overrides were
     /// keyed by path. `nil` when it would only repeat `storageKey`.
+    ///
+    /// Note that this reads `bundleIdentifier`, which `==` above does *not*: two
+    /// identities equal by path could in principle name different identifiers and
+    /// so offer different fallbacks. One app bundle reports one identifier, so
+    /// there is no such pair to construct — but a future call site pairing a stale
+    /// identifier with a fresh path would be the way to build one.
     var legacyKey: String? {
         storageKey == bundleIdentifier ? nil : bundleIdentifier
     }

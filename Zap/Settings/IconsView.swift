@@ -365,6 +365,15 @@ struct IconsView: View {
     /// so Finder can supply the icon and the file name supplies the label. Asking
     /// `NSWorkspace` about it by identifier would find the browser a wrapper
     /// borrowed its identifier from, and label three different apps "Google Chrome".
+    ///
+    /// The path goes in `bundleIdentifier` deliberately, and it is the one place in
+    /// the app where that field isn't reverse-DNS. Reading the real identifier out
+    /// of the bundle would be more honest and would break these rows: `AppInfo.id`
+    /// is `bundleIdentifier` plus the pid, every offline row shares the pid `-1`,
+    /// and three wrappers all answering `com.google.Chrome` would collide into one
+    /// `List` identity. The path keeps them distinct, which is the whole point of
+    /// the row. Nothing downstream of here reads the field expecting an identifier
+    /// — `iconIdentity` is what the store and resolver use, and it round-trips.
     private static func offlineApp(forKey key: String) -> AppInfo {
         guard IconIdentity.isPath(key) else {
             return AppInfo(bundleIdentifier: key,
