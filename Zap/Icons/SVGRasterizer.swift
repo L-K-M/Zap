@@ -99,8 +99,15 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         + "form-action 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:"
 
     /// The two backdrops the document is rendered against — see `alphaRecovered`.
-    static let blackBackdrop = "#000"
-    static let whiteBackdrop = "#fff"
+    ///
+    /// An enum rather than a colour string because the value is interpolated into
+    /// the document's CSS, a few lines from the policy that makes the document safe
+    /// to build at all. Two cases cannot carry an injection; a `String` parameter
+    /// invites one from a call site that doesn't exist yet.
+    enum Backdrop: String, CaseIterable {
+        case black = "#000"
+        case white = "#fff"
+    }
 
     /// Wraps SVG markup in a minimal document that scales it to fill the viewport
     /// over an opaque `background`.
@@ -114,13 +121,13 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
     /// The policy goes first in `<head>`, before anything that could load: a `<meta>`
     /// CSP applies from the point the parser reads it, so putting it after the markup
     /// would be decoration.
-    static func htmlDocument(forSVG svg: String, background: String) -> String {
+    static func htmlDocument(forSVG svg: String, background: Backdrop) -> String {
         """
         <!DOCTYPE html><html><head>\
         <meta http-equiv="Content-Security-Policy" content="\(contentSecurityPolicy)">
         <meta charset="utf-8">
         <style>
-        html,body{margin:0;padding:0;background:\(background);overflow:hidden}
+        html,body{margin:0;padding:0;background:\(background.rawValue);overflow:hidden}
         svg{width:100vw;height:100vh;display:block}
         </style></head><body>\(svg)</body></html>
         """
@@ -211,13 +218,13 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         }
 
         let onBlack: CGImage
-        switch await render(markup: markup, side: side, background: blackBackdrop) {
+        switch await render(markup: markup, side: side, background: .black) {
         case .failure(let error): return .failure(error)
         case .success(let image): onBlack = image
         }
 
         let onWhite: CGImage
-        switch await render(markup: markup, side: side, background: whiteBackdrop) {
+        switch await render(markup: markup, side: side, background: .white) {
         case .failure(let error): return .failure(error)
         case .success(let image): onWhite = image
         }
@@ -231,7 +238,7 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
 
     /// One pass: the document over `background`, rendered opaque.
     private static func render(markup: String, side: Int,
-                               background: String) async -> Result<CGImage, RasterizeError> {
+                               background: Backdrop) async -> Result<CGImage, RasterizeError> {
         await withCheckedContinuation { continuation in
             DispatchQueue.main.async {
                 // `WKWebView` is main-thread-only, and the instance has to outlive
@@ -259,7 +266,7 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
     }
 
     /// Main queue only.
-    private func start(markup: String, background: String,
+    private func start(markup: String, background: Backdrop,
                        completion: @escaping (Result<CGImage, RasterizeError>) -> Void) {
         self.completion = completion
         self.selfRetain = self
@@ -271,10 +278,6 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: side, height: side),
                                 configuration: configuration)
         webView.navigationDelegate = self
-        // Kept clear so nothing of WebKit's own shows at the edges. It is no
-        // longer load-bearing — the document paints an opaque background of its
-        // own, and the alpha comes from comparing two of them.
-        webView.underPageBackgroundColor = .clear
         self.webView = webView
         self.host = Self.hostWindow(for: webView, side: side)
 
