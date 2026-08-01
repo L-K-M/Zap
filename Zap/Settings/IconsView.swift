@@ -11,11 +11,13 @@ struct IconsView: View {
     @State private var apps: [AppInfo] = []
     @State private var statuses: [String: IconArtworkStatus] = [:]
     @State private var search = ""
-    @State private var problem: String?
+    @State private var problem: IconProblem?
     /// Bundle identifier of the row a drag is currently over.
     @State private var dropTarget: String?
-    /// Bundle identifiers with a remote fetch in flight.
-    @State private var fetching: Set<String> = []
+    /// Bundle identifiers with an import in flight, and what the row should say
+    /// about it. Reading an SVG stands up a web view, so a local file is no longer
+    /// reliably instant either — both paths get a caption.
+    @State private var inFlight: [String: String] = [:]
     /// The app whose search sheet is open, if any.
     @State private var searchingApp: AppInfo?
 
@@ -45,10 +47,12 @@ struct IconsView: View {
             footer
         }
         .onAppear(perform: reload)
+        .alert(iconProblem: $problem)
         .sheet(item: $searchingApp) { app in
             IconSearchSheet(
                 app: app,
                 provider: searchProvider,
+                preferences: preferences,
                 onAdopt: { result, image in
                     searchingApp = nil
                     adopt(result, image: image, for: app)
@@ -130,7 +134,7 @@ struct IconsView: View {
     /// What the row's caption says, including transient states the status fetch
     /// doesn't know about.
     private func rowStatus(for app: AppInfo) -> String {
-        if fetching.contains(app.bundleIdentifier) { return "Downloading…" }
+        if let label = inFlight[app.bundleIdentifier] { return label }
         return statuses[app.bundleIdentifier]?.label ?? "Checking…"
     }
 
@@ -138,12 +142,6 @@ struct IconsView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let problem {
-                Text(problem)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-
             HStack {
                 Button("Reset All Icons", role: .destructive, action: resetAll)
                 Spacer()
@@ -175,16 +173,17 @@ struct IconsView: View {
 
     private func chooseFile(for app: AppInfo) {
         let panel = NSOpenPanel()
-        // `.image` covers everything ImageIO decodes; PDF is accepted separately
-        // because Core Graphics renders it natively (`UNJAILED.md §6.1`). The real
-        // gate is `IconImageValidator`, which reads the decoded data rather than
-        // trusting the extension.
+        // `.image` covers everything ImageIO decodes *and* SVG, which conforms to
+        // `public.image` without ImageIO being able to read a byte of it. PDF is
+        // listed separately because Core Graphics renders it natively
+        // (`UNJAILED.md §6.1`). The real gate is `IconImport`, which decides from
+        // the bytes rather than trusting any of this.
         panel.allowedContentTypes = [.image, .pdf]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        apply(store.setCustomIcon(from: url, forBundleID: app.bundleIdentifier), for: app)
+        importFile(url, for: app)
     }
 
     /// Takes on a dragged or pasted URL: a file is imported directly, an http(s)
@@ -194,43 +193,30 @@ struct IconsView: View {
     @discardableResult
     private func adopt(_ url: URL, for app: AppInfo) -> Bool {
         guard !url.isFileURL else {
-            apply(store.setCustomIcon(from: url, forBundleID: app.bundleIdentifier), for: app)
-            return true
+            return importFile(url, for: app)
         }
         guard RemoteIconFetcher.isFetchable(url) else {
-            problem = "That link isn't something Zap can fetch an image from."
+            problem = .unfetchableLink(app: app)
             return false
         }
+        guard claim(app, saying: "Downloading…") else { return false }
 
         let bundleID = app.bundleIdentifier
-        // One fetch per app at a time. Two in flight would race: the first to
-        // finish clears "Downloading…" for both, and the last to finish wins the
-        // icon, which need not be the one dropped most recently.
-        guard !fetching.contains(bundleID) else {
-            problem = "Still downloading an icon for \(app.name)."
-            return false
-        }
-        fetching.insert(bundleID)
         Task {
-            let fetched = await RemoteIconFetcher.fetch(url)
+            let fetched = await fetchedImage(from: url, for: app)
             await MainActor.run {
-                fetching.remove(bundleID)
+                inFlight[bundleID] = nil
                 switch fetched {
-                case .failure(let error):
-                    problem = error.message
-                case .success(let data):
-                    switch IconImageValidator.decode(data: data) {
-                    case .failure(let rejection):
-                        problem = rejection.message
-                    case .success(let image):
-                        // Provenance is captured at save time, not display time
-                        // (§5.4) — the link the user dragged from is the credit.
-                        apply(store.setCustomIcon(image, forBundleID: bundleID,
-                                                  origin: .search,
-                                                  creditURL: url.absoluteString,
-                                                  provider: "web"),
-                              for: app)
-                    }
+                case .failure(let failure):
+                    problem = failure
+                case .success(let image):
+                    // Provenance is captured at save time, not display time
+                    // (§5.4) — the link the user dragged from is the credit.
+                    apply(store.setCustomIcon(image, forBundleID: bundleID,
+                                              origin: .search,
+                                              creditURL: url.absoluteString,
+                                              provider: "web"),
+                          for: app)
                 }
             }
         }
@@ -238,14 +224,70 @@ struct IconsView: View {
         return true
     }
 
+    /// Downloads `url` and decodes what comes back. Both halves can fail and they
+    /// fail differently — a link that never answered isn't a file Zap turned down —
+    /// so each failure arrives already phrased for the alert.
+    private func fetchedImage(from url: URL, for app: AppInfo) async -> Result<CGImage, IconProblem> {
+        switch await RemoteIconFetcher.fetch(url) {
+        case .failure(let error):
+            return .failure(.fetchFailed(error.message, app: app))
+        case .success(let data):
+            // SVG arrives by this route too — it is most of what a browser has to
+            // drag — so the bytes go through the same door a chosen file does.
+            switch await IconImport.image(from: data) {
+            case .failure(let rejection): return .failure(.rejected(rejection, app: app))
+            case .success(let image): return .success(image)
+            }
+        }
+    }
+
+    /// Reads a local file and adopts it. Returns whether the file was taken on —
+    /// the answer a drop needs, and `true` means "started", not "finished": an SVG
+    /// goes through a web view, so the outcome lands later, in the row or an alert.
+    @discardableResult
+    private func importFile(_ url: URL, for app: AppInfo) -> Bool {
+        guard claim(app, saying: "Adding…") else { return false }
+
+        let bundleID = app.bundleIdentifier
+        Task {
+            let imported = await IconImport.image(contentsOf: url)
+            await MainActor.run {
+                inFlight[bundleID] = nil
+                switch imported {
+                case .failure(let rejection):
+                    apply(.failure(rejection), for: app)
+                case .success(let image):
+                    apply(store.setCustomIcon(image, forBundleID: bundleID), for: app)
+                }
+            }
+        }
+        return true
+    }
+
+    /// Marks `app` as busy, or refuses when it already is.
+    ///
+    /// One import per app at a time. Two in flight would race: the first to finish
+    /// clears the caption for both, and the last to *land* wins the icon, which
+    /// need not be the one the user asked for last.
+    private func claim(_ app: AppInfo, saying label: String) -> Bool {
+        guard inFlight[app.bundleIdentifier] == nil else {
+            problem = .alreadyInFlight(app: app)
+            return false
+        }
+        inFlight[app.bundleIdentifier] = label
+        return true
+    }
+
     /// Shared outcome handling for every ingestion path.
+    ///
+    /// Nothing clears `problem` on success: an alert is dismissed by the person
+    /// reading it, not by the next thing that happens to go right.
     private func apply(_ result: Result<IconManifest.Entry, IconImageValidator.Rejection>,
                        for app: AppInfo) {
         switch result {
         case .failure(let rejection):
-            problem = rejection.message
+            problem = .rejected(rejection, app: app)
         case .success:
-            problem = nil
             // A custom icon that the current mode would ignore is a trap; adopt
             // the mode that honours it.
             if !preferences.iconSourceMode.usesCustomIcons {
@@ -257,19 +299,16 @@ struct IconsView: View {
 
     private func useOriginalArtwork(for app: AppInfo) {
         store.clearOverride(forBundleID: app.bundleIdentifier)
-        problem = nil
         refresh(app.bundleIdentifier)
     }
 
     private func useSystemIcon(for app: AppInfo) {
         store.pinToSystemIcon(forBundleID: app.bundleIdentifier)
-        problem = nil
         refresh(app.bundleIdentifier)
     }
 
     private func resetAll() {
         store.removeAll()
-        problem = nil
         iconResolver.invalidate()
         reloadStatuses()
     }

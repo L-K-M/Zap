@@ -53,6 +53,10 @@ enum IconImageValidator {
         case extremeAspectRatio(ratio: Double)
         /// The decoded image couldn't be written back out as PNG.
         case notEncodable
+        /// SVG markup that wouldn't render. Carries the rasteriser's own reason,
+        /// which distinguishes "took too long" from "came back blank" — ImageIO
+        /// never sees these bytes, so none of the cases above can describe them.
+        case svgNotRendered(reason: String)
 
         var message: String {
             switch self {
@@ -70,6 +74,8 @@ enum IconImageValidator {
                 return "That image is too far from square to sit in the icon row."
             case .notEncodable:
                 return "Zap couldn't convert that image to PNG."
+            case .svgNotRendered(let reason):
+                return reason
             }
         }
     }

@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import WebKit
 
@@ -29,12 +30,19 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         case notSVG
         case timedOut
         case snapshotFailed
+        /// The network-block rule list wouldn't compile, so rendering was refused
+        /// rather than done unprotected. Distinct from `snapshotFailed` because it
+        /// is the one failure that isn't about the file: every SVG fails this way,
+        /// and it says so instead of blaming the artwork.
+        case unprotected
 
         var message: String {
             switch self {
             case .notSVG: return "That file doesn't look like an SVG."
             case .timedOut: return "Rendering that SVG took too long."
             case .snapshotFailed: return "Zap couldn't render that SVG."
+            case .unprotected:
+                return "Zap couldn't set up safe SVG rendering on this Mac, so it didn't render that file."
             }
         }
     }
@@ -109,6 +117,8 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
 
     private let side: Int
     private var webView: WKWebView?
+    /// Keeps `webView` in a window for the length of the render — see `hostWindow(for:)`.
+    private var host: NSWindow?
     private var completion: ((Result<CGImage, RasterizeError>) -> Void)?
     private var selfRetain: SVGRasterizer?
     private var timeoutWork: DispatchWorkItem?
@@ -136,6 +146,7 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         // view's default white page.
         webView.underPageBackgroundColor = .clear
         self.webView = webView
+        self.host = Self.hostWindow(for: webView, side: side)
 
         let timeout = DispatchWorkItem { [weak self] in self?.finish(.failure(.timedOut)) }
         timeoutWork = timeout
@@ -146,13 +157,46 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
             guard blocked else {
                 // Fail closed: without the rule list, a hostile SVG's subresources
                 // would reach the network, and that is the guarantee being made.
-                self.finish(.failure(.snapshotFailed))
+                // Logged because it fails *every* render on the machine it happens
+                // on, which from the UI looks exactly like artwork that won't draw.
+                NSLog("Zap: SVG rendering refused — the network-block rule list wouldn't compile.")
+                self.finish(.failure(.unprotected))
                 return
             }
             // `baseURL: nil` leaves the document with no origin and nothing to
             // resolve a relative URL against — the property §6.3 wants from `data:`.
             webView.loadHTMLString(Self.htmlDocument(forSVG: markup), baseURL: nil)
         }
+    }
+
+    /// Parks `webView` in a window, because a detached one renders nothing.
+    ///
+    /// WebKit only paints a web view that belongs to a window, and it stops
+    /// painting for windows the system treats as invisible. A `WKWebView` built
+    /// with a frame and never added to anything therefore loads the document,
+    /// reports `didFinish`, and hands back an empty `takeSnapshot` — which is what
+    /// left every icon-search preview spinning forever with nothing to show.
+    ///
+    /// So it gets a real window, ordered in so it can't be dismissed as occluded,
+    /// but borderless, transparent, click-through, kept out of window cycling,
+    /// pinned below the desktop and parked far off every screen. It renders; it
+    /// cannot be seen, hit, or cycled to.
+    private static func hostWindow(for webView: WKWebView, side: Int) -> NSWindow {
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: side, height: side),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)))
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = false
+        window.ignoresMouseEvents = true
+        window.collectionBehavior = [.stationary, .ignoresCycle]
+        window.contentView = webView
+        window.setFrameOrigin(NSPoint(x: -30_000, y: -30_000))
+        // Ordered *back*: it joins the window list without becoming key, so the
+        // Settings sheet the user is looking at keeps focus.
+        window.orderBack(nil)
+        return window
     }
 
     /// Adds the compiled block-everything rule list, compiling it on first use.
@@ -188,6 +232,11 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         timeoutWork?.cancel()
         timeoutWork = nil
         webView?.navigationDelegate = nil
+        // Take the window down before letting go of the view it hosts, so nothing
+        // is left ordered in on a render that timed out.
+        host?.orderOut(nil)
+        host?.contentView = nil
+        host = nil
         webView = nil
         completion(result)
         selfRetain = nil

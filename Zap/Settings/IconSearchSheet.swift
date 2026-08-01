@@ -6,12 +6,13 @@ import SwiftUI
 /// The privacy rules are structural, not advisory: the query is prefilled from the
 /// app's name but editable before it goes anywhere, nothing is sent until the user
 /// presses Search, the disclosure of what will be sent is shown before the first
-/// search of a session, and the bundle identifier — the thing that would reveal
+/// search of that provider, and the bundle identifier — the thing that would reveal
 /// what's installed — never leaves the machine.
 struct IconSearchSheet: View {
 
     let app: AppInfo
     let provider: IconSearchProvider
+    @ObservedObject var preferences: Preferences
     /// Called with the chosen result's artwork, already fetched and rasterised.
     var onAdopt: (IconSearchResult, CGImage) -> Void
     var onCancel: () -> Void
@@ -19,11 +20,12 @@ struct IconSearchSheet: View {
     @State private var query: String
     @State private var results: [IconSearchResult] = []
     @State private var previews: [String: NSImage] = [:]
+    /// Results whose preview couldn't be rendered. Without this a failed preview
+    /// spins forever, which reads as "still loading" and never stops being wrong.
+    @State private var previewFailures: Set<String> = []
     @State private var isSearching = false
     @State private var isAdopting = false
-    @State private var problem: String?
-    /// Whether the user has acknowledged what a search sends, this session.
-    @State private var hasAcknowledgedDisclosure = false
+    @State private var problem: IconProblem?
     /// Bumped per search, so previews from a replaced one are discarded.
     @State private var previewGeneration = 0
     /// Bumped per search, so a slow earlier search can't land on top of a newer
@@ -31,15 +33,23 @@ struct IconSearchSheet: View {
     /// isn't.
     @State private var searchGeneration = 0
 
-    init(app: AppInfo, provider: IconSearchProvider,
+    init(app: AppInfo, provider: IconSearchProvider, preferences: Preferences,
          onAdopt: @escaping (IconSearchResult, CGImage) -> Void,
          onCancel: @escaping () -> Void) {
         self.app = app
         self.provider = provider
+        self.preferences = preferences
         self.onAdopt = onAdopt
         self.onCancel = onCancel
         // Prefilled, but the user edits it before anything is sent (§5.5).
         _query = State(initialValue: app.name)
+    }
+
+    /// Whether this provider's disclosure has already been read. Persisted rather
+    /// than per-sheet: §5.5 asks for it before the first search, and a notice shown
+    /// every single time is one the user stops reading.
+    private var hasAcknowledgedDisclosure: Bool {
+        preferences.acknowledgedSearchProviders.contains(provider.id)
     }
 
     var body: some View {
@@ -56,15 +66,13 @@ struct IconSearchSheet: View {
 
             Divider()
             HStack {
-                if let problem {
-                    Text(problem).font(.caption).foregroundStyle(.red)
-                }
                 Spacer()
                 Button("Cancel", action: onCancel)
             }
         }
         .padding(16)
         .frame(width: 560, height: 460)
+        .alert(iconProblem: $problem)
         // Dismissing the sheet retires both generations, which is what the
         // preview loop checks between renders. Without it, cancelling mid-search
         // leaves up to `previewLimit` fetch-and-rasterise rounds running for a
@@ -88,7 +96,9 @@ struct IconSearchSheet: View {
             Text("Searching is never automatic — nothing is sent until you press Search, and you can edit the words first.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Button("Continue") { hasAcknowledgedDisclosure = true }
+            Button("Continue") {
+                preferences.acknowledgedSearchProviders.insert(provider.id)
+            }
             Spacer()
         }
     }
@@ -140,6 +150,14 @@ struct IconSearchSheet: View {
                         .interpolation(.high)
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 56, height: 56)
+                } else if previewFailures.contains(result.id) {
+                    // Still clickable: a preview can fail on a blip that adopting
+                    // won't repeat, and picking it now says why rather than nothing.
+                    Image(systemName: "questionmark.square.dashed")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 56, height: 56)
+                        .foregroundStyle(.tertiary)
                 } else {
                     ProgressView().frame(width: 56, height: 56)
                 }
@@ -170,16 +188,17 @@ struct IconSearchSheet: View {
         searchGeneration += 1
         let generation = searchGeneration
         isSearching = true
-        problem = nil
         results = []
         previews = [:]
+        previewFailures = []
         Task {
             let found = await provider.search(query: text, limit: 48)
             await MainActor.run {
                 guard generation == searchGeneration else { return }
                 isSearching = false
                 switch found {
-                case .failure(let error): problem = error.message
+                case .failure(let error):
+                    problem = .searchFailed(error.message, provider: provider.displayName)
                 case .success(let items):
                     results = items
                     previewGeneration += 1
@@ -199,19 +218,47 @@ struct IconSearchSheet: View {
     /// exactly one alive.
     ///
     /// `generation` drops results from a search the user has already replaced.
+    ///
+    /// Every outcome is recorded, success or not. Skipping the failures left their
+    /// cells on a spinner that never resolved — the whole grid looked like it was
+    /// still loading when in fact nothing was left to wait for.
     private func loadPreviews(_ items: [IconSearchResult], generation: Int) {
         Task {
-            for item in items.prefix(Self.previewLimit) {
-                guard case .success(let data) = await provider.fetchImageData(for: item) else { continue }
-                guard case .success(let image) = await SVGRasterizer.rasterize(data, side: 128) else { continue }
+            let batch = Array(items.prefix(Self.previewLimit))
+            var rendered = 0
+            for item in batch {
+                let image = await previewImage(for: item)
                 let stale = await MainActor.run { () -> Bool in
                     guard generation == previewGeneration else { return true }
-                    previews[item.id] = NSImage(cgImage: image, size: NSSize(width: 56, height: 56))
+                    if let image {
+                        previews[item.id] = NSImage(cgImage: image, size: NSSize(width: 56, height: 56))
+                    } else {
+                        previewFailures.insert(item.id)
+                    }
                     return false
                 }
                 if stale { return }
+                if image != nil { rendered += 1 }
+            }
+            // Not one of them drew. That is a broken renderer rather than awkward
+            // artwork, and it is worth saying so — silence here is what a grid of
+            // permanent spinners was.
+            if rendered == 0, !batch.isEmpty {
+                await MainActor.run {
+                    guard generation == previewGeneration else { return }
+                    problem = .previewsUnavailable(provider: provider.displayName)
+                }
             }
         }
+    }
+
+    /// One preview, or `nil` if it couldn't be fetched or decoded. Goes through
+    /// `IconImport` like every other ingestion path, so a provider that starts
+    /// returning bitmaps is decoded rather than refused for not being SVG.
+    private func previewImage(for item: IconSearchResult) async -> CGImage? {
+        guard case .success(let data) = await provider.fetchImageData(for: item) else { return nil }
+        guard case .success(let image) = await IconImport.image(from: data, side: 128) else { return nil }
+        return image
     }
 
     /// Fetches and rasterises the chosen result, then hands it to `onAdopt`.
@@ -231,7 +278,6 @@ struct IconSearchSheet: View {
     /// disabled — a sheet that has to be closed and reopened to pick anything.
     private func adopt(_ result: IconSearchResult) {
         isAdopting = true
-        problem = nil
         let generation = searchGeneration
         Task {
             let fetched = await provider.fetchImageData(for: result)
@@ -239,17 +285,24 @@ struct IconSearchSheet: View {
                 await MainActor.run {
                     isAdopting = false
                     guard generation == searchGeneration else { return }
-                    if case .failure(let error) = fetched { problem = error.message }
+                    if case .failure(let error) = fetched {
+                        problem = .fetchFailed(error.message, app: app)
+                    }
                 }
                 return
             }
-            let rendered = await SVGRasterizer.rasterize(data)
+            // Through the same door as a chosen file or a dragged link, so a
+            // provider that returns a bitmap is decoded rather than refused for
+            // not being SVG — and the refusal, when there is one, is the right one.
+            let rendered = await IconImport.image(from: data)
             await MainActor.run {
                 isAdopting = false
                 guard generation == searchGeneration else { return }
                 switch rendered {
-                case .failure(let error): problem = error.message
-                case .success(let image): onAdopt(result, image)
+                case .failure(let rejection):
+                    problem = .rejected(rejection, app: app)
+                case .success(let image):
+                    onAdopt(result, image)
                 }
             }
         }

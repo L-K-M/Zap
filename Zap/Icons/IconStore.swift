@@ -84,24 +84,14 @@ final class IconStore {
 
     // MARK: Writing
 
-    /// Adopts the image at `url` as `bundleID`'s icon: validated, bounded, and
-    /// re-encoded to PNG inside the icons directory.
-    @discardableResult
-    func setCustomIcon(from url: URL, forBundleID bundleID: String,
-                       origin: IconManifest.Origin = .file,
-                       credit: String? = nil, creditURL: String? = nil,
-                       provider: String? = nil, license: String? = nil,
-                       now: Date = Date()) -> Result<IconManifest.Entry, IconImageValidator.Rejection> {
-        switch IconImageValidator.decode(contentsOf: url) {
-        case .failure(let rejection):
-            return .failure(rejection)
-        case .success(let image):
-            return setCustomIcon(image, forBundleID: bundleID, origin: origin, credit: credit,
-                                 creditURL: creditURL, provider: provider, license: license, now: now)
-        }
-    }
-
     /// Adopts an already-decoded image as `bundleID`'s icon.
+    ///
+    /// Takes an image rather than a file URL on purpose. Turning something the user
+    /// supplied into an image is `IconImport`'s job, and it can no longer be done
+    /// synchronously — SVG has to go through a web view first. A convenience
+    /// overload here that quietly decoded a URL with ImageIO would be a second
+    /// ingestion path that silently refused every SVG, which is the bug this
+    /// arrangement exists to make unrepeatable.
     @discardableResult
     func setCustomIcon(_ image: CGImage, forBundleID bundleID: String,
                        origin: IconManifest.Origin = .file,

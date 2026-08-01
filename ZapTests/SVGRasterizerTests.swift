@@ -56,8 +56,18 @@ final class SVGRasterizerTests: XCTestCase {
     }
 
     func testErrorsCarryAMessage() {
-        for error in [SVGRasterizer.RasterizeError.notSVG, .timedOut, .snapshotFailed] {
+        for error in [SVGRasterizer.RasterizeError.notSVG, .timedOut, .snapshotFailed, .unprotected] {
             XCTAssertFalse(error.message.isEmpty)
         }
+    }
+
+    /// Refusing to render because the block list wouldn't compile is not the same
+    /// as artwork that won't draw: it happens to *every* SVG on that machine, so
+    /// it must not read as a complaint about the file the user just picked.
+    func testRefusingToRenderUnprotectedReadsDifferentlyFromABadFile() {
+        let unprotected = SVGRasterizer.RasterizeError.unprotected
+        XCTAssertNotEqual(unprotected, .snapshotFailed)
+        XCTAssertNotEqual(unprotected.message, SVGRasterizer.RasterizeError.snapshotFailed.message)
+        XCTAssertNotEqual(unprotected.message, SVGRasterizer.RasterizeError.notSVG.message)
     }
 }
