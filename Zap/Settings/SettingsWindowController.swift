@@ -81,6 +81,13 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
            !previous.isTerminated,
            previous.processIdentifier != NSRunningApplication.current.processIdentifier {
             WindowEnumerator.activate(previous)
+        } else {
+            // No app to hand back to — Zap was already frontmost when Settings
+            // opened, or that app has since quit. Resign activation explicitly so
+            // Zap doesn't linger as the frontmost app (which would make the next
+            // ⌘-Tab appear to do nothing); the system passes focus to whatever
+            // is next.
+            NSApp.hide(nil)
         }
         appToRestoreOnClose = nil
 

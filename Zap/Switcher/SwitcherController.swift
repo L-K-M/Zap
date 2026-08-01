@@ -358,13 +358,21 @@ final class SwitcherController {
     /// MRU apps — but if the frontmost app didn't survive filtering (it's
     /// excluded), index 0 is already the previous app, so highlight it instead.
     /// Reverse: highlight the least-recently-used app (last index).
+    ///
+    /// A `nil` frontmost means Zap *itself* is frontmost (Settings or an update
+    /// alert activated it, and it hasn't fully handed activation back yet). The
+    /// MRU list skips Zap's own activations, so index 0 is still the app the
+    /// user is effectively in — highlighting *that* would make a tap re-commit
+    /// the current app and read as a dead switcher. Highlight index 1, exactly
+    /// as when the frontmost app survives: committing it is a real switch,
+    /// which also hands Zap's lingering activation over and cures the state.
     static func defaultSelection(forward: Bool, apps: [AppInfo], frontmostBundleID: String?) -> Int {
         guard !apps.isEmpty else { return 0 }
         guard forward else { return apps.count - 1 }
         guard apps.count > 1 else { return 0 }
-        let frontmostSurvived = frontmostBundleID != nil
-            && apps.first?.bundleIdentifier == frontmostBundleID
-        return frontmostSurvived ? 1 : 0
+        let frontmostAtHead = frontmostBundleID == nil
+            || apps.first?.bundleIdentifier == frontmostBundleID
+        return frontmostAtHead ? 1 : 0
     }
 
     private func defaultSelection(forward: Bool, apps: [AppInfo], frontmostBundleID: String?) -> Int {
