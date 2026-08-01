@@ -104,8 +104,22 @@ struct OverlayView: View {
         min(maxRowWidth, model.maxContentWidth)
     }
 
-    /// Footprint of one icon: the image plus its 8pt padding on each side.
-    private var cellWidth: CGFloat { IconRowMetrics.cellWidth(iconSize: preferences.iconSize) }
+    /// Headroom for artwork that normalises larger than a square (`UNJAILED.md §8.3`).
+    private var iconBleed: CGFloat { IconRowMetrics.clampedBleed(preferences.iconBleed) }
+
+    /// Extent of the icon image itself, bleed included.
+    private var imageExtent: CGFloat {
+        IconRowMetrics.imageExtent(iconSize: preferences.iconSize, bleed: iconBleed)
+    }
+
+    /// Extent of the selection highlight — the nominal icon plus its 8pt padding,
+    /// unchanged by bleed. Bleeding art poking past *this* is the classic Mac look.
+    private var highlightExtent: CGFloat { preferences.iconSize + IconRowMetrics.cellPadding }
+
+    /// Footprint of one icon cell, which always contains the image.
+    private var cellWidth: CGFloat {
+        IconRowMetrics.cellWidth(iconSize: preferences.iconSize, bleed: iconBleed)
+    }
 
     private var maxRowWidth: CGFloat {
         let count = max(model.apps.count, 1)
@@ -219,7 +233,7 @@ struct OverlayView: View {
     /// Height of the panel's always-visible header (outer padding + optional app
     /// name + icon row), the vertical span the gradient line is pinned to.
     private var headerHeight: CGFloat {
-        let iconCell = preferences.iconSize + 16  // icon image + its 8pt padding
+        let iconCell = cellWidth   // square: the cell's extent is its width
         let nameBlock: CGFloat = preferences.showAppName ? (nameLineHeight + vStackSpacing) : 0
         return outerPadding * 2 + iconCell + nameBlock
     }
@@ -232,26 +246,33 @@ struct OverlayView: View {
             .resizable()
             .interpolation(.high)
             .aspectRatio(contentMode: .fit)
-            .frame(width: preferences.iconSize, height: preferences.iconSize)
+            .frame(width: imageExtent, height: imageExtent)
             // A hidden app keeps its place in the row but reads as put away: the
             // icon fades back and carries a badge. Drawn as an overlay on the
             // icon's own frame, so it never changes the cell's footprint.
             .opacity(app.isHidden && !isQuitting ? 0.45 : 1)
             .overlay(alignment: .bottomTrailing) {
-                if app.isHidden { hiddenBadge }
+                if app.isHidden {
+                    // Inset back to the *nominal* icon frame. Pinned to the bled
+                    // frame the badge drifts away from narrow artwork and ends up
+                    // floating in empty space beside it.
+                    hiddenBadge.padding((imageExtent - preferences.iconSize) / 2)
+                }
             }
-            .padding(8)
+            .frame(width: cellWidth, height: cellWidth)
             .background(
                 RoundedRectangle(cornerRadius: preferences.highlightCornerRadius, style: .continuous)
                     .fill(isSelected
                           ? Color(hexString: preferences.highlightColorHex).opacity(preferences.highlightOpacity)
                           : Color.clear)
+                    .frame(width: highlightExtent, height: highlightExtent)
             )
             // Accent ring while a file drag hovers this icon, marking the drop target.
             .overlay(
                 RoundedRectangle(cornerRadius: preferences.highlightCornerRadius, style: .continuous)
                     .strokeBorder(Color(hexString: preferences.highlightColorHex),
                                   lineWidth: isDropTarget ? 3 : 0)
+                    .frame(width: highlightExtent, height: highlightExtent)
             )
             .animation(resolvedAnimation(.easeOut(duration: 0.12)), value: isDropTarget)
             // Dim apps that are quitting until their fate is confirmed.

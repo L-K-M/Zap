@@ -12,6 +12,10 @@ struct IconsView: View {
     @State private var statuses: [String: IconResolver.Status] = [:]
     @State private var search = ""
     @State private var problem: String?
+    /// Bundle identifier of the row a drag is currently over.
+    @State private var dropTarget: String?
+    /// Bundle identifiers with a remote fetch in flight.
+    @State private var fetching: Set<String> = []
 
     private var filteredApps: [AppInfo] {
         guard !search.isEmpty else { return apps }
@@ -83,7 +87,7 @@ struct IconsView: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(app.name)
-                Text(statuses[app.bundleIdentifier]?.label ?? "Checking…")
+                Text(rowStatus(for: app))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -102,6 +106,28 @@ struct IconsView: View {
             .fixedSize()
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        // §5.3: the browser is the search box. A drag from one carries a URL rather
+        // than a file, and that is the more important ingestion path of the two.
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let url = urls.first else { return false }
+            return adopt(url, for: app)
+        } isTargeted: { targeted in
+            if targeted {
+                dropTarget = app.bundleIdentifier
+            } else if dropTarget == app.bundleIdentifier {
+                dropTarget = nil
+            }
+        }
+        .listRowBackground(dropTarget == app.bundleIdentifier
+                           ? Color.accentColor.opacity(0.15) : Color.clear)
+    }
+
+    /// What the row's caption says, including transient states the status fetch
+    /// doesn't know about.
+    private func rowStatus(for app: AppInfo) -> String {
+        if fetching.contains(app.bundleIdentifier) { return "Downloading…" }
+        return statuses[app.bundleIdentifier]?.label ?? "Checking…"
     }
 
     // MARK: Footer
@@ -119,7 +145,11 @@ struct IconsView: View {
                 Spacer()
             }
 
-            Text("Lists running apps, plus any app you've already given an icon. Custom icons need the third option above; choosing a file switches to it for you.")
+            Text("Drag an image onto a row from Finder, or straight from a browser — searching the web for an icon is free there, and Google Images can filter to transparent backgrounds only (Tools → Color → Transparent). Nothing about your apps is ever sent anywhere.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text("Lists running apps, plus any app you've already given an icon. Custom icons need the third option above; adding one switches to it for you.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -150,7 +180,64 @@ struct IconsView: View {
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        switch store.setCustomIcon(from: url, forBundleID: app.bundleIdentifier) {
+        apply(store.setCustomIcon(from: url, forBundleID: app.bundleIdentifier), for: app)
+    }
+
+    /// Takes on a dragged or pasted URL: a file is imported directly, an http(s)
+    /// link is fetched first. Returns whether the drop was accepted — refusing it
+    /// makes the drag snap back, which is the platform's own way of saying "not
+    /// this, not now", and is better than silently dropping it on the floor.
+    @discardableResult
+    private func adopt(_ url: URL, for app: AppInfo) -> Bool {
+        guard !url.isFileURL else {
+            apply(store.setCustomIcon(from: url, forBundleID: app.bundleIdentifier), for: app)
+            return true
+        }
+        guard RemoteIconFetcher.isFetchable(url) else {
+            problem = "That link isn't something Zap can fetch an image from."
+            return false
+        }
+
+        let bundleID = app.bundleIdentifier
+        // One fetch per app at a time. Two in flight would race: the first to
+        // finish clears "Downloading…" for both, and the last to finish wins the
+        // icon, which need not be the one dropped most recently.
+        guard !fetching.contains(bundleID) else {
+            problem = "Still downloading an icon for \(app.name)."
+            return false
+        }
+        fetching.insert(bundleID)
+        Task {
+            let fetched = await RemoteIconFetcher.fetch(url)
+            await MainActor.run {
+                fetching.remove(bundleID)
+                switch fetched {
+                case .failure(let error):
+                    problem = error.message
+                case .success(let data):
+                    switch IconImageValidator.decode(data: data) {
+                    case .failure(let rejection):
+                        problem = rejection.message
+                    case .success(let image):
+                        // Provenance is captured at save time, not display time
+                        // (§5.4) — the link the user dragged from is the credit.
+                        apply(store.setCustomIcon(image, forBundleID: bundleID,
+                                                  origin: .search,
+                                                  creditURL: url.absoluteString,
+                                                  provider: "web"),
+                              for: app)
+                    }
+                }
+            }
+        }
+        // Accepted: the download is under way and the row says so.
+        return true
+    }
+
+    /// Shared outcome handling for every ingestion path.
+    private func apply(_ result: Result<IconManifest.Entry, IconImageValidator.Rejection>,
+                       for app: AppInfo) {
+        switch result {
         case .failure(let rejection):
             problem = rejection.message
         case .success:

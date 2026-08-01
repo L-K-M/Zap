@@ -60,6 +60,16 @@ struct AppearanceView: View {
                     Toggle("Show app name", isOn: $preferences.showAppName)
                 }
 
+                Section("Icon artwork") {
+                    sliderRow("Bleed", value: $preferences.iconBleed,
+                              range: 0...Double(IconRowMetrics.maximumBleed), step: 0.01)
+                    Toggle("Trim transparent edges", isOn: $preferences.iconTrimTransparentEdges)
+                    Toggle("Drop shadow", isOn: $preferences.iconShadow)
+                    Text("Free-form icons are scaled to carry the same visual weight as square ones, which makes them wider — bleed is how far past the selection highlight they may go. Applies to un-jailed artwork; see the Icons tab.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Decoration") {
                     Picker("Style", selection: $preferences.decorationStyle) {
                         ForEach(DecorationStyle.allCases) { style in
@@ -112,14 +122,19 @@ struct AppearanceView: View {
             .scaleEffect(0.7)
     }
 
+    /// One sample per shape class, so the layout controls above show their effect on
+    /// all three at once (`UNJAILED.md §8.4`): a free-form silhouette, a rounded
+    /// square, and a full-bleed square.
     private var previewApps: [AppInfo] {
-        let names = ["Finder", "Safari", "Mail"]
-        return names.enumerated().map { index, name in
+        let samples = [("Free-form", "hammer.fill"),
+                       ("Rounded", "app.fill"),
+                       ("Full-bleed", "square.fill")]
+        return samples.enumerated().map { index, sample in
             AppInfo(
-                bundleIdentifier: "preview.\(name)",
-                name: name,
+                bundleIdentifier: "preview.\(sample.0)",
+                name: sample.0,
                 processIdentifier: pid_t(index),
-                icon: NSImage(systemSymbolName: "app.fill", accessibilityDescription: name)
+                icon: NSImage(systemSymbolName: sample.1, accessibilityDescription: sample.0)
             )
         }
     }

@@ -91,6 +91,13 @@ struct AlphaMask: Equatable {
         return samples[row * width + column] >= threshold
     }
 
+    /// How many samples reach `threshold`, over the whole grid.
+    func inkCount(threshold: UInt8) -> Int {
+        samples.reduce(into: 0) { total, sample in
+            if sample >= threshold { total += 1 }
+        }
+    }
+
     /// The tightest cell rectangle containing every inked sample, or `nil` when
     /// nothing reaches `threshold`.
     func inkBounds(threshold: UInt8) -> InkBounds? {
