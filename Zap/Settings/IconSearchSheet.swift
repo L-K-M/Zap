@@ -221,6 +221,14 @@ struct IconSearchSheet: View {
     /// then changes their mind still gets it: the render finishes after the sheet
     /// is gone and `onAdopt` writes it to the store anyway. Searching again mid-fetch
     /// retires it for the same reason — they have moved on from that result.
+    ///
+    /// `isAdopting` clears *before* the guard, on every path. It says whether a fetch
+    /// is in flight, not whether its result is still wanted — and a retired fetch is
+    /// no longer in flight either. Clearing it after the guard would strand it at
+    /// `true` for the one case that can actually reach the sheet: `onSubmit` isn't
+    /// gated on `isAdopting`, so Return in the search field starts a new search
+    /// mid-adopt, and the retired continuation would then leave every result cell
+    /// disabled — a sheet that has to be closed and reopened to pick anything.
     private func adopt(_ result: IconSearchResult) {
         isAdopting = true
         problem = nil
@@ -229,16 +237,16 @@ struct IconSearchSheet: View {
             let fetched = await provider.fetchImageData(for: result)
             guard case .success(let data) = fetched else {
                 await MainActor.run {
-                    guard generation == searchGeneration else { return }
                     isAdopting = false
+                    guard generation == searchGeneration else { return }
                     if case .failure(let error) = fetched { problem = error.message }
                 }
                 return
             }
             let rendered = await SVGRasterizer.rasterize(data)
             await MainActor.run {
-                guard generation == searchGeneration else { return }
                 isAdopting = false
+                guard generation == searchGeneration else { return }
                 switch rendered {
                 case .failure(let error): problem = error.message
                 case .success(let image): onAdopt(result, image)
