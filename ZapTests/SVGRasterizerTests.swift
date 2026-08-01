@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import XCTest
 @testable import Zap
@@ -53,6 +54,74 @@ final class SVGRasterizerTests: XCTestCase {
         XCTAssertTrue(html.contains("background:transparent"))
         XCTAssertTrue(html.contains("width:100vw"))
         XCTAssertTrue(html.contains("height:100vh"))
+    }
+
+    // MARK: PDF → bitmap
+
+    /// The half of the render that isn't WebKit's: a PDF page drawn into a context
+    /// Zap made. Exercised with a PDF built here, so the transparency claim is
+    /// tested even though driving the web view isn't (`UNJAILED.md §9`).
+    private func onePagePDF(width: CGFloat, height: CGFloat,
+                            draw: (CGContext) -> Void = { _ in }) -> Data {
+        let data = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: width, height: height)
+        guard let consumer = CGDataConsumer(data: data as CFMutableData),
+              let context = CGContext(consumer: consumer, mediaBox: &box, nil) else { return Data() }
+        context.beginPDFPage(nil)
+        draw(context)
+        context.endPDFPage()
+        context.closePDF()
+        return data as Data
+    }
+
+    /// The reason this replaced `takeSnapshot`: a snapshot came back composited on
+    /// opaque white, so an SVG that is nothing but a `<path>` became a white tile.
+    func testAPageThatDrawsNothingStaysTransparent() throws {
+        let image = try XCTUnwrap(
+            SVGRasterizer.image(fromPDF: onePagePDF(width: 100, height: 100), side: 64))
+        XCTAssertEqual(image.width, 64)
+
+        // Nothing was drawn, so nothing should have appeared — least of all a
+        // background. `.empty` is the classifier's name for "no ink anywhere",
+        // and it is the reading a white tile could never produce.
+        let mask = try XCTUnwrap(AlphaMask(image: image, longestEdge: 64))
+        XCTAssertEqual(mask.inkCount(threshold: 1), 0)
+        XCTAssertEqual(IconShapeClassifier.classify(image), .empty)
+    }
+
+    /// What the page *does* draw survives the trip.
+    func testMarksOnThePageAreDrawn() throws {
+        let pdf = onePagePDF(width: 100, height: 100) { context in
+            context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+        }
+        let image = try XCTUnwrap(SVGRasterizer.image(fromPDF: pdf, side: 64))
+        let mask = try XCTUnwrap(AlphaMask(image: image, longestEdge: 64))
+        XCTAssertEqual(mask.inkCount(threshold: 1), 64 * 64)
+    }
+
+    /// Fitted, not stretched — a wide page letterboxes into transparency rather
+    /// than distorting to fill a square.
+    func testANonSquarePageIsFittedRatherThanStretched() throws {
+        let pdf = onePagePDF(width: 200, height: 100) { context in
+            context.setFillColor(CGColor(red: 0, green: 0, blue: 1, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: 200, height: 100))
+        }
+        let image = try XCTUnwrap(SVGRasterizer.image(fromPDF: pdf, side: 64))
+        XCTAssertEqual(image.width, 64)
+        XCTAssertEqual(image.height, 64)
+
+        // A 2:1 page centred in a square leaves the top and bottom quarters empty
+        // and fills the middle. Stretching would have inked all four corners.
+        let mask = try XCTUnwrap(AlphaMask(image: image, longestEdge: 64))
+        XCTAssertTrue(mask.isInk(row: 32, column: 32, threshold: 1))
+        XCTAssertFalse(mask.isInk(row: 1, column: 32, threshold: 1))
+        XCTAssertFalse(mask.isInk(row: 62, column: 32, threshold: 1))
+    }
+
+    func testGarbageIsNotAPDF() {
+        XCTAssertNil(SVGRasterizer.image(fromPDF: Data("not a pdf".utf8), side: 64))
+        XCTAssertNil(SVGRasterizer.image(fromPDF: Data(), side: 64))
     }
 
     func testErrorsCarryAMessage() {
