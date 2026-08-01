@@ -256,9 +256,14 @@ enum WindowEnumerator {
     /// turn (seen after interacting with Settings/color controls).
     @discardableResult
     static func activate(_ app: NSRunningApplication, allWindows: Bool = false) -> Bool {
+        // Who the target is being asked to take over from. The verification retry
+        // may re-request activation only while the frontmost app is *still* this
+        // one — see `shouldRetryActivation`.
+        let originPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let activated = requestActivation(of: app, allWindows: allWindows)
         if activated {
-            verifyActivation(of: app, allWindows: allWindows, remainingRetries: 2)
+            verifyActivation(of: app, allWindows: allWindows, remainingRetries: 2,
+                             originPID: originPID)
         }
         return activated
     }
@@ -277,14 +282,28 @@ enum WindowEnumerator {
         }
     }
 
-    private static func verifyActivation(of app: NSRunningApplication, allWindows: Bool, remainingRetries: Int) {
+    /// Pure retry rule for the activation verification: re-request only while the
+    /// target still isn't frontmost *and* the frontmost is unchanged since the
+    /// original request. A changed frontmost means a newer, deliberate activation
+    /// has since landed — e.g. the user's own ⌘-Tab switch committed right after
+    /// Settings closed, or a second quick tap — which a blind retry would undo,
+    /// yanking the user back out of the app they just switched to.
+    static func shouldRetryActivation(frontmostPID: pid_t?, targetPID: pid_t, originPID: pid_t?) -> Bool {
+        frontmostPID != targetPID && frontmostPID == originPID
+    }
+
+    private static func verifyActivation(of app: NSRunningApplication, allWindows: Bool,
+                                         remainingRetries: Int, originPID: pid_t?) {
         guard remainingRetries > 0 else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
             guard !app.isTerminated else { return }
             let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-            guard frontmostPID != app.processIdentifier else { return }
+            guard shouldRetryActivation(frontmostPID: frontmostPID,
+                                        targetPID: app.processIdentifier,
+                                        originPID: originPID) else { return }
             requestActivation(of: app, allWindows: allWindows)
-            verifyActivation(of: app, allWindows: allWindows, remainingRetries: remainingRetries - 1)
+            verifyActivation(of: app, allWindows: allWindows,
+                             remainingRetries: remainingRetries - 1, originPID: originPID)
         }
     }
 

@@ -40,8 +40,20 @@ final class SwitcherSelectionTests: XCTestCase {
         )
     }
 
-    func testForwardWithNilFrontmostPicksIndexZero() {
+    func testForwardWithNilFrontmostPicksPreviousApp() {
+        // A nil frontmost means Zap itself is frontmost (Settings / update alert).
+        // The MRU list skips Zap's activations, so index 0 (b) is still the app
+        // the user is effectively in; selecting it would commit the current app
+        // and read as a dead switcher. The real previous app is index 1.
         let apps = [app("b"), app("c")]
+        XCTAssertEqual(
+            SwitcherController.defaultSelection(forward: true, apps: apps, frontmostBundleID: nil),
+            1
+        )
+    }
+
+    func testForwardWithNilFrontmostAndSingleAppSelectsZero() {
+        let apps = [app("a")]
         XCTAssertEqual(
             SwitcherController.defaultSelection(forward: true, apps: apps, frontmostBundleID: nil),
             0

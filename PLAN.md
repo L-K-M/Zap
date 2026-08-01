@@ -165,7 +165,12 @@ must **intercept the key event and suppress the system switcher**.
 - On show: order = MRU list; default selection = index `1` (second item) so a single
   tap switches to the last app, matching native feel. When the frontmost app is
   *excluded* it is filtered out, so the default selection becomes index `0` instead
-  (the previous visible app), preserving the toggle feel.
+  (the previous visible app), preserving the toggle feel. When *Zap itself* is
+  frontmost (Settings or an update alert activated it), the frontmost reads as
+  `nil`; since Zap's own activations are kept out of the MRU list, index `0` is
+  still the app the user is effectively in, so the default selection stays index
+  `1` — a tap must switch *away*, and committing it also hands Zap's lingering
+  activation over.
 - **Known limitation:** there is no public API for the system's own MRU order, so on a
   cold launch Zap starts from its *persisted* order from the previous session (with the
   current frontmost app promoted to the top). Switches made while Zap wasn't running
