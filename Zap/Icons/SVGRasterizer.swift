@@ -49,9 +49,9 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
     /// How long the document may take to load before the render is abandoned.
     static let timeout: TimeInterval = 10
 
-    /// How long the snapshot itself may take, once the page is up. Shorter,
-    /// because by then the work left is a single capture.
-    static let snapshotTimeout: TimeInterval = 5
+    /// How long the render itself may take, once the page is up. Shorter, because
+    /// by then the work left is a PDF capture and the draw into a bitmap.
+    static let renderTimeout: TimeInterval = 5
 
     // MARK: Pure helpers
 
@@ -246,31 +246,73 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         // The page is up, so the load deadline is the wrong one to be holding — but
-        // dropping it outright would leave `takeSnapshot` with no escape hatch, and
-        // a wedged render would then retain this rasterizer (and its web view) for
-        // the rest of the session, stalling the preview loop that awaits it. Swap
-        // it for a shorter one instead: still fails closed, just on the right clock.
+        // dropping it outright would leave the render with no escape hatch, and a
+        // wedged one would then retain this rasterizer (and its web view) for the
+        // rest of the session, stalling the preview loop that awaits it. Swap it
+        // for a shorter one instead: still fails closed, just on the right clock.
         timeoutWork?.cancel()
-        let snapshotDeadline = DispatchWorkItem { [weak self] in self?.finish(.failure(.timedOut)) }
-        timeoutWork = snapshotDeadline
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.snapshotTimeout, execute: snapshotDeadline)
+        let renderDeadline = DispatchWorkItem { [weak self] in self?.finish(.failure(.timedOut)) }
+        timeoutWork = renderDeadline
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.renderTimeout, execute: renderDeadline)
 
-        let configuration = WKSnapshotConfiguration()
+        // PDF rather than `takeSnapshot`, because a snapshot comes back composited
+        // on opaque white. Every icon then reads as `.fullBleed` to the alpha
+        // classifier and gets corner-masked into a white tile — which is what an
+        // SVG with nothing but a `<path>` in it looked like.
+        //
+        // A PDF page carries only the marks the document actually drew, so the
+        // alpha is decided by the context it is drawn into, and that context is
+        // ours. Public API either way; this one just doesn't paint a background
+        // nobody asked for.
+        let configuration = WKPDFConfiguration()
         configuration.rect = CGRect(x: 0, y: 0, width: side, height: side)
-        webView.takeSnapshot(with: configuration) { [weak self] image, error in
+        webView.createPDF(configuration: configuration) { [weak self] result in
             guard let self else { return }
-            var proposed = CGRect(x: 0, y: 0, width: self.side, height: self.side)
-            guard let cgImage = image?.cgImage(forProposedRect: &proposed, context: nil, hints: nil) else {
+            switch result {
+            case .failure(let error):
                 // Logged, not swallowed. Every one of these failures looks identical
                 // in the UI — a picture that didn't draw — and telling them apart
                 // from the outside cost a release once already.
-                NSLog("Zap: SVG snapshot failed: %@",
-                      error?.localizedDescription ?? "no image returned")
+                NSLog("Zap: SVG PDF render failed: %@", error.localizedDescription)
                 self.finish(.failure(.snapshotFailed))
-                return
+            case .success(let data):
+                guard let image = Self.image(fromPDF: data, side: self.side) else {
+                    NSLog("Zap: SVG PDF had no drawable page")
+                    self.finish(.failure(.snapshotFailed))
+                    return
+                }
+                self.finish(.success(image))
             }
-            self.finish(.success(cgImage))
         }
+    }
+
+    /// Draws the first page of `data` into a transparent square bitmap.
+    ///
+    /// The transparency is this function's, not WebKit's: `IconRenderer.makeContext`
+    /// hands back a cleared sRGB context with an alpha channel, and a PDF page adds
+    /// only what the document drew. Nothing paints the background because nothing
+    /// in the document ever did.
+    ///
+    /// Fitted rather than stretched — the page is centred at the largest scale that
+    /// keeps it whole, so a non-square viewBox letterboxes into transparency instead
+    /// of distorting.
+    static func image(fromPDF data: Data, side: Int) -> CGImage? {
+        guard let provider = CGDataProvider(data: data as CFData),
+              let document = CGPDFDocument(provider),
+              let page = document.page(at: 1),
+              let context = IconRenderer.makeContext(width: side, height: side) else { return nil }
+
+        let box = page.getBoxRect(.mediaBox)
+        guard box.width > 0, box.height > 0 else { return nil }
+
+        let scale = min(CGFloat(side) / box.width, CGFloat(side) / box.height)
+        context.translateBy(x: (CGFloat(side) - box.width * scale) / 2,
+                            y: (CGFloat(side) - box.height * scale) / 2)
+        context.scaleBy(x: scale, y: scale)
+        context.translateBy(x: -box.minX, y: -box.minY)
+        context.interpolationQuality = .high
+        context.drawPDFPage(page)
+        return context.makeImage()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
