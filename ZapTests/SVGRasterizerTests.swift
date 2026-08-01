@@ -56,18 +56,44 @@ final class SVGRasterizerTests: XCTestCase {
     }
 
     func testErrorsCarryAMessage() {
-        for error in [SVGRasterizer.RasterizeError.notSVG, .timedOut, .snapshotFailed, .unprotected] {
+        for error in [SVGRasterizer.RasterizeError.notSVG, .timedOut, .snapshotFailed] {
             XCTAssertFalse(error.message.isEmpty)
         }
     }
 
-    /// Refusing to render because the block list wouldn't compile is not the same
-    /// as artwork that won't draw: it happens to *every* SVG on that machine, so
-    /// it must not read as a complaint about the file the user just picked.
-    func testRefusingToRenderUnprotectedReadsDifferentlyFromABadFile() {
-        let unprotected = SVGRasterizer.RasterizeError.unprotected
-        XCTAssertNotEqual(unprotected, .snapshotFailed)
-        XCTAssertNotEqual(unprotected.message, SVGRasterizer.RasterizeError.snapshotFailed.message)
-        XCTAssertNotEqual(unprotected.message, SVGRasterizer.RasterizeError.notSVG.message)
+    // MARK: Content Security Policy
+
+    /// The whole no-network guarantee for untrusted markup. `decidePolicyFor` only
+    /// sees page navigations, so without this an `<image href="https://tracker/…">`
+    /// in a hostile SVG fires silently and leaks the user's IP.
+    func testDocumentForbidsEverySubresourceByDefault() {
+        let html = SVGRasterizer.htmlDocument(forSVG: "<svg></svg>")
+        XCTAssertTrue(html.contains("Content-Security-Policy"))
+        XCTAssertTrue(html.contains("default-src 'none'"))
+    }
+
+    /// A `<meta>` policy applies from where the parser reads it, so anything ahead
+    /// of it in the document would load unprotected. It has to be first.
+    func testPolicyPrecedesTheMarkupItGoverns() {
+        let html = SVGRasterizer.htmlDocument(forSVG: "<svg id=\"marker\"></svg>")
+        guard let policy = html.range(of: "Content-Security-Policy"),
+              let markup = html.range(of: "id=\"marker\"") else {
+            XCTFail("expected both the policy and the markup in the document")
+            return
+        }
+        XCTAssertTrue(policy.lowerBound < markup.lowerBound)
+        // And ahead of the stylesheet and charset too — nothing precedes it.
+        XCTAssertTrue(html.contains("<head><meta http-equiv=\"Content-Security-Policy\""))
+    }
+
+    /// Two exceptions, both deliberate: the wrapper's own `<style>` is inline, and
+    /// a `data:` image is bytes already in hand rather than a request. Neither is a
+    /// path off the machine — but a policy that quietly allowed `https:` would be.
+    func testPolicyAllowsOnlyInlineStyleAndDataImages() {
+        let policy = SVGRasterizer.contentSecurityPolicy
+        XCTAssertTrue(policy.contains("style-src 'unsafe-inline'"))
+        XCTAssertTrue(policy.contains("img-src data:"))
+        XCTAssertFalse(policy.contains("http"))
+        XCTAssertFalse(policy.contains("*"))
     }
 }
