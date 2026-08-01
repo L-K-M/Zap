@@ -77,11 +77,17 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         // the app the user came from *before* dropping to `.accessory`, while Zap is
         // still a regular active app — the reliable direction for yielding activation
         // (the switch-time path, where Zap's active state is ambiguous, is not).
+        // Hand back only while Zap still holds activation: the user may have
+        // clicked into another app while Settings stayed open, and re-activating
+        // the (stale) captured app now would yank them back out of it.
+        let zapIsFrontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            == NSRunningApplication.current.processIdentifier
         if let previous = appToRestoreOnClose,
            !previous.isTerminated,
-           previous.processIdentifier != NSRunningApplication.current.processIdentifier {
+           previous.processIdentifier != NSRunningApplication.current.processIdentifier,
+           zapIsFrontmost {
             WindowEnumerator.activate(previous)
-        } else {
+        } else if zapIsFrontmost {
             // No app to hand back to — Zap was already frontmost when Settings
             // opened, or that app has since quit. Resign activation explicitly so
             // Zap doesn't linger as the frontmost app (which would make the next
