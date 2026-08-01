@@ -383,12 +383,26 @@ final class SwitcherController {
     }
 
     private func defaultSelection(forward: Bool, apps: [AppInfo], frontmostBundleID: String?) -> Int {
-        // `.regular` is set exactly while the Settings window is open (see
-        // `SettingsWindowController`), so it stands in for "a window of Zap's is on
-        // screen" without reaching into `NSApp.windows`, which also carries the
-        // status item's own window and the overlay panel.
         Self.defaultSelection(forward: forward, apps: apps, frontmostBundleID: frontmostBundleID,
-                              zapIsShowingAWindow: NSApp.activationPolicy() == .regular)
+                              zapIsShowingAWindow: Self.zapIsShowingAWindow())
+    }
+
+    /// Whether a window of Zap's own is on screen, for `defaultSelection`.
+    ///
+    /// Two signals, one per window Zap can put up, and neither is `NSApp.windows` —
+    /// that also carries the status item's window and the overlay panel, which are
+    /// exactly what this must not count.
+    ///
+    /// - `.regular` is set for the lifetime of the Settings window and dropped when
+    ///   it closes (`SettingsWindowController`), so it tracks that one precisely.
+    /// - An update alert runs `.accessory`, so the policy says nothing about it —
+    ///   `modalWindow` does, for as long as `runModal` is running. The switcher can
+    ///   genuinely reach this: the event tap is registered on `.commonModes`, and
+    ///   AppKit counts the modal-panel mode among those, so ⌘-Tab is still
+    ///   intercepted while an alert is up. `runModal` blocking the main thread does
+    ///   not make the alert unreachable.
+    private static func zapIsShowingAWindow() -> Bool {
+        NSApp.activationPolicy() == .regular || NSApp.modalWindow != nil
     }
 
     private func advanceSelection(forward: Bool) {
