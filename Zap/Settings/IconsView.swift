@@ -329,11 +329,9 @@ struct IconsView: View {
             .compactMap(AppInfo.init(runningApplication:))
 
         // Apps with a stored override that aren't running right now would
-        // otherwise be unreachable — the user could never undo them. Matched on the
-        // storage key, since that is what the manifest is keyed by.
-        let runningKeys = Set(running.map(\.iconIdentity.storageKey))
-        let offline = store.manifest.entries.keys
-            .filter { !runningKeys.contains($0) }
+        // otherwise be unreachable — the user could never undo them.
+        let offline = Self.offlineKeys(manifestKeys: Array(store.manifest.entries.keys),
+                                       running: running)
             .map(Self.offlineApp(forKey:))
 
         apps = (running + offline)
@@ -346,6 +344,19 @@ struct IconsView: View {
         IconArtworkStatus.load(for: apps.map(\.iconIdentity), store: store) { resolved in
             statuses = resolved
         }
+    }
+
+    /// Which manifest entries still need a row of their own.
+    ///
+    /// Matched against **every** key a running app could be stored under, not just
+    /// the one it would be written to now. An icon set before overrides were keyed
+    /// by path is still filed under the bundle identifier, and comparing only the
+    /// path meant that entry looked like a different, absent app — so a second row
+    /// appeared for something already in the list, and acting on it raced the real
+    /// row. Exactly the upgrade this key change is supposed to be invisible to.
+    static func offlineKeys(manifestKeys: [String], running: [AppInfo]) -> [String] {
+        let covered = Set(running.flatMap { $0.iconIdentity.lookupKeys })
+        return manifestKeys.filter { !covered.contains($0) }
     }
 
     /// Builds a row for a manifest entry whose app isn't running.
