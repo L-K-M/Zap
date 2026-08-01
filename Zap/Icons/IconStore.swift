@@ -84,7 +84,10 @@ final class IconStore {
     /// stale entry can never win a later lookup.
 
     func entry(for identity: IconIdentity) -> IconManifest.Entry? {
-        identity.lookupKeys.lazy.compactMap { entry(forBundleID: $0) }.first
+        for key in identity.lookupKeys {
+            if let entry = entry(forBundleID: key) { return entry }
+        }
+        return nil
     }
 
     func isPinnedToSystemIcon(_ identity: IconIdentity) -> Bool {
@@ -92,7 +95,10 @@ final class IconStore {
     }
 
     func imageURL(for identity: IconIdentity) -> URL? {
-        identity.lookupKeys.lazy.compactMap { imageURL(forBundleID: $0) }.first
+        for key in identity.lookupKeys {
+            if let url = imageURL(forBundleID: key) { return url }
+        }
+        return nil
     }
 
     func customImage(for identity: IconIdentity) -> CGImage? {
