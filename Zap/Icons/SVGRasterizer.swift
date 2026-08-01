@@ -80,8 +80,17 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
     ///   base64 renders in the wrong face with nothing to say why.
     ///
     /// Anything naming a scheme or a host belongs in neither list.
-    static let contentSecurityPolicy =
-        "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:"
+    ///
+    /// `base-uri` and `form-action` are spelled out because they are the two
+    /// directives that do **not** fall back to `default-src`. Nothing here can
+    /// exploit their absence today — a `<base>` in `<body>` is ignored by the
+    /// parser, its consequences would hit `default-src` anyway, and submitting a
+    /// form needs either JavaScript or a click, neither of which a headless render
+    /// has. They are named so the policy states the whole guarantee by itself,
+    /// rather than resting on conditions kept three methods away that could each
+    /// change without anyone rereading this line.
+    static let contentSecurityPolicy = "default-src 'none'; base-uri 'none'; "
+        + "form-action 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:"
 
     /// Wraps SVG markup in a minimal document that scales it to fill the viewport
     /// on a transparent background.

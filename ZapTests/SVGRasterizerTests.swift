@@ -116,4 +116,14 @@ final class SVGRasterizerTests: XCTestCase {
         XCTAssertTrue(policy.contains("img-src data:"))
         XCTAssertTrue(policy.contains("font-src data:"))
     }
+
+    /// The two directives that don't inherit from `default-src`, so a policy that
+    /// leaves them out is silently narrower than it reads. Asserted separately
+    /// because the parse test above can't catch a *missing* directive — every
+    /// source it does name is `'none'`, which passes either way.
+    func testPolicyStatesTheDirectivesThatDoNotInherit() {
+        let policy = SVGRasterizer.contentSecurityPolicy
+        XCTAssertTrue(policy.contains("base-uri 'none'"))
+        XCTAssertTrue(policy.contains("form-action 'none'"))
+    }
 }
