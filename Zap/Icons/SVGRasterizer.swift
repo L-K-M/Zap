@@ -9,11 +9,20 @@ import WebKit
 /// some SPI, but it is undocumented and throws on gradients. A web view is public
 /// API, roughly the same amount of code, and renders what a browser renders.
 ///
-/// Rendering fetched SVG means parsing untrusted markup, so: JavaScript off, a
-/// navigation delegate that denies everything after the initial in-memory load,
-/// and no persistent data store. It runs once per icon inside a Settings sheet —
-/// never on the switcher's hot path — and the result is baked to PNG on disk, so
-/// the cost is paid exactly once.
+/// Rendering fetched SVG means parsing untrusted markup, so: JavaScript off, no
+/// persistent data store, a navigation delegate that permits exactly one page
+/// navigation, and — the part navigation policy does *not* cover — a content rule
+/// list blocking every network subresource.
+///
+/// That last one matters. `decidePolicyFor` only sees page-level navigations, so
+/// on its own it would let `<image href="https://tracker/pixel.png">`, a CSS
+/// `url(…)` or `<use href="https://…">` inside a hostile SVG fire silently and
+/// leak the user's IP. The rule list is what actually makes "nothing but the
+/// markup we handed it" true, and rendering **fails closed** if it can't be
+/// compiled rather than proceeding unprotected.
+///
+/// It runs once per icon inside a Settings sheet — never on the switcher's hot
+/// path — and the result is baked to PNG on disk, so the cost is paid once.
 final class SVGRasterizer: NSObject, WKNavigationDelegate {
 
     enum RasterizeError: Error, Equatable {
@@ -86,10 +95,19 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         }
     }
 
+    /// Blocks every network scheme. `about:blank` — the in-memory document itself —
+    /// doesn't match, so the markup still loads while nothing it references does.
+    static let networkBlockRuleJSON =
+        #"[{"trigger":{"url-filter":"^(https?|ftps?|wss?)://"},"action":{"type":"block"}}]"#
+
+    /// Compiled once and reused; compilation is not cheap.
+    private static var compiledRules: WKContentRuleList?
+
     private let side: Int
     private var webView: WKWebView?
     private var completion: ((Result<CGImage, RasterizeError>) -> Void)?
     private var selfRetain: SVGRasterizer?
+    private var timeoutWork: DispatchWorkItem?
     private var hasAllowedInitialLoad = false
 
     private init(side: Int) {
@@ -115,12 +133,46 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         webView.underPageBackgroundColor = .clear
         self.webView = webView
 
-        // `baseURL: nil` leaves the document with no origin and nothing to resolve
-        // a relative URL against, which is the property §6.3 wants from `data:`.
-        webView.loadHTMLString(Self.htmlDocument(forSVG: markup), baseURL: nil)
+        let timeout = DispatchWorkItem { [weak self] in self?.finish(.failure(.timedOut)) }
+        timeoutWork = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.timeout, execute: timeout)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.timeout) { [weak self] in
-            self?.finish(.failure(.timedOut))
+        applyNetworkBlock(to: configuration) { [weak self] blocked in
+            guard let self else { return }
+            guard blocked else {
+                // Fail closed: without the rule list, a hostile SVG's subresources
+                // would reach the network, and that is the guarantee being made.
+                self.finish(.failure(.snapshotFailed))
+                return
+            }
+            // `baseURL: nil` leaves the document with no origin and nothing to
+            // resolve a relative URL against — the property §6.3 wants from `data:`.
+            webView.loadHTMLString(Self.htmlDocument(forSVG: markup), baseURL: nil)
+        }
+    }
+
+    /// Adds the compiled block-everything rule list, compiling it on first use.
+    /// Main queue only; `completion` is called there too.
+    private func applyNetworkBlock(to configuration: WKWebViewConfiguration,
+                                   completion: @escaping (Bool) -> Void) {
+        if let rules = Self.compiledRules {
+            configuration.userContentController.add(rules)
+            completion(true)
+            return
+        }
+        guard let store = WKContentRuleListStore.default() else {
+            completion(false)
+            return
+        }
+        store.compileContentRuleList(forIdentifier: "zap-svg-block-network",
+                                     encodedContentRuleList: Self.networkBlockRuleJSON) { rules, _ in
+            guard let rules else {
+                completion(false)
+                return
+            }
+            Self.compiledRules = rules
+            configuration.userContentController.add(rules)
+            completion(true)
         }
     }
 
@@ -128,6 +180,9 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
     private func finish(_ result: Result<CGImage, RasterizeError>) {
         guard let completion else { return }
         self.completion = nil
+        // Stop the deadline from firing over a snapshot that is already in flight.
+        timeoutWork?.cancel()
+        timeoutWork = nil
         webView?.navigationDelegate = nil
         webView = nil
         completion(result)
@@ -149,6 +204,11 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // The page is up; the remaining work is the snapshot, which shouldn't be
+        // raced by the load deadline.
+        timeoutWork?.cancel()
+        timeoutWork = nil
+
         let configuration = WKSnapshotConfiguration()
         configuration.rect = CGRect(x: 0, y: 0, width: side, height: side)
         webView.takeSnapshot(with: configuration) { [weak self] image, _ in

@@ -24,6 +24,8 @@ struct IconSearchSheet: View {
     @State private var problem: String?
     /// Whether the user has acknowledged what a search sends, this session.
     @State private var hasAcknowledgedDisclosure = false
+    /// Bumped per search, so previews from a replaced one are discarded.
+    @State private var previewGeneration = 0
 
     init(app: AppInfo, provider: IconSearchProvider,
          onAdopt: @escaping (IconSearchResult, CGImage) -> Void,
@@ -164,21 +166,34 @@ struct IconSearchSheet: View {
                 case .failure(let error): problem = error.message
                 case .success(let items):
                     results = items
-                    for item in items.prefix(24) { loadPreview(item) }
+                    previewGeneration += 1
+                    loadPreviews(items, generation: previewGeneration)
                 }
             }
         }
     }
 
-    /// Renders one result small, for the grid. Deliberately capped to the first
-    /// screenful: rasterising 48 SVGs to preview them would be wasteful.
-    private func loadPreview(_ result: IconSearchResult) {
+    /// How many results get a rendered preview. Capped to about a screenful:
+    /// rasterising all 48 to preview them would be wasteful.
+    private static let previewLimit = 24
+
+    /// Renders previews **one at a time**. Each render stands up a `WKWebView`,
+    /// which is heavyweight enough that two dozen alive at once is a real memory
+    /// spike — for previews the user may never scroll to. Sequential awaits keep
+    /// exactly one alive.
+    ///
+    /// `generation` drops results from a search the user has already replaced.
+    private func loadPreviews(_ items: [IconSearchResult], generation: Int) {
         Task {
-            guard case .success(let data) = await provider.fetchImageData(for: result) else { return }
-            let rendered = await SVGRasterizer.rasterize(data, side: 128)
-            guard case .success(let image) = rendered else { return }
-            await MainActor.run {
-                previews[result.id] = NSImage(cgImage: image, size: NSSize(width: 56, height: 56))
+            for item in items.prefix(Self.previewLimit) {
+                guard case .success(let data) = await provider.fetchImageData(for: item) else { continue }
+                guard case .success(let image) = await SVGRasterizer.rasterize(data, side: 128) else { continue }
+                let stale = await MainActor.run { () -> Bool in
+                    guard generation == previewGeneration else { return true }
+                    previews[item.id] = NSImage(cgImage: image, size: NSSize(width: 56, height: 56))
+                    return false
+                }
+                if stale { return }
             }
         }
     }

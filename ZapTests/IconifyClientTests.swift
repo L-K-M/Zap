@@ -93,9 +93,40 @@ final class IconifyClientTests: XCTestCase {
         XCTAssertFalse(client.disclosure.isEmpty)
     }
 
-    func testEmptyQueryDoesNotSearch() async {
-        // Never send a request for nothing — and never automatically (§5.5).
-        let result = await IconifyClient().search(query: "   ", limit: 10)
-        XCTAssertEqual(result.successValue?.isEmpty, true)
+    /// §5.5's "never search automatically" is only worth anything if an empty query
+    /// makes *no request at all*. Asserting an empty result wouldn't prove that — a
+    /// server returning zero hits for whitespace looks identical. So the session is
+    /// wired to a protocol that fails every request it sees: if the guard is ever
+    /// removed, this stops returning success.
+    func testEmptyQueryIssuesNoRequest() async {
+        RefusingURLProtocol.requestCount = 0
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RefusingURLProtocol.self]
+        let client = IconifyClient(session: URLSession(configuration: configuration))
+
+        for query in ["", "   ", "\n\t"] {
+            let result = await client.search(query: query, limit: 10)
+            XCTAssertEqual(result.successValue?.isEmpty, true,
+                           "a blank query must short-circuit before the network")
+        }
+        XCTAssertEqual(RefusingURLProtocol.requestCount, 0)
     }
+}
+
+/// Fails every request and counts them, so a test can assert none was made.
+final class RefusingURLProtocol: URLProtocol {
+    static var requestCount = 0
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        requestCount += 1
+        return true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+    }
+
+    override func stopLoading() {}
 }

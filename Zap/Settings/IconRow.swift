@@ -65,7 +65,7 @@ struct IconRow: View {
         .dropDestination(for: URL.self) { urls, _ in
             guard let url = urls.first else { return false }
             return onDrop(url)
-        } isTargeted: onDropTargeted
+        } isTargeted: { onDropTargeted($0) }
         .listRowBackground(isDropTarget ? Color.accentColor.opacity(0.15) : Color.clear)
     }
 }
