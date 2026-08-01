@@ -9,13 +9,19 @@ struct IconsView: View {
     let iconResolver: IconResolver
 
     @State private var apps: [AppInfo] = []
-    @State private var statuses: [String: IconResolver.Status] = [:]
+    @State private var statuses: [String: IconArtworkStatus] = [:]
     @State private var search = ""
     @State private var problem: String?
     /// Bundle identifier of the row a drag is currently over.
     @State private var dropTarget: String?
     /// Bundle identifiers with a remote fetch in flight.
     @State private var fetching: Set<String> = []
+    /// The app whose search sheet is open, if any.
+    @State private var searchingApp: AppInfo?
+
+    /// The keyless provider (`UNJAILED.md §5.2` conclusion 3). Held here rather
+    /// than rebuilt per sheet so its set metadata is fetched once per session.
+    @State private var searchProvider: IconSearchProvider = IconifyClient()
 
     private var filteredApps: [AppInfo] {
         guard !search.isEmpty else { return apps }
@@ -39,6 +45,28 @@ struct IconsView: View {
             footer
         }
         .onAppear(perform: reload)
+        .sheet(item: $searchingApp) { app in
+            IconSearchSheet(
+                app: app,
+                provider: searchProvider,
+                onAdopt: { result, image in
+                    searchingApp = nil
+                    adopt(result, image: image, for: app)
+                },
+                onCancel: { searchingApp = nil })
+        }
+    }
+
+    /// Stores a searched-for icon, carrying its credit into the manifest — §5.4
+    /// makes attribution a hard requirement, not a display-time nicety.
+    private func adopt(_ result: IconSearchResult, image: CGImage, for app: AppInfo) {
+        apply(store.setCustomIcon(image, forBundleID: app.bundleIdentifier,
+                                  origin: .search,
+                                  credit: result.credit,
+                                  creditURL: result.creditURL?.absoluteString,
+                                  provider: result.providerID,
+                                  license: result.license),
+              for: app)
     }
 
     // MARK: Header
@@ -78,49 +106,25 @@ struct IconsView: View {
     // MARK: Rows
 
     private func row(for app: AppInfo) -> some View {
-        HStack(spacing: 8) {
-            Image(nsImage: icon(for: app) ?? NSImage())
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 24, height: 24)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(app.name)
-                Text(rowStatus(for: app))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Menu {
-                Button("Choose File…") { chooseFile(for: app) }
-                Button("Use Original Artwork") { useOriginalArtwork(for: app) }
-                    .disabled(!hasOverride(app))
-                Button("Use System Icon") { useSystemIcon(for: app) }
-                    .disabled(statuses[app.bundleIdentifier]?.isPinnedToSystemIcon == true)
-            } label: {
-                Image(systemName: "ellipsis.circle")
-            }
-            .fixedSize()
-        }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
-        // §5.3: the browser is the search box. A drag from one carries a URL rather
-        // than a file, and that is the more important ingestion path of the two.
-        .dropDestination(for: URL.self) { urls, _ in
-            guard let url = urls.first else { return false }
-            return adopt(url, for: app)
-        } isTargeted: { targeted in
-            if targeted {
-                dropTarget = app.bundleIdentifier
-            } else if dropTarget == app.bundleIdentifier {
-                dropTarget = nil
-            }
-        }
-        .listRowBackground(dropTarget == app.bundleIdentifier
-                           ? Color.accentColor.opacity(0.15) : Color.clear)
+        IconRow(
+            app: app,
+            icon: icon(for: app),
+            status: rowStatus(for: app),
+            hasOverride: hasOverride(app),
+            isPinnedToSystemIcon: statuses[app.bundleIdentifier]?.isPinnedToSystemIcon == true,
+            isDropTarget: dropTarget == app.bundleIdentifier,
+            onChooseFile: { chooseFile(for: app) },
+            onSearch: { searchingApp = app },
+            onUseOriginalArtwork: { useOriginalArtwork(for: app) },
+            onUseSystemIcon: { useSystemIcon(for: app) },
+            onDrop: { adopt($0, for: app) },
+            onDropTargeted: { targeted in
+                if targeted {
+                    dropTarget = app.bundleIdentifier
+                } else if dropTarget == app.bundleIdentifier {
+                    dropTarget = nil
+                }
+            })
     }
 
     /// What the row's caption says, including transient states the status fetch
@@ -301,7 +305,7 @@ struct IconsView: View {
 
     /// Statuses decode bundle artwork, so they're gathered off the main thread.
     private func reloadStatuses() {
-        iconResolver.statuses(forBundleIDs: apps.map(\.bundleIdentifier)) { resolved in
+        IconArtworkStatus.load(forBundleIDs: apps.map(\.bundleIdentifier), store: store) { resolved in
             statuses = resolved
         }
     }
