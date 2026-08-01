@@ -59,10 +59,18 @@ struct IconifyClient: IconSearchProvider {
         guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
         let (prefix, name) = (parts[0], parts[1])
 
+        // Percent-encoded rather than interpolated raw: Iconify identifiers are
+        // conventionally `[a-z0-9-]`, but nothing here enforces that, and a name
+        // carrying `?`, `#` or `/` would otherwise silently address the wrong
+        // resource — or none.
+        guard let safePrefix = prefix.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let safeName = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+        else { return nil }
+
         // Ask for the master size directly; Iconify rasterises nothing, but the
         // height hint sets the SVG's intrinsic size, which the rasteriser scales to.
         guard let imageURL = URL(string:
-            "\(host)/\(prefix)/\(name).svg?height=\(IconImageValidator.Limits.masterLongestEdge)")
+            "\(host)/\(safePrefix)/\(safeName).svg?height=\(IconImageValidator.Limits.masterLongestEdge)")
         else { return nil }
 
         let collection = sets[prefix]
@@ -73,7 +81,7 @@ struct IconifyClient: IconSearchProvider {
             imageURL: imageURL,
             isVector: true,
             credit: collection?.name ?? prefix,
-            creditURL: URL(string: "https://icon-sets.iconify.design/\(prefix)/\(name)/"),
+            creditURL: URL(string: "https://icon-sets.iconify.design/\(safePrefix)/\(safeName)/"),
             license: collection?.license?.title)
     }
 

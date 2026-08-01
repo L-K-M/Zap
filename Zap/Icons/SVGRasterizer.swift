@@ -39,8 +39,12 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         }
     }
 
-    /// How long a single render may take before it's abandoned.
+    /// How long the document may take to load before the render is abandoned.
     static let timeout: TimeInterval = 10
+
+    /// How long the snapshot itself may take, once the page is up. Shorter,
+    /// because by then the work left is a single capture.
+    static let snapshotTimeout: TimeInterval = 5
 
     // MARK: Pure helpers
 
@@ -204,10 +208,15 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // The page is up; the remaining work is the snapshot, which shouldn't be
-        // raced by the load deadline.
+        // The page is up, so the load deadline is the wrong one to be holding — but
+        // dropping it outright would leave `takeSnapshot` with no escape hatch, and
+        // a wedged render would then retain this rasterizer (and its web view) for
+        // the rest of the session, stalling the preview loop that awaits it. Swap
+        // it for a shorter one instead: still fails closed, just on the right clock.
         timeoutWork?.cancel()
-        timeoutWork = nil
+        let snapshotDeadline = DispatchWorkItem { [weak self] in self?.finish(.failure(.timedOut)) }
+        timeoutWork = snapshotDeadline
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.snapshotTimeout, execute: snapshotDeadline)
 
         let configuration = WKSnapshotConfiguration()
         configuration.rect = CGRect(x: 0, y: 0, width: side, height: side)

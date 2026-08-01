@@ -31,11 +31,21 @@ struct IconRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(nsImage: icon ?? NSImage())
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 24, height: 24)
+            // A placeholder rather than a blank tile: the resolver may not have
+            // reached this app yet, and an empty square reads as a broken row.
+            if let icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 24, height: 24)
+            } else {
+                Image(systemName: "app.dashed")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 24, height: 24)
+                    .foregroundStyle(.tertiary)
+            }
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(app.name)

@@ -26,6 +26,10 @@ struct IconSearchSheet: View {
     @State private var hasAcknowledgedDisclosure = false
     /// Bumped per search, so previews from a replaced one are discarded.
     @State private var previewGeneration = 0
+    /// Bumped per search, so a slow earlier search can't land on top of a newer
+    /// one — the Search button is disabled while one is running, but `onSubmit`
+    /// isn't.
+    @State private var searchGeneration = 0
 
     init(app: AppInfo, provider: IconSearchProvider,
          onAdopt: @escaping (IconSearchResult, CGImage) -> Void,
@@ -154,6 +158,8 @@ struct IconSearchSheet: View {
 
     private func runSearch() {
         let text = query
+        searchGeneration += 1
+        let generation = searchGeneration
         isSearching = true
         problem = nil
         results = []
@@ -161,6 +167,7 @@ struct IconSearchSheet: View {
         Task {
             let found = await provider.search(query: text, limit: 48)
             await MainActor.run {
+                guard generation == searchGeneration else { return }
                 isSearching = false
                 switch found {
                 case .failure(let error): problem = error.message

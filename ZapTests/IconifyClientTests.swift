@@ -100,6 +100,7 @@ final class IconifyClientTests: XCTestCase {
     /// removed, this stops returning success.
     func testEmptyQueryIssuesNoRequest() async {
         RefusingURLProtocol.requestCount = 0
+        defer { RefusingURLProtocol.requestCount = 0 }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [RefusingURLProtocol.self]
         let client = IconifyClient(session: URLSession(configuration: configuration))
@@ -115,7 +116,10 @@ final class IconifyClientTests: XCTestCase {
 
 /// Fails every request and counts them, so a test can assert none was made.
 final class RefusingURLProtocol: URLProtocol {
-    static var requestCount = 0
+    /// Written from `canInit(with:)`, which the URL loading system calls on a
+    /// background thread. Unsynchronised on purpose — the test it serves asserts
+    /// this stays at zero — but marked so strict concurrency doesn't have to guess.
+    nonisolated(unsafe) static var requestCount = 0
 
     override class func canInit(with request: URLRequest) -> Bool {
         requestCount += 1
