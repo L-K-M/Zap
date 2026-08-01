@@ -756,7 +756,9 @@ final class SwitcherController {
         configuration.activates = true
         NSWorkspace.shared.open(urls, withApplicationAt: appURL, configuration: configuration) { _, error in
             if let error {
-                NSLog("Zap: failed to open %d file(s) with %@: %@", urls.count,
+                // `%ld`, not `%d`: Swift's `Int` is 64-bit on every Apple platform,
+                // and `%d` is a C `int`.
+                NSLog("Zap: failed to open %ld file(s) with %@: %@", urls.count,
                       target.bundleIdentifier, error.localizedDescription)
             }
         }
