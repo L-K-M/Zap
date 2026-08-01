@@ -1,8 +1,8 @@
 # UNJAILED — custom, un-squircled icons for the Zap switcher
 
-*A design study, July 2026. **Phases 1 and 2 (§10) are implemented**; phases 3–5 are
-not. Sections describing shipped behaviour are marked; everything else is still
-design.*
+*A design study, July 2026. **Phases 1, 2 and 4 (§10) are implemented.** Phase 3
+was deliberately skipped and phase 5 is not built. Sections describing shipped
+behaviour are marked; everything else is still design.*
 
 macOS 26 puts every app icon in the same rounded-rectangle mask. Zap draws its own
 icon row, so it is not obliged to. This document works out what it would take for
@@ -659,7 +659,7 @@ whether the feature works at all:
 | **1** ✅ | `BundleArtwork` + `IconShapeClassifier` + `IconResolver` + `IconStore`/manifest + Icons tab with Original / System / Choose File… | **The actual fix.** Offline, no network code, no API key, no new formats, no dependency. Most users need nothing else. |
 | **2** ✅ | `IconNormalizer` + bleed/trim/shadow in `IconRowMetrics` + Appearance controls; **drag-a-URL / drag-from-browser ingestion** + the §6.4 untrusted-decode hardening it requires | Makes mixed shapes look deliberate rather than ragged, and lets the user search the web where searching the web is still free (§5.3) |
 | **3** | macOSicons search (BYO key), attribution plumbing, privacy sheet | The "don't make me leave the app" part — strictly optional once phase 2 exists |
-| **4** | WKWebView SVG rasterisation → Iconify / SVGL providers | Large keyless corpus |
+| **4** ✅ | WKWebView SVG rasterisation → Iconify / SVGL providers | Large keyless corpus |
 | **5** | `.zapicons` pack export/import | Sharing, and the same shape as theme presets |
 
 Phase 1 stands alone and is worth shipping alone. Everything after it is optional
@@ -701,6 +701,35 @@ polish on a problem already solved for the majority of apps.
 - Not done: `iconBleed`/trim/shadow are **not** in `AppearancePreset`. Adding
   non-optional fields to it would break importing older theme `.json` files, so a
   shared theme doesn't carry them yet; it wants optional fields with defaults.
+
+**What phase 4 shipped, and why phase 3 was skipped rather than deferred.**
+
+- `SVGRasterizer` (offscreen `WKWebView`, JavaScript off, a navigation delegate
+  that permits exactly one in-memory load, non-persistent data store),
+  `IconSearchProvider` + `IconSearchResult`, the keyless `IconifyClient`, and a
+  search sheet carrying §5.5's rules structurally: prefilled-but-editable query,
+  nothing sent until the button is pressed, disclosure shown before the first
+  search of a session, bundle identifier never sent.
+- **Skipping phase 3 costs nothing**, which §12 question 3 already suspected.
+  Phase 3 was macOSicons behind a BYO key; phase 4's Iconify is keyless, so the
+  provider protocol got built and exercised by a *real* provider rather than by a
+  paid one nobody had signed up for. If macOSicons is ever wanted it slots in
+  behind the same protocol.
+- Attribution is on `IconSearchResult` rather than looked up at save time, so the
+  credit reaches the manifest — §5.4's condition for a provider being allowed to
+  exist at all. Iconify's `/search` returns bare `prefix:name` strings, so set
+  names and licences come from `/collections`, fetched once per session.
+- **`loadHTMLString(_:baseURL: nil)` rather than a `data:` URL.** §6.3 asks for
+  `data:` so the document has no origin; `baseURL: nil` gives the same property
+  (no origin, nothing to resolve a relative URL against) and is the supported way
+  to hand `WKWebView` in-memory markup.
+- **Unverified:** whether `takeSnapshot` preserves the SVG's transparency. The
+  page is transparent and `underPageBackgroundColor` is clear, but if a snapshot
+  comes back composited on white the alpha classifier will read every rasterised
+  icon as `.fullBleed` and corner-mask it — degraded, not broken. Wants a real
+  machine, like the rest of §9's manual list.
+- SVGL is **not** built. It is ~400 logos against Iconify's ~300k, and the same
+  protocol takes it whenever someone wants it.
 
 Still open from §12, unchanged by shipping: the load-bearing
 `Bundle.image(forResource:)` claim (question 1) has still never been run against a

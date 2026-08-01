@@ -16,6 +16,12 @@ struct IconsView: View {
     @State private var dropTarget: String?
     /// Bundle identifiers with a remote fetch in flight.
     @State private var fetching: Set<String> = []
+    /// The app whose search sheet is open, if any.
+    @State private var searchingApp: AppInfo?
+
+    /// The keyless provider (`UNJAILED.md §5.2` conclusion 3). Held here rather
+    /// than rebuilt per sheet so its set metadata is fetched once per session.
+    @State private var searchProvider: IconSearchProvider = IconifyClient()
 
     private var filteredApps: [AppInfo] {
         guard !search.isEmpty else { return apps }
@@ -39,6 +45,28 @@ struct IconsView: View {
             footer
         }
         .onAppear(perform: reload)
+        .sheet(item: $searchingApp) { app in
+            IconSearchSheet(
+                app: app,
+                provider: searchProvider,
+                onAdopt: { result, image in
+                    searchingApp = nil
+                    adopt(result, image: image, for: app)
+                },
+                onCancel: { searchingApp = nil })
+        }
+    }
+
+    /// Stores a searched-for icon, carrying its credit into the manifest — §5.4
+    /// makes attribution a hard requirement, not a display-time nicety.
+    private func adopt(_ result: IconSearchResult, image: CGImage, for app: AppInfo) {
+        apply(store.setCustomIcon(image, forBundleID: app.bundleIdentifier,
+                                  origin: .search,
+                                  credit: result.credit,
+                                  creditURL: result.creditURL?.absoluteString,
+                                  provider: result.providerID,
+                                  license: result.license),
+              for: app)
     }
 
     // MARK: Header
@@ -86,6 +114,7 @@ struct IconsView: View {
             isPinnedToSystemIcon: statuses[app.bundleIdentifier]?.isPinnedToSystemIcon == true,
             isDropTarget: dropTarget == app.bundleIdentifier,
             onChooseFile: { chooseFile(for: app) },
+            onSearch: { searchingApp = app },
             onUseOriginalArtwork: { useOriginalArtwork(for: app) },
             onUseSystemIcon: { useSystemIcon(for: app) },
             onDrop: { adopt($0, for: app) },

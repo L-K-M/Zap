@@ -22,6 +22,7 @@ struct IconRow: View {
     let isDropTarget: Bool
 
     var onChooseFile: () -> Void
+    var onSearch: () -> Void
     var onUseOriginalArtwork: () -> Void
     var onUseSystemIcon: () -> Void
     /// Returns whether the drop was accepted; refusing makes the drag snap back.
@@ -47,6 +48,7 @@ struct IconRow: View {
 
             Menu {
                 Button("Choose File…", action: onChooseFile)
+                Button("Search for an Icon…", action: onSearch)
                 Button("Use Original Artwork", action: onUseOriginalArtwork)
                     .disabled(!hasOverride)
                 Button("Use System Icon", action: onUseSystemIcon)
