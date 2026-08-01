@@ -54,12 +54,31 @@ final class IconIdentityTests: XCTestCase {
         XCTAssertEqual(identity.legacyKey, "com.apple.Safari")
     }
 
+    /// Two spellings of one path are one app — by key *and* by identity.
+    ///
+    /// The resolver caches on `IconIdentity`, so agreeing on the key while
+    /// disagreeing on equality would give one app two cache entries and an
+    /// `invalidate` that clears only one of them.
     func testPathsAreStandardisedSoTheSameAppKeysTheSameWay() {
         let plain = IconIdentity(bundleIdentifier: "a.b",
                                  bundleURL: URL(fileURLWithPath: "/Applications/Safari.app"))
         let noisy = IconIdentity(bundleIdentifier: "a.b",
                                  bundleURL: URL(fileURLWithPath: "/Applications/./Safari.app"))
         XCTAssertEqual(plain.storageKey, noisy.storageKey)
+        XCTAssertEqual(plain, noisy)
+        XCTAssertEqual(Set([plain, noisy]).count, 1)
+    }
+
+    /// `==` and `hash(into:)` have to agree, and a `Set` is where they'd disagree
+    /// loudly: equal values that hash apart both survive insertion.
+    func testEqualIdentitiesHashTogether() {
+        let byPath = IconIdentity(bundleIdentifier: "com.google.Chrome",
+                                  bundleURL: URL(fileURLWithPath: "/Applications/Claude ★.app"))
+        let sameApp = IconIdentity(bundleIdentifier: "something.else.entirely",
+                                   bundleURL: URL(fileURLWithPath: "/Applications/Claude ★.app"))
+        // Same bundle, so the same app, whatever identifier it claims.
+        XCTAssertEqual(byPath, sameApp)
+        XCTAssertEqual(Set([byPath, sameApp]).count, 1)
     }
 
     // MARK: Reading a key back

@@ -39,6 +39,24 @@ struct IconIdentity: Equatable, Hashable {
         self.bundleURL = bundleURL
     }
 
+    /// Identity is the storage key's, not the stored properties'.
+    ///
+    /// `IconResolver` caches on this type, so two references to one app have to
+    /// land on the same entry. Synthesised conformance would compare the raw URL,
+    /// which `storageKey` standardises — leaving `/Applications/./Safari.app` and
+    /// `/Applications/Safari.app` as two apps to the cache and one to the store:
+    /// a resolve done twice, and an `invalidate` that clears only one of them.
+    static func == (lhs: IconIdentity, rhs: IconIdentity) -> Bool {
+        lhs.storageKey == rhs.storageKey
+    }
+
+    /// Must stay in step with `==` above — and must be the instance method, since
+    /// a `static` one would leave `Hashable` synthesised and equal values hashing
+    /// apart, which compiles and is worse than either choice made deliberately.
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(storageKey)
+    }
+
     /// What a new override is stored under.
     var storageKey: String {
         guard let bundleURL else { return bundleIdentifier }
