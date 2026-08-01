@@ -231,11 +231,9 @@ final class UpdateChecker: ObservableObject {
         // leaves Zap frontmost — and the next ⌘-Tab then appears to do nothing
         // (see `SwitcherController.defaultSelection`).
         let previous = NSWorkspace.shared.frontmostApplication
-        if #available(macOS 14.0, *) {
-            NSApp.activate()
-        } else {
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        // Unhides too: a Settings close that resigned activation leaves the process
+        // hidden, and a hidden app's alert never reaches the screen.
+        WindowEnumerator.activateSelfForOwnWindow()
         alert.window.level = .floating
         let response = alert.runModal()
         // Hand back only if Zap still holds activation: the user may have clicked

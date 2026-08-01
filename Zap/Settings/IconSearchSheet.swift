@@ -65,6 +65,15 @@ struct IconSearchSheet: View {
         }
         .padding(16)
         .frame(width: 560, height: 460)
+        // Dismissing the sheet retires both generations, which is what the
+        // preview loop checks between renders. Without it, cancelling mid-search
+        // leaves up to `previewLimit` fetch-and-rasterise rounds running for a
+        // sheet that is already gone — each one standing up a `WKWebView` to
+        // render a preview nobody can see.
+        .onDisappear {
+            searchGeneration += 1
+            previewGeneration += 1
+        }
     }
 
     // MARK: Disclosure
@@ -205,13 +214,22 @@ struct IconSearchSheet: View {
         }
     }
 
+    /// Fetches and rasterises the chosen result, then hands it to `onAdopt`.
+    ///
+    /// Generation-guarded like the search itself. Cancel stays enabled while a
+    /// result is being fetched, so without the guard a user who picks an icon and
+    /// then changes their mind still gets it: the render finishes after the sheet
+    /// is gone and `onAdopt` writes it to the store anyway. Searching again mid-fetch
+    /// retires it for the same reason — they have moved on from that result.
     private func adopt(_ result: IconSearchResult) {
         isAdopting = true
         problem = nil
+        let generation = searchGeneration
         Task {
             let fetched = await provider.fetchImageData(for: result)
             guard case .success(let data) = fetched else {
                 await MainActor.run {
+                    guard generation == searchGeneration else { return }
                     isAdopting = false
                     if case .failure(let error) = fetched { problem = error.message }
                 }
@@ -219,6 +237,7 @@ struct IconSearchSheet: View {
             }
             let rendered = await SVGRasterizer.rasterize(data)
             await MainActor.run {
+                guard generation == searchGeneration else { return }
                 isAdopting = false
                 switch rendered {
                 case .failure(let error): problem = error.message

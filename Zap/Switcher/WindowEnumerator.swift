@@ -268,6 +268,25 @@ enum WindowEnumerator {
         return activated
     }
 
+    /// Brings *Zap* forward to show a window of its own (Settings, an update alert).
+    ///
+    /// Unhides first when it has to. Closing Settings with nobody to hand activation
+    /// back to resigns it with `NSApp.hide(nil)`, which leaves the process hidden —
+    /// and a hidden app's windows don't reach the screen. Zap is `.accessory` with no
+    /// Dock icon and is filtered out of its own switcher, so nothing the user can
+    /// click would unhide it: without this, Settings and update alerts would be
+    /// unreachable until Zap is relaunched. `unhide` activates as well, but the
+    /// explicit `activate` still runs — it is the documented request, and `unhide`
+    /// is only reached on the hidden path.
+    static func activateSelfForOwnWindow() {
+        if NSApp.isHidden { NSApp.unhide(nil) }
+        if #available(macOS 14.0, *) {
+            NSApp.activate()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
     @discardableResult
     private static func requestActivation(of app: NSRunningApplication, allWindows: Bool) -> Bool {
         if #available(macOS 14.0, *) {

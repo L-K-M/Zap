@@ -60,11 +60,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
 
         NSApp.setActivationPolicy(.regular)
-        if #available(macOS 14.0, *) {
-            NSApp.activate()
-        } else {
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        // Unhides if a previous close resigned activation via `NSApp.hide(nil)`;
+        // ordering a window front while the process is hidden shows nothing.
+        WindowEnumerator.activateSelfForOwnWindow()
         window?.makeKeyAndOrderFront(nil)
     }
 

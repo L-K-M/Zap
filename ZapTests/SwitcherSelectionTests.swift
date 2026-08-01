@@ -40,24 +40,41 @@ final class SwitcherSelectionTests: XCTestCase {
         )
     }
 
-    func testForwardWithNilFrontmostPicksPreviousApp() {
-        // A nil frontmost means Zap itself is frontmost (Settings / update alert).
-        // The MRU list skips Zap's activations, so index 0 (b) is still the app
-        // the user is effectively in; selecting it would commit the current app
-        // and read as a dead switcher. The real previous app is index 1.
+    func testForwardWithLeftoverZapActivationPicksPreviousApp() {
+        // A nil frontmost with no window of Zap's on screen is activation left over
+        // from a closed Settings window or a dismissed update alert. The MRU list
+        // skips Zap's activations, so index 0 (b) is still the app the user is
+        // looking at; selecting it would commit the current app and read as a dead
+        // switcher. The real previous app is index 1.
         let apps = [app("b"), app("c")]
         XCTAssertEqual(
-            SwitcherController.defaultSelection(forward: true, apps: apps, frontmostBundleID: nil),
+            SwitcherController.defaultSelection(forward: true, apps: apps, frontmostBundleID: nil,
+                                                zapIsShowingAWindow: false),
             1
+        )
+    }
+
+    func testForwardWithZapsOwnWindowOnScreenPicksIndexZero() {
+        // Settings is open and frontmost, so the user really is in Zap. Zap keeps
+        // itself out of its own list, which makes index 0 (b) the most recent app —
+        // index 1 would skip straight past it.
+        let apps = [app("b"), app("c")]
+        XCTAssertEqual(
+            SwitcherController.defaultSelection(forward: true, apps: apps, frontmostBundleID: nil,
+                                                zapIsShowingAWindow: true),
+            0
         )
     }
 
     func testForwardWithNilFrontmostAndSingleAppSelectsZero() {
         let apps = [app("a")]
-        XCTAssertEqual(
-            SwitcherController.defaultSelection(forward: true, apps: apps, frontmostBundleID: nil),
-            0
-        )
+        for showingAWindow in [true, false] {
+            XCTAssertEqual(
+                SwitcherController.defaultSelection(forward: true, apps: apps, frontmostBundleID: nil,
+                                                    zapIsShowingAWindow: showingAWindow),
+                0
+            )
+        }
     }
 
     func testReverseSelectsLastIndex() {
