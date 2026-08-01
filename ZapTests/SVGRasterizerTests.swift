@@ -86,14 +86,34 @@ final class SVGRasterizerTests: XCTestCase {
         XCTAssertTrue(html.contains("<head><meta http-equiv=\"Content-Security-Policy\""))
     }
 
-    /// Two exceptions, both deliberate: the wrapper's own `<style>` is inline, and
-    /// a `data:` image is bytes already in hand rather than a request. Neither is a
-    /// path off the machine — but a policy that quietly allowed `https:` would be.
-    func testPolicyAllowsOnlyInlineStyleAndDataImages() {
+    /// Every source in the policy, under every directive, has to be one that cannot
+    /// reach the network.
+    ///
+    /// Parsed rather than sniffed for bad substrings. Checking for `http` and `*`
+    /// catches the regressions someone would think to look for and misses the rest
+    /// — `ws:`, `ftp:`, or a bare `style-src 'unsafe-inline' evil.com` — which is
+    /// exactly backwards for a rule whose job is to hold against the case nobody
+    /// pictured. Allow-list the three sources that are bytes-in-hand, reject the
+    /// concept of anything else.
+    func testNoDirectiveAllowsASourceThatCanReachTheNetwork() {
+        let offline: Set<String> = ["'none'", "'unsafe-inline'", "data:"]
+        for directive in SVGRasterizer.contentSecurityPolicy.split(separator: ";") {
+            let parts = directive.split(separator: " ").map(String.init)
+            guard let name = parts.first else { continue }
+            for source in parts.dropFirst() {
+                XCTAssertTrue(offline.contains(source),
+                              "\(name) allows '\(source)', which can reach the network")
+            }
+        }
+    }
+
+    /// The exceptions, named. Losing `font-src` doesn't fail anything above — it
+    /// just makes an SVG that carries its own typeface render in the wrong one.
+    func testPolicyNamesTheExceptionsItMeansTo() {
         let policy = SVGRasterizer.contentSecurityPolicy
+        XCTAssertTrue(policy.hasPrefix("default-src 'none'"))
         XCTAssertTrue(policy.contains("style-src 'unsafe-inline'"))
         XCTAssertTrue(policy.contains("img-src data:"))
-        XCTAssertFalse(policy.contains("http"))
-        XCTAssertFalse(policy.contains("*"))
+        XCTAssertTrue(policy.contains("font-src data:"))
     }
 }

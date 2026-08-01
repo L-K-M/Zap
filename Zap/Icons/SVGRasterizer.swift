@@ -69,12 +69,19 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
     /// Forbids every subresource the markup might reach for.
     ///
     /// `default-src 'none'` covers images, fonts, stylesheets, `<use href="https://…">`
-    /// and anything else with a URL. Two narrow exceptions: `style-src 'unsafe-inline'`
-    /// because the wrapper's own `<style>` block is inline (and so are an SVG's, which
-    /// can't fetch anything on their own), and `img-src data:` so artwork that embeds
-    /// a bitmap still draws — a `data:` URI is bytes already in hand, not a request.
-    /// Neither opens a path off the machine.
-    static let contentSecurityPolicy = "default-src 'none'; style-src 'unsafe-inline'; img-src data:"
+    /// and anything else with a URL. The exceptions are all sources that cannot
+    /// reach the network, and that is the whole rule:
+    ///
+    /// - `style-src 'unsafe-inline'` — the wrapper's own `<style>` block is inline,
+    ///   and so are an SVG's, which can't fetch anything on their own.
+    /// - `img-src data:` and `font-src data:` — a `data:` URI is bytes already in
+    ///   hand, not a request. Artwork that embeds a bitmap or self-contains its
+    ///   typeface still draws; drop `font-src` and an SVG with `@font-face` full of
+    ///   base64 renders in the wrong face with nothing to say why.
+    ///
+    /// Anything naming a scheme or a host belongs in neither list.
+    static let contentSecurityPolicy =
+        "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:"
 
     /// Wraps SVG markup in a minimal document that scales it to fill the viewport
     /// on a transparent background.
