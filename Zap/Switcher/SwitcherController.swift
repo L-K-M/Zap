@@ -337,8 +337,8 @@ final class SwitcherController {
         // most-recent apps, like the native switcher. Normally that's index 1,
         // but if the frontmost app was excluded (and thus filtered out), index 0
         // already *is* the previous visible app — selecting index 1 would skip it.
-        selectedIndex = defaultSelection(forward: forward, apps: apps,
-                                         frontmostBundleID: provider.frontmostBundleID())
+        selectedIndex = Self.defaultSelection(forward: forward, apps: apps,
+                                              frontmostBundleID: provider.frontmostBundleID())
         isSessionActive = true
         startStrandedSessionWatchdog()
 
@@ -358,51 +358,15 @@ final class SwitcherController {
     /// MRU apps — but if the frontmost app didn't survive filtering (it's
     /// excluded), index 0 is already the previous app, so highlight it instead.
     /// Reverse: highlight the least-recently-used app (last index).
-    ///
-    /// A `nil` frontmost means Zap *itself* is frontmost, and that covers two
-    /// situations a tap should treat differently — which is what
-    /// `zapIsShowingAWindow` distinguishes:
-    ///
-    /// - **A window of Zap's is on screen** (Settings). The user really is in Zap,
-    ///   and Zap keeps itself out of its own list, so index 0 *is* the app a tap
-    ///   should reach — highlighting index 1 would skip past the most recent app.
-    /// - **Nothing of Zap's is on screen.** Activation is left over from a closed
-    ///   Settings window or a dismissed update alert. The MRU list skips Zap's own
-    ///   activations, so index 0 is the app the user is looking at and believes
-    ///   they are in; committing it would re-commit the current app and read as a
-    ///   dead switcher. Highlight index 1, exactly as when the frontmost app
-    ///   survives: committing it is a real switch, which also hands Zap's lingering
-    ///   activation over and cures the state.
-    static func defaultSelection(forward: Bool, apps: [AppInfo], frontmostBundleID: String?,
-                                 zapIsShowingAWindow: Bool = false) -> Int {
+    /// A `nil` frontmost means no frontmost app survived the switcher filter (for
+    /// example, Zap is showing Settings), so index 0 is the most recent eligible
+    /// app rather than the app currently in front.
+    static func defaultSelection(forward: Bool, apps: [AppInfo], frontmostBundleID: String?) -> Int {
         guard !apps.isEmpty else { return 0 }
         guard forward else { return apps.count - 1 }
         guard apps.count > 1 else { return 0 }
-        guard let frontmostBundleID else { return zapIsShowingAWindow ? 0 : 1 }
+        guard let frontmostBundleID else { return 0 }
         return apps.first?.bundleIdentifier == frontmostBundleID ? 1 : 0
-    }
-
-    private func defaultSelection(forward: Bool, apps: [AppInfo], frontmostBundleID: String?) -> Int {
-        Self.defaultSelection(forward: forward, apps: apps, frontmostBundleID: frontmostBundleID,
-                              zapIsShowingAWindow: Self.zapIsShowingAWindow())
-    }
-
-    /// Whether a window of Zap's own is on screen, for `defaultSelection`.
-    ///
-    /// Two signals, one per window Zap can put up, and neither is `NSApp.windows` —
-    /// that also carries the status item's window and the overlay panel, which are
-    /// exactly what this must not count.
-    ///
-    /// - `.regular` is set for the lifetime of the Settings window and dropped when
-    ///   it closes (`SettingsWindowController`), so it tracks that one precisely.
-    /// - An update alert runs `.accessory`, so the policy says nothing about it —
-    ///   `modalWindow` does, for as long as `runModal` is running. The switcher can
-    ///   genuinely reach this: the event tap is registered on `.commonModes`, and
-    ///   AppKit counts the modal-panel mode among those, so ⌘-Tab is still
-    ///   intercepted while an alert is up. `runModal` blocking the main thread does
-    ///   not make the alert unreachable.
-    private static func zapIsShowingAWindow() -> Bool {
-        NSApp.activationPolicy() == .regular || NSApp.modalWindow != nil
     }
 
     private func advanceSelection(forward: Bool) {

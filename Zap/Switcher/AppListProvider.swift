@@ -54,9 +54,9 @@ final class AppListProvider {
     /// applied unless the mode disregards them. Zap itself and non-regular apps are
     /// always filtered out regardless of mode.
     func currentApps(mode: ScreenScopeMode, pidsOnScreen: Set<pid_t>) -> [AppInfo] {
-        // Always exclude Zap itself. While the Settings window is open the app
-        // temporarily becomes `.regular`, which would otherwise let it satisfy
-        // `AppInfo`'s activation-policy check and appear in its own switcher.
+        // Always exclude Zap itself independently of activation policy. The app is
+        // an accessory today; this explicit invariant prevents a future own-window
+        // change from ever putting Zap in its own switcher.
         let running = NSWorkspace.shared.runningApplications
             .compactMap(AppInfo.init(runningApplication:))
             .filter { !isOwnBundleID($0.bundleIdentifier) }

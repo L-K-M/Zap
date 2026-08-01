@@ -12,9 +12,9 @@ import AppKit
 /// Every item targets `nil`, so AppKit routes it to the first responder that can
 /// handle it. Nothing here needs a target of its own.
 ///
-/// The menu bar is only *drawn* while Zap is `.regular` — that is, while the
-/// Settings window is open (`SettingsWindowController`). The rest of the time it
-/// is installed and invisible, which is exactly what an agent app wants.
+/// Accessory policy keeps this menu from replacing the front app's visible menu
+/// bar. Its key equivalents still provide responder-chain editing commands while
+/// a Zap text field is focused.
 enum MainMenu {
 
     /// Builds and installs the menu. Call once, at launch.
