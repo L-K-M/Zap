@@ -43,17 +43,31 @@ final class SVGRasterizerTests: XCTestCase {
     // MARK: Document
 
     func testDocumentEmbedsTheMarkup() {
-        let html = SVGRasterizer.htmlDocument(forSVG: "<svg id=\"marker\"></svg>")
+        let html = SVGRasterizer.htmlDocument(forSVG: "<svg id=\"marker\"></svg>",
+                                              background: SVGRasterizer.blackBackdrop)
         XCTAssertTrue(html.contains("<svg id=\"marker\"></svg>"))
     }
 
-    func testDocumentIsTransparentAndFillsTheViewport() {
-        let html = SVGRasterizer.htmlDocument(forSVG: "<svg></svg>")
-        // Transparent, or the snapshot comes back on white and the alpha
-        // classifier reads every icon as full-bleed.
-        XCTAssertTrue(html.contains("background:transparent"))
-        XCTAssertTrue(html.contains("width:100vw"))
-        XCTAssertTrue(html.contains("height:100vh"))
+    /// The backdrop is opaque and it is the one asked for. Transparency is not
+    /// requested from WebKit any more — it composites onto white whichever way the
+    /// page is captured — so each pass paints its own background and the alpha
+    /// comes from the difference between two of them.
+    func testDocumentPaintsTheBackdropItWasGivenAndFillsTheViewport() {
+        for backdrop in [SVGRasterizer.blackBackdrop, SVGRasterizer.whiteBackdrop] {
+            let html = SVGRasterizer.htmlDocument(forSVG: "<svg></svg>", background: backdrop)
+            XCTAssertTrue(html.contains("background:\(backdrop)"))
+            XCTAssertFalse(html.contains("background:transparent"))
+            XCTAssertTrue(html.contains("width:100vw"))
+            XCTAssertTrue(html.contains("height:100vh"))
+        }
+    }
+
+    /// They have to differ, and be the extremes: `white − black` is the whole
+    /// signal, so any other pair narrows the range alpha can be recovered from.
+    func testTheTwoBackdropsAreOpaqueOpposites() {
+        XCTAssertNotEqual(SVGRasterizer.blackBackdrop, SVGRasterizer.whiteBackdrop)
+        XCTAssertEqual(SVGRasterizer.blackBackdrop, "#000")
+        XCTAssertEqual(SVGRasterizer.whiteBackdrop, "#fff")
     }
 
     // MARK: PDF → bitmap
@@ -124,6 +138,11 @@ final class SVGRasterizerTests: XCTestCase {
     /// is whichever edge Core Graphics drew first" — it declines to define the very
     /// thing this test is about.
     private func alpha(of image: CGImage, x: Int, y: Int) -> UInt8 {
+        pixel(of: image, x: x, y: y).a
+    }
+
+    /// One premultiplied RGBA pixel.
+    private func pixel(of image: CGImage, x: Int, y: Int) -> (r: UInt8, g: UInt8, b: UInt8, a: UInt8) {
         let width = image.width
         let height = image.height
         var rgba = [UInt8](repeating: 0, count: width * height * 4)
@@ -138,8 +157,57 @@ final class SVGRasterizerTests: XCTestCase {
             context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
             return true
         }
-        guard drawn, y >= 0, y < height, x >= 0, x < width else { return 0 }
-        return rgba[(y * width + x) * 4 + 3]
+        guard drawn, y >= 0, y < height, x >= 0, x < width else { return (0, 0, 0, 0) }
+        let offset = (y * width + x) * 4
+        return (rgba[offset], rgba[offset + 1], rgba[offset + 2], rgba[offset + 3])
+    }
+
+    // MARK: Alpha recovery
+
+    /// An opaque solid, standing in for one pass of a render.
+    private func solid(_ red: UInt8, _ green: UInt8, _ blue: UInt8, side: Int = 8) -> CGImage? {
+        guard let context = IconRenderer.makeContext(width: side, height: side) else { return nil }
+        context.setFillColor(red: CGFloat(red) / 255, green: CGFloat(green) / 255,
+                             blue: CGFloat(blue) / 255, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: side, height: side))
+        return context.makeImage()
+    }
+
+    /// Artwork that covered the backdrop completely reads the same on both, so
+    /// nothing showed through and the alpha is full.
+    func testOpaqueArtworkRecoversFullAlpha() throws {
+        let composed = try XCTUnwrap(SVGRasterizer.alphaRecovered(
+            black: XCTUnwrap(solid(200, 30, 40)), white: XCTUnwrap(solid(200, 30, 40))))
+        let sample = pixel(of: composed, x: 4, y: 4)
+        XCTAssertEqual(sample.a, 255)
+        // Colour is carried through from the black pass, unchanged.
+        XCTAssertEqual(sample.r, 200)
+        XCTAssertEqual(sample.g, 30)
+        XCTAssertEqual(sample.b, 40)
+    }
+
+    /// The case the whole exercise is for: bare backdrop on both passes, so the
+    /// artwork drew nothing there. Rendered once, this is the white tile.
+    func testBareBackdropRecoversZeroAlpha() throws {
+        let composed = try XCTUnwrap(SVGRasterizer.alphaRecovered(
+            black: XCTUnwrap(solid(0, 0, 0)), white: XCTUnwrap(solid(255, 255, 255))))
+        XCTAssertEqual(alpha(of: composed, x: 4, y: 4), 0)
+    }
+
+    /// Half-covered: white artwork at α≈0.5 lands on 128 over black and 255 over
+    /// white, and the difference says so.
+    func testPartialCoverageRecoversPartialAlpha() throws {
+        let composed = try XCTUnwrap(SVGRasterizer.alphaRecovered(
+            black: XCTUnwrap(solid(128, 128, 128)), white: XCTUnwrap(solid(255, 255, 255))))
+        let sample = pixel(of: composed, x: 4, y: 4)
+        XCTAssertEqual(Int(sample.a), 128, accuracy: 2)
+        // Premultiplied, so the stored colour is α·C — the black pass again.
+        XCTAssertEqual(Int(sample.r), 128, accuracy: 2)
+    }
+
+    func testMismatchedPassesAreRefused() throws {
+        XCTAssertNil(SVGRasterizer.alphaRecovered(black: try XCTUnwrap(solid(0, 0, 0, side: 8)),
+                                                  white: try XCTUnwrap(solid(0, 0, 0, side: 16))))
     }
 
     /// Which way up the page comes out.
@@ -182,7 +250,8 @@ final class SVGRasterizerTests: XCTestCase {
     /// sees page navigations, so without this an `<image href="https://tracker/…">`
     /// in a hostile SVG fires silently and leaks the user's IP.
     func testDocumentForbidsEverySubresourceByDefault() {
-        let html = SVGRasterizer.htmlDocument(forSVG: "<svg></svg>")
+        let html = SVGRasterizer.htmlDocument(forSVG: "<svg></svg>",
+                                              background: SVGRasterizer.blackBackdrop)
         XCTAssertTrue(html.contains("Content-Security-Policy"))
         XCTAssertTrue(html.contains("default-src 'none'"))
     }
@@ -190,7 +259,8 @@ final class SVGRasterizerTests: XCTestCase {
     /// A `<meta>` policy applies from where the parser reads it, so anything ahead
     /// of it in the document would load unprotected. It has to be first.
     func testPolicyPrecedesTheMarkupItGoverns() {
-        let html = SVGRasterizer.htmlDocument(forSVG: "<svg id=\"marker\"></svg>")
+        let html = SVGRasterizer.htmlDocument(forSVG: "<svg id=\"marker\"></svg>",
+                                              background: SVGRasterizer.blackBackdrop)
         guard let policy = html.range(of: "Content-Security-Policy"),
               let markup = html.range(of: "id=\"marker\"") else {
             XCTFail("expected both the policy and the markup in the document")
