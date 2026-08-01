@@ -146,7 +146,7 @@ final class UpdateChecker: ObservableObject {
                 }
             } catch {
                 if userInitiated { self.presentError(error) }
-                else { NSLog("UpdateChecker: background check failed: \(error.localizedDescription)") }
+                else { NSLog("UpdateChecker: background check failed: %@", error.localizedDescription) }
             }
         }
     }
@@ -196,7 +196,7 @@ final class UpdateChecker: ObservableObject {
                 let fileURL = try await self.downloader.downloadToDownloads(asset)
                 NSWorkspace.shared.activateFileViewerSelecting([fileURL])
             } catch {
-                NSLog("UpdateChecker: download failed (\(error.localizedDescription)); opening release page")
+                NSLog("UpdateChecker: download failed (%@); opening release page", error.localizedDescription)
                 NSWorkspace.shared.open(release.htmlURL)
             }
         }

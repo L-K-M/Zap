@@ -110,7 +110,7 @@ final class IconImportTests: XCTestCase {
     /// and "came back blank" are different things to tell someone, and none of the
     /// ImageIO-shaped rejections can say either.
     func testSVGRenderFailureCarriesTheReason() {
-        for error in [SVGRasterizer.RasterizeError.timedOut, .snapshotFailed, .notSVG, .unprotected] {
+        for error in [SVGRasterizer.RasterizeError.timedOut, .snapshotFailed, .notSVG] {
             let rejection = IconImageValidator.Rejection.svgNotRendered(reason: error.message)
             XCTAssertEqual(rejection.message, error.message)
             XCTAssertFalse(rejection.message.isEmpty)

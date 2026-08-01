@@ -421,6 +421,18 @@ markup, so: `allowsContentJavaScript = false`, a navigation delegate that denies
 every navigation, and load from a `data:` URL so the document has no origin and
 no network. Then `takeSnapshot(with:)` at 1024 px.
 
+**Shipped, with two corrections the design didn't anticipate.** Navigation policy
+only covers page-level navigations, so it does nothing about a subresource — an
+`<image href="https://tracker/…">`, a CSS `url(…)`, an external `<use>`. That gap
+was first closed with a `WKContentRuleList`, which turned out to be the wrong
+tool: compiling one can fail on a given machine, and the fail-closed branch then
+refused *every* SVG, on every route, with an error that read as a complaint about
+the file. It is now a `Content-Security-Policy` meta tag on the generated document
+(`default-src 'none'`, inline styles and `data:` images excepted) — no compile
+step, no on-disk store, no async path that can fail. Separately, a `WKWebView`
+that is never added to a window does not paint, so the snapshot came back empty;
+the view is hosted in an offscreen window for the length of the render.
+
 Until that exists, Iconify and SVGL simply aren't offered. Phase it (§10).
 
 ### 6.4 Handling untrusted image data

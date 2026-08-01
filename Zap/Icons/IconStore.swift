@@ -108,7 +108,7 @@ final class IconStore {
         do {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         } catch {
-            NSLog("Zap: couldn't create the icons directory: \(error.localizedDescription)")
+            NSLog("Zap: couldn't create the icons directory: %@", error.localizedDescription)
             return .failure(.notEncodable)
         }
 
@@ -186,7 +186,7 @@ final class IconStore {
             encoder.dateEncodingStrategy = .iso8601
             try encoder.encode(manifest).write(to: manifestURL, options: .atomic)
         } catch {
-            NSLog("Zap: couldn't write the icon manifest: \(error.localizedDescription)")
+            NSLog("Zap: couldn't write the icon manifest: %@", error.localizedDescription)
         }
     }
 

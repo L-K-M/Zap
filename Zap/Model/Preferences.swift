@@ -504,7 +504,7 @@ final class Preferences: ObservableObject {
             launchAtLoginError = nil
             defaults.set(enabled, forKey: Key.launchAtLogin)
         } catch {
-            NSLog("Zap: failed to update launch-at-login: \(error.localizedDescription)")
+            NSLog("Zap: failed to update launch-at-login: %@", error.localizedDescription)
             launchAtLoginError = error.localizedDescription
             // Roll the toggle back to the real system state so the UI doesn't lie.
             isSyncingLaunchAtLogin = true

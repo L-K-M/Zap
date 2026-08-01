@@ -756,7 +756,10 @@ final class SwitcherController {
         configuration.activates = true
         NSWorkspace.shared.open(urls, withApplicationAt: appURL, configuration: configuration) { _, error in
             if let error {
-                NSLog("Zap: failed to open \(urls.count) file(s) with \(target.bundleIdentifier): \(error.localizedDescription)")
+                // `%ld`, not `%d`: Swift's `Int` is 64-bit on every Apple platform,
+                // and `%d` is a C `int`.
+                NSLog("Zap: failed to open %ld file(s) with %@: %@", urls.count,
+                      target.bundleIdentifier, error.localizedDescription)
             }
         }
     }
@@ -1088,7 +1091,7 @@ final class SwitcherController {
 
     private func activate(_ info: AppInfo) {
         guard let app = provider.runningApplication(for: info) else {
-            NSLog("Zap: could not resolve running app for \(info.bundleIdentifier)")
+            NSLog("Zap: could not resolve running app for %@", info.bundleIdentifier)
             return
         }
         // A hidden app (⌘H) won't reappear from `activate` alone — its windows
@@ -1102,7 +1105,7 @@ final class SwitcherController {
         // yields activation cooperatively so the switch works even after Zap has
         // been the active app (e.g. once Settings has been opened).
         if !WindowEnumerator.activate(app, allWindows: true) {
-            NSLog("Zap: failed to activate \(info.bundleIdentifier)")
+            NSLog("Zap: failed to activate %@", info.bundleIdentifier)
         }
     }
 

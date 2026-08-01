@@ -12,15 +12,21 @@ import WebKit
 ///
 /// Rendering fetched SVG means parsing untrusted markup, so: JavaScript off, no
 /// persistent data store, a navigation delegate that permits exactly one page
-/// navigation, and — the part navigation policy does *not* cover — a content rule
-/// list blocking every network subresource.
+/// navigation, and — the part navigation policy does *not* cover — a **Content
+/// Security Policy** forbidding every network subresource.
 ///
 /// That last one matters. `decidePolicyFor` only sees page-level navigations, so
 /// on its own it would let `<image href="https://tracker/pixel.png">`, a CSS
 /// `url(…)` or `<use href="https://…">` inside a hostile SVG fire silently and
-/// leak the user's IP. The rule list is what actually makes "nothing but the
-/// markup we handed it" true, and rendering **fails closed** if it can't be
-/// compiled rather than proceeding unprotected.
+/// leak the user's IP. `default-src 'none'` is what actually makes "nothing but
+/// the markup we handed it" true.
+///
+/// This was a `WKContentRuleList` first, and that shipped broken: compiling one
+/// can simply fail on a given machine, which it did, and the fail-closed branch
+/// then refused *every* SVG. A policy carried in the document has no compile step,
+/// no on-disk store and no async path that can fail — it either parses with the
+/// document or there is no document. Fewer ways to be wrong, same guarantee, and
+/// it is the mechanism the web platform provides for exactly this.
 ///
 /// It runs once per icon inside a Settings sheet — never on the switcher's hot
 /// path — and the result is baked to PNG on disk, so the cost is paid once.
@@ -30,19 +36,12 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         case notSVG
         case timedOut
         case snapshotFailed
-        /// The network-block rule list wouldn't compile, so rendering was refused
-        /// rather than done unprotected. Distinct from `snapshotFailed` because it
-        /// is the one failure that isn't about the file: every SVG fails this way,
-        /// and it says so instead of blaming the artwork.
-        case unprotected
 
         var message: String {
             switch self {
             case .notSVG: return "That file doesn't look like an SVG."
             case .timedOut: return "Rendering that SVG took too long."
             case .snapshotFailed: return "Zap couldn't render that SVG."
-            case .unprotected:
-                return "Zap couldn't set up safe SVG rendering on this Mac, so it didn't render that file."
             }
         }
     }
@@ -67,11 +66,43 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         return text.range(of: "<svg", options: [.caseInsensitive]) != nil
     }
 
+    /// Forbids every subresource the markup might reach for.
+    ///
+    /// `default-src 'none'` covers images, fonts, stylesheets, `<use href="https://…">`
+    /// and anything else with a URL. The exceptions are all sources that cannot
+    /// reach the network, and that is the whole rule:
+    ///
+    /// - `style-src 'unsafe-inline'` — the wrapper's own `<style>` block is inline,
+    ///   and so are an SVG's, which can't fetch anything on their own.
+    /// - `img-src data:` and `font-src data:` — a `data:` URI is bytes already in
+    ///   hand, not a request. Artwork that embeds a bitmap or self-contains its
+    ///   typeface still draws; drop `font-src` and an SVG with `@font-face` full of
+    ///   base64 renders in the wrong face with nothing to say why.
+    ///
+    /// Anything naming a scheme or a host belongs in neither list.
+    ///
+    /// `base-uri` and `form-action` are spelled out because they are the two
+    /// directives that do **not** fall back to `default-src`. Nothing here can
+    /// exploit their absence today — a `<base>` in `<body>` is ignored by the
+    /// parser, its consequences would hit `default-src` anyway, and submitting a
+    /// form needs either JavaScript or a click, neither of which a headless render
+    /// has. They are named so the policy states the whole guarantee by itself,
+    /// rather than resting on conditions kept three methods away that could each
+    /// change without anyone rereading this line.
+    static let contentSecurityPolicy = "default-src 'none'; base-uri 'none'; "
+        + "form-action 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:"
+
     /// Wraps SVG markup in a minimal document that scales it to fill the viewport
     /// on a transparent background.
+    ///
+    /// The policy goes first in `<head>`, before anything that could load: a `<meta>`
+    /// CSP applies from the point the parser reads it, so putting it after the markup
+    /// would be decoration.
     static func htmlDocument(forSVG svg: String) -> String {
         """
-        <!DOCTYPE html><html><head><meta charset="utf-8">
+        <!DOCTYPE html><html><head>\
+        <meta http-equiv="Content-Security-Policy" content="\(contentSecurityPolicy)">
+        <meta charset="utf-8">
         <style>
         html,body{margin:0;padding:0;background:transparent;overflow:hidden}
         svg{width:100vw;height:100vh;display:block}
@@ -106,14 +137,6 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
             rasterize(data, side: side) { continuation.resume(returning: $0) }
         }
     }
-
-    /// Blocks every network scheme. `about:blank` — the in-memory document itself —
-    /// doesn't match, so the markup still loads while nothing it references does.
-    static let networkBlockRuleJSON =
-        #"[{"trigger":{"url-filter":"^(https?|ftps?|wss?)://"},"action":{"type":"block"}}]"#
-
-    /// Compiled once and reused; compilation is not cheap.
-    private static var compiledRules: WKContentRuleList?
 
     private let side: Int
     private var webView: WKWebView?
@@ -152,21 +175,11 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         timeoutWork = timeout
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.timeout, execute: timeout)
 
-        applyNetworkBlock(to: configuration) { [weak self] blocked in
-            guard let self else { return }
-            guard blocked else {
-                // Fail closed: without the rule list, a hostile SVG's subresources
-                // would reach the network, and that is the guarantee being made.
-                // Logged because it fails *every* render on the machine it happens
-                // on, which from the UI looks exactly like artwork that won't draw.
-                NSLog("Zap: SVG rendering refused — the network-block rule list wouldn't compile.")
-                self.finish(.failure(.unprotected))
-                return
-            }
-            // `baseURL: nil` leaves the document with no origin and nothing to
-            // resolve a relative URL against — the property §6.3 wants from `data:`.
-            webView.loadHTMLString(Self.htmlDocument(forSVG: markup), baseURL: nil)
-        }
+        // `baseURL: nil` leaves the document with no origin and nothing to resolve
+        // a relative URL against — the property §6.3 wants from `data:`. The
+        // document carries its own Content Security Policy, so there is nothing to
+        // set up first and no way for this to be reached unprotected.
+        webView.loadHTMLString(Self.htmlDocument(forSVG: markup), baseURL: nil)
     }
 
     /// Parks `webView` in a window, because a detached one renders nothing.
@@ -197,31 +210,6 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         // Settings sheet the user is looking at keeps focus.
         window.orderBack(nil)
         return window
-    }
-
-    /// Adds the compiled block-everything rule list, compiling it on first use.
-    /// Main queue only; `completion` is called there too.
-    private func applyNetworkBlock(to configuration: WKWebViewConfiguration,
-                                   completion: @escaping (Bool) -> Void) {
-        if let rules = Self.compiledRules {
-            configuration.userContentController.add(rules)
-            completion(true)
-            return
-        }
-        guard let store = WKContentRuleListStore.default() else {
-            completion(false)
-            return
-        }
-        store.compileContentRuleList(forIdentifier: "zap-svg-block-network",
-                                     encodedContentRuleList: Self.networkBlockRuleJSON) { rules, _ in
-            guard let rules else {
-                completion(false)
-                return
-            }
-            Self.compiledRules = rules
-            configuration.userContentController.add(rules)
-            completion(true)
-        }
     }
 
     /// Main queue only. Safe to call more than once; only the first lands.
@@ -269,10 +257,15 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
 
         let configuration = WKSnapshotConfiguration()
         configuration.rect = CGRect(x: 0, y: 0, width: side, height: side)
-        webView.takeSnapshot(with: configuration) { [weak self] image, _ in
+        webView.takeSnapshot(with: configuration) { [weak self] image, error in
             guard let self else { return }
             var proposed = CGRect(x: 0, y: 0, width: self.side, height: self.side)
             guard let cgImage = image?.cgImage(forProposedRect: &proposed, context: nil, hints: nil) else {
+                // Logged, not swallowed. Every one of these failures looks identical
+                // in the UI — a picture that didn't draw — and telling them apart
+                // from the outside cost a release once already.
+                NSLog("Zap: SVG snapshot failed: %@",
+                      error?.localizedDescription ?? "no image returned")
                 self.finish(.failure(.snapshotFailed))
                 return
             }
@@ -281,11 +274,13 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        NSLog("Zap: SVG navigation failed: %@", error.localizedDescription)
         finish(.failure(.snapshotFailed))
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
                  withError error: Error) {
+        NSLog("Zap: SVG load failed: %@", error.localizedDescription)
         finish(.failure(.snapshotFailed))
     }
 }

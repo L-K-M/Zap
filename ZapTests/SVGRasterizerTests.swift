@@ -56,18 +56,74 @@ final class SVGRasterizerTests: XCTestCase {
     }
 
     func testErrorsCarryAMessage() {
-        for error in [SVGRasterizer.RasterizeError.notSVG, .timedOut, .snapshotFailed, .unprotected] {
+        for error in [SVGRasterizer.RasterizeError.notSVG, .timedOut, .snapshotFailed] {
             XCTAssertFalse(error.message.isEmpty)
         }
     }
 
-    /// Refusing to render because the block list wouldn't compile is not the same
-    /// as artwork that won't draw: it happens to *every* SVG on that machine, so
-    /// it must not read as a complaint about the file the user just picked.
-    func testRefusingToRenderUnprotectedReadsDifferentlyFromABadFile() {
-        let unprotected = SVGRasterizer.RasterizeError.unprotected
-        XCTAssertNotEqual(unprotected, .snapshotFailed)
-        XCTAssertNotEqual(unprotected.message, SVGRasterizer.RasterizeError.snapshotFailed.message)
-        XCTAssertNotEqual(unprotected.message, SVGRasterizer.RasterizeError.notSVG.message)
+    // MARK: Content Security Policy
+
+    /// The whole no-network guarantee for untrusted markup. `decidePolicyFor` only
+    /// sees page navigations, so without this an `<image href="https://tracker/…">`
+    /// in a hostile SVG fires silently and leaks the user's IP.
+    func testDocumentForbidsEverySubresourceByDefault() {
+        let html = SVGRasterizer.htmlDocument(forSVG: "<svg></svg>")
+        XCTAssertTrue(html.contains("Content-Security-Policy"))
+        XCTAssertTrue(html.contains("default-src 'none'"))
+    }
+
+    /// A `<meta>` policy applies from where the parser reads it, so anything ahead
+    /// of it in the document would load unprotected. It has to be first.
+    func testPolicyPrecedesTheMarkupItGoverns() {
+        let html = SVGRasterizer.htmlDocument(forSVG: "<svg id=\"marker\"></svg>")
+        guard let policy = html.range(of: "Content-Security-Policy"),
+              let markup = html.range(of: "id=\"marker\"") else {
+            XCTFail("expected both the policy and the markup in the document")
+            return
+        }
+        XCTAssertTrue(policy.lowerBound < markup.lowerBound)
+        // And ahead of the stylesheet and charset too — nothing precedes it.
+        XCTAssertTrue(html.contains("<head><meta http-equiv=\"Content-Security-Policy\""))
+    }
+
+    /// Every source in the policy, under every directive, has to be one that cannot
+    /// reach the network.
+    ///
+    /// Parsed rather than sniffed for bad substrings. Checking for `http` and `*`
+    /// catches the regressions someone would think to look for and misses the rest
+    /// — `ws:`, `ftp:`, or a bare `style-src 'unsafe-inline' evil.com` — which is
+    /// exactly backwards for a rule whose job is to hold against the case nobody
+    /// pictured. Allow-list the three sources that are bytes-in-hand, reject the
+    /// concept of anything else.
+    func testNoDirectiveAllowsASourceThatCanReachTheNetwork() {
+        let offline: Set<String> = ["'none'", "'unsafe-inline'", "data:"]
+        for directive in SVGRasterizer.contentSecurityPolicy.split(separator: ";") {
+            let parts = directive.split(separator: " ").map(String.init)
+            guard let name = parts.first else { continue }
+            for source in parts.dropFirst() {
+                XCTAssertTrue(offline.contains(source),
+                              "\(name) allows '\(source)', which can reach the network")
+            }
+        }
+    }
+
+    /// The exceptions, named. Losing `font-src` doesn't fail anything above — it
+    /// just makes an SVG that carries its own typeface render in the wrong one.
+    func testPolicyNamesTheExceptionsItMeansTo() {
+        let policy = SVGRasterizer.contentSecurityPolicy
+        XCTAssertTrue(policy.hasPrefix("default-src 'none'"))
+        XCTAssertTrue(policy.contains("style-src 'unsafe-inline'"))
+        XCTAssertTrue(policy.contains("img-src data:"))
+        XCTAssertTrue(policy.contains("font-src data:"))
+    }
+
+    /// The two directives that don't inherit from `default-src`, so a policy that
+    /// leaves them out is silently narrower than it reads. Asserted separately
+    /// because the parse test above can't catch a *missing* directive — every
+    /// source it does name is `'none'`, which passes either way.
+    func testPolicyStatesTheDirectivesThatDoNotInherit() {
+        let policy = SVGRasterizer.contentSecurityPolicy
+        XCTAssertTrue(policy.contains("base-uri 'none'"))
+        XCTAssertTrue(policy.contains("form-action 'none'"))
     }
 }
