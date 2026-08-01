@@ -48,9 +48,22 @@ final class IconRowBleedTests: XCTestCase {
         XCTAssertEqual(IconRowMetrics.clampedBleed(-1), 0)
         XCTAssertEqual(IconRowMetrics.clampedBleed(2), IconRowMetrics.maximumBleed)
         XCTAssertEqual(IconRowMetrics.clampedBleed(.nan), 0)
-        // Clamping applies through the derived values too.
+        // Clamping has to apply through the derived values too, or a refactor that
+        // bypassed it would hand the layout a negative or NaN width.
         XCTAssertEqual(IconRowMetrics.imageExtent(iconSize: 80, bleed: 99),
                        IconRowMetrics.imageExtent(iconSize: 80, bleed: IconRowMetrics.maximumBleed))
+        XCTAssertEqual(IconRowMetrics.imageExtent(iconSize: 80, bleed: -1),
+                       IconRowMetrics.imageExtent(iconSize: 80, bleed: 0))
+        XCTAssertEqual(IconRowMetrics.imageExtent(iconSize: 80, bleed: .nan),
+                       IconRowMetrics.imageExtent(iconSize: 80, bleed: 0))
+        XCTAssertEqual(IconRowMetrics.cellWidth(iconSize: 80, bleed: -1),
+                       IconRowMetrics.cellWidth(iconSize: 80, bleed: 0))
+        XCTAssertEqual(IconRowMetrics.cellWidth(iconSize: 80, bleed: .nan),
+                       IconRowMetrics.cellWidth(iconSize: 80, bleed: 0))
+        // The normaliser's canvas shares the clamp, so the cached bitmap can't
+        // disagree with the frame it's drawn into.
+        XCTAssertEqual(IconNormalizer.canvasExtent(targetExtent: 80, bleed: -1), 80)
+        XCTAssertEqual(IconNormalizer.canvasExtent(targetExtent: 80, bleed: .nan), 80)
     }
 
     // MARK: Geometry derived from a bled cell

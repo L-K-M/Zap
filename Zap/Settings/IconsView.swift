@@ -111,8 +111,7 @@ struct IconsView: View {
         // than a file, and that is the more important ingestion path of the two.
         .dropDestination(for: URL.self) { urls, _ in
             guard let url = urls.first else { return false }
-            adopt(url, for: app)
-            return true
+            return adopt(url, for: app)
         } isTargeted: { targeted in
             if targeted {
                 dropTarget = app.bundleIdentifier
@@ -185,18 +184,28 @@ struct IconsView: View {
     }
 
     /// Takes on a dragged or pasted URL: a file is imported directly, an http(s)
-    /// link is fetched first.
-    private func adopt(_ url: URL, for app: AppInfo) {
+    /// link is fetched first. Returns whether the drop was accepted — refusing it
+    /// makes the drag snap back, which is the platform's own way of saying "not
+    /// this, not now", and is better than silently dropping it on the floor.
+    @discardableResult
+    private func adopt(_ url: URL, for app: AppInfo) -> Bool {
         guard !url.isFileURL else {
             apply(store.setCustomIcon(from: url, forBundleID: app.bundleIdentifier), for: app)
-            return
+            return true
         }
         guard RemoteIconFetcher.isFetchable(url) else {
             problem = "That link isn't something Zap can fetch an image from."
-            return
+            return false
         }
 
         let bundleID = app.bundleIdentifier
+        // One fetch per app at a time. Two in flight would race: the first to
+        // finish clears "Downloading…" for both, and the last to finish wins the
+        // icon, which need not be the one dropped most recently.
+        guard !fetching.contains(bundleID) else {
+            problem = "Still downloading an icon for \(app.name)."
+            return false
+        }
         fetching.insert(bundleID)
         Task {
             let fetched = await RemoteIconFetcher.fetch(url)
