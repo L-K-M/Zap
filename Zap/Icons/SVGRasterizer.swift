@@ -31,7 +31,8 @@ import WebKit
 /// Transparency is recovered rather than requested: WebKit composites the page
 /// onto white whichever way it is captured, so the document is rendered **twice**
 /// over opaque backgrounds of its own and the alpha comes out of the difference
-/// (`alphaRecovered`). Exact, and independent of what WebKit paints underneath.
+/// (`alphaRecovered`) — independent of what WebKit paints underneath, which is the
+/// whole point, and exact under sRGB compositing.
 ///
 /// It runs once per icon inside a Settings sheet — never on the switcher's hot
 /// path — and the result is baked to PNG on disk, so the two renders are paid
