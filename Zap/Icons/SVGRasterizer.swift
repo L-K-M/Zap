@@ -264,7 +264,8 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
                 // Logged, not swallowed. Every one of these failures looks identical
                 // in the UI — a picture that didn't draw — and telling them apart
                 // from the outside cost a release once already.
-                NSLog("Zap: SVG snapshot failed: \(error?.localizedDescription ?? "no image returned")")
+                NSLog("Zap: SVG snapshot failed: %@",
+                      error?.localizedDescription ?? "no image returned")
                 self.finish(.failure(.snapshotFailed))
                 return
             }
@@ -273,13 +274,13 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        NSLog("Zap: SVG navigation failed: \(error.localizedDescription)")
+        NSLog("Zap: SVG navigation failed: %@", error.localizedDescription)
         finish(.failure(.snapshotFailed))
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
                  withError error: Error) {
-        NSLog("Zap: SVG load failed: \(error.localizedDescription)")
+        NSLog("Zap: SVG load failed: %@", error.localizedDescription)
         finish(.failure(.snapshotFailed))
     }
 }
