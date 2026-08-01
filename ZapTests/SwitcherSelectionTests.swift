@@ -77,6 +77,25 @@ final class SwitcherSelectionTests: XCTestCase {
         }
     }
 
+    func testZapWindowFlagOnlySplitsTheNilFrontmostCase() {
+        // The flag exists to tell leftover activation apart from Settings being on
+        // screen — both of which read as a nil frontmost. A real frontmost app
+        // answers the question on its own, so the flag must not be consulted.
+        let apps = [app("b"), app("c")]
+        for showingAWindow in [true, false] {
+            XCTAssertEqual(
+                SwitcherController.defaultSelection(forward: true, apps: apps, frontmostBundleID: "b",
+                                                    zapIsShowingAWindow: showingAWindow),
+                1
+            )
+            XCTAssertEqual(
+                SwitcherController.defaultSelection(forward: true, apps: apps, frontmostBundleID: "a",
+                                                    zapIsShowingAWindow: showingAWindow),
+                0
+            )
+        }
+    }
+
     func testReverseSelectsLastIndex() {
         let apps = [app("a"), app("b"), app("c")]
         XCTAssertEqual(
