@@ -75,7 +75,7 @@ struct IconSearchSheet: View {
         .alert(iconProblem: $problem)
         // Dismissing the sheet retires both generations, which is what the
         // preview loop checks between renders. Without it, cancelling mid-search
-        // leaves up to `previewLimit` fetch-and-rasterise rounds running for a
+        // leaves up to `resultLimit` fetch-and-rasterise rounds running for a
         // sheet that is already gone — each one standing up a `WKWebView` to
         // render a preview nobody can see.
         .onDisappear {
@@ -192,7 +192,7 @@ struct IconSearchSheet: View {
         previews = [:]
         previewFailures = []
         Task {
-            let found = await provider.search(query: text, limit: 48)
+            let found = await provider.search(query: text, limit: Self.resultLimit)
             await MainActor.run {
                 guard generation == searchGeneration else { return }
                 isSearching = false
@@ -208,14 +208,18 @@ struct IconSearchSheet: View {
         }
     }
 
-    /// How many results get a rendered preview. Capped to about a screenful:
-    /// rasterising all 48 to preview them would be wasteful.
-    private static let previewLimit = 24
+    /// How many results a search asks for — about a screenful of the grid.
+    ///
+    /// The same number bounds the previews, and that is the point of there being
+    /// one: asking for more results than get rendered leaves the surplus on a
+    /// spinner that never resolves, because nothing ever tries them. The cap
+    /// belongs on what is fetched, not on what is drawn out of it.
+    private static let resultLimit = 24
 
     /// Renders previews **one at a time**. Each render stands up a `WKWebView`,
     /// which is heavyweight enough that two dozen alive at once is a real memory
-    /// spike — for previews the user may never scroll to. Sequential awaits keep
-    /// exactly one alive.
+    /// spike. Sequential awaits keep exactly one alive, so the grid fills in
+    /// rather than arriving at once — every result gets its turn.
     ///
     /// `generation` drops results from a search the user has already replaced.
     ///
@@ -224,9 +228,8 @@ struct IconSearchSheet: View {
     /// still loading when in fact nothing was left to wait for.
     private func loadPreviews(_ items: [IconSearchResult], generation: Int) {
         Task {
-            let batch = Array(items.prefix(Self.previewLimit))
             var rendered = 0
-            for item in batch {
+            for item in items {
                 let image = await previewImage(for: item)
                 let stale = await MainActor.run { () -> Bool in
                     guard generation == previewGeneration else { return true }
@@ -243,7 +246,7 @@ struct IconSearchSheet: View {
             // Not one of them drew. That is a broken renderer rather than awkward
             // artwork, and it is worth saying so — silence here is what a grid of
             // permanent spinners was.
-            if rendered == 0, !batch.isEmpty {
+            if rendered == 0, !items.isEmpty {
                 await MainActor.run {
                     guard generation == previewGeneration else { return }
                     problem = .previewsUnavailable(provider: provider.displayName)
