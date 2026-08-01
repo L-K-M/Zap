@@ -52,6 +52,14 @@ struct IconProblem: Identifiable, Error {
     static func searchFailed(_ reason: String, provider: String) -> IconProblem {
         IconProblem(title: "Zap couldn't search \(provider)", message: reason)
     }
+
+    /// Results came back but not one of them would draw. Distinct from a failed
+    /// search: the provider answered, so the fault is on Zap's side of the line.
+    static func previewsUnavailable(provider: String) -> IconProblem {
+        IconProblem(title: "Zap couldn't draw those icons",
+                    message: "\(provider) returned results, but none of them could be rendered. "
+                        + "Picking one will say why.")
+    }
 }
 
 extension View {

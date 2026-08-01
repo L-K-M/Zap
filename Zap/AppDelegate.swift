@@ -21,6 +21,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Don't install global hooks while running under XCTest.
         guard !Self.isRunningTests else { return }
 
+        // Before anything can put a window up: without a main menu the standard
+        // editing shortcuts don't exist, because that is where they live.
+        MainMenu.install(into: NSApplication.shared)
         setUpStatusItem()
         switcher.start()
         updateChecker.start()   // check GitHub for a newer release on launch + daily
@@ -98,7 +101,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Actions
 
-    @objc private func openSettings() {
+    /// Not private: `MainMenu` names this selector, and the menu item reaches it
+    /// through the responder chain rather than a target of its own.
+    @objc func openSettings() {
         settingsWindow.show()
     }
 

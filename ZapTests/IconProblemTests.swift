@@ -32,6 +32,7 @@ final class IconProblemTests: XCTestCase {
             .fetchFailed("The server didn't answer.", app: app),
             .alreadyInFlight(app: app),
             .searchFailed("HTTP 503.", provider: "Iconify"),
+            .previewsUnavailable(provider: "Iconify"),
         ]
         for problem in problems {
             XCTAssertFalse(problem.title.isEmpty)

@@ -83,12 +83,24 @@ final class Preferences: ObservableObject {
         static let iconBleed = "iconBleed"
         static let iconTrimTransparentEdges = "iconTrimTransparentEdges"
         static let iconShadow = "iconShadow"
+        static let acknowledgedSearchProviders = "acknowledgedSearchProviders"
     }
 
     // MARK: Stored settings
 
     @Published var excludedBundleIDs: Set<String> {
         didSet { defaults.set(Array(excludedBundleIDs), forKey: Key.excluded) }
+    }
+
+    /// Icon-search providers whose disclosure the user has already read
+    /// (`UNJAILED.md §5.5`). Persisted, so "before the first search" means the
+    /// first search ever rather than the first of every sheet. Kept per provider
+    /// because the disclosure is the provider's own statement of what it sends —
+    /// having read Iconify's says nothing about the next one.
+    @Published var acknowledgedSearchProviders: Set<String> {
+        didSet {
+            defaults.set(Array(acknowledgedSearchProviders), forKey: Key.acknowledgedSearchProviders)
+        }
     }
 
     @Published var backgroundColorHex: String {
@@ -306,6 +318,8 @@ final class Preferences: ObservableObject {
 
         let excludedArray = defaults.stringArray(forKey: Key.excluded) ?? []
         excludedBundleIDs = Set(excludedArray)
+        acknowledgedSearchProviders =
+            Set(defaults.stringArray(forKey: Key.acknowledgedSearchProviders) ?? [])
 
         backgroundColorHex = Self.validColor(defaults.string(forKey: Key.backgroundColorHex), default: Default.backgroundColorHex)
         useGradientBackground = defaults.object(forKey: Key.useGradientBackground) as? Bool ?? Default.useGradientBackground

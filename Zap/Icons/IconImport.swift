@@ -44,14 +44,23 @@ enum IconImport {
     // MARK: Importing
 
     /// Decodes `data`, rasterising it first when it turns out to be SVG.
-    static func image(from data: Data) async -> Result<CGImage, IconImageValidator.Rejection> {
+    ///
+    /// `side` bounds the longest edge of the result. It defaults to the master size
+    /// Zap stores, and the search sheet asks for something much smaller for its
+    /// preview grid — two dozen full-size renders to draw them at 56 pt is a real
+    /// memory cost for pictures the user may never scroll to. Both branches honour
+    /// it, and neither upscales: a source smaller than `side` comes back untouched.
+    static func image(from data: Data,
+                      side: Int = IconImageValidator.Limits.masterLongestEdge)
+    async -> Result<CGImage, IconImageValidator.Rejection> {
         switch route(for: data) {
         case .tooLarge(let bytes):
             return .failure(.fileTooLarge(bytes: bytes))
         case .bitmap:
             return IconImageValidator.decode(data: data)
+                .map { IconRenderer.downsample($0, longestEdge: side) }
         case .svg:
-            switch await SVGRasterizer.rasterize(data) {
+            switch await SVGRasterizer.rasterize(data, side: side) {
             case .success(let image):
                 return .success(image)
             case .failure(let error):

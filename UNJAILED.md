@@ -348,7 +348,10 @@ Rules:
   pre-fetch icons for your top ten apps". Only in response to a click.
 - Prefill the query with the app name but let the user **edit it before sending**.
 - **The bundle-ID list never leaves the machine**, under any circumstance.
-- Show what will be sent, and to whom, before the first search of a session.
+- Show what will be sent, and to whom, before the first search of a provider.
+  **Shipped as once, persisted** rather than once per session: a notice shown every
+  time is one that stops being read, and the acknowledgement is kept per provider
+  because the disclosure is each provider's own statement of what it sends.
 - No telemetry. Zap has none today (see the switch counter in `AboutView` —
   local-only) and this must not be where that changes.
 
@@ -717,7 +720,8 @@ polish on a problem already solved for the majority of apps.
   `IconSearchProvider` + `IconSearchResult`, the keyless `IconifyClient`, and a
   search sheet carrying §5.5's rules structurally: prefilled-but-editable query,
   nothing sent until the button is pressed, disclosure shown before the first
-  search of a session, bundle identifier never sent.
+  search of a provider (persisted, so once rather than once per sheet), bundle
+  identifier never sent.
 - **Skipping phase 3 costs nothing**, which §12 question 3 already suspected.
   Phase 3 was macOSicons behind a BYO key; phase 4's Iconify is keyless, so the
   provider protocol got built and exercised by a *real* provider rather than by a

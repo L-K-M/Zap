@@ -52,6 +52,7 @@ struct IconsView: View {
             IconSearchSheet(
                 app: app,
                 provider: searchProvider,
+                preferences: preferences,
                 onAdopt: { result, image in
                     searchingApp = nil
                     adopt(result, image: image, for: app)

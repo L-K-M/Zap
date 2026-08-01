@@ -31,6 +31,27 @@ final class PreferencesTests: XCTestCase {
         XCTAssertFalse(prefs.showWindowPreviews)
     }
 
+    /// §5.5's disclosure has to survive the sheet closing, or "before the first
+    /// search" becomes "before every search" and stops being read.
+    func testAcknowledgedSearchProvidersStartEmptyAndPersist() {
+        let prefs = Preferences(defaults: defaults)
+        XCTAssertTrue(prefs.acknowledgedSearchProviders.isEmpty)
+
+        prefs.acknowledgedSearchProviders.insert("iconify")
+        XCTAssertEqual(Preferences(defaults: defaults).acknowledgedSearchProviders, ["iconify"])
+    }
+
+    /// Per provider, because the disclosure is each provider's own statement of
+    /// what it sends — reading Iconify's says nothing about the next one.
+    func testAcknowledgingOneProviderDoesNotAcknowledgeAnother() {
+        let prefs = Preferences(defaults: defaults)
+        prefs.acknowledgedSearchProviders.insert("iconify")
+
+        let reloaded = Preferences(defaults: defaults)
+        XCTAssertTrue(reloaded.acknowledgedSearchProviders.contains("iconify"))
+        XCTAssertFalse(reloaded.acknowledgedSearchProviders.contains("macosicons"))
+    }
+
     func testGradientBackgroundDefaults() {
         let prefs = Preferences(defaults: defaults)
         XCTAssertFalse(prefs.useGradientBackground)

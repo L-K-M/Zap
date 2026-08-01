@@ -69,8 +69,39 @@ final class IconImportTests: XCTestCase {
         let url = IconTestSupport.writePNG(width: 512, height: 512,
                                            to: directory.appendingPathComponent("icon.png"))
 
-        let image = try XCTUnwrap(await IconImport.image(contentsOf: url).successValue)
+        // Awaited into a local first: `XCTUnwrap` takes an autoclosure, and that
+        // autoclosure isn't async.
+        let imported = await IconImport.image(contentsOf: url)
+        let image = try XCTUnwrap(imported.successValue)
         XCTAssertEqual(image.width, 512)
+    }
+
+    /// `side` is what the search sheet uses to keep two dozen previews from each
+    /// costing a full-size render, so the bitmap branch has to honour it too — not
+    /// only the SVG one it was added for.
+    func testSideBoundsABitmapImport() async throws {
+        let imported = await IconImport.image(from: pngData(width: 512, height: 512), side: 128)
+        let image = try XCTUnwrap(imported.successValue)
+        XCTAssertEqual(image.width, 128)
+        XCTAssertEqual(image.height, 128)
+    }
+
+    /// Never upscales: asking for a big preview of a small icon must not invent
+    /// pixels, in either branch.
+    func testSideNeverUpscalesABitmap() async throws {
+        let imported = await IconImport.image(from: pngData(width: 128, height: 128), side: 1024)
+        let image = try XCTUnwrap(imported.successValue)
+        XCTAssertEqual(image.width, 128)
+    }
+
+    // MARK: Helpers
+
+    private func pngData(width: Int, height: Int) -> Data {
+        let directory = IconTestSupport.makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = IconTestSupport.writePNG(width: width, height: height,
+                                           to: directory.appendingPathComponent("icon.png"))
+        return (try? Data(contentsOf: url)) ?? Data()
     }
 
     // MARK: Rejection surface
@@ -79,7 +110,7 @@ final class IconImportTests: XCTestCase {
     /// and "came back blank" are different things to tell someone, and none of the
     /// ImageIO-shaped rejections can say either.
     func testSVGRenderFailureCarriesTheReason() {
-        for error in [SVGRasterizer.RasterizeError.timedOut, .snapshotFailed, .notSVG] {
+        for error in [SVGRasterizer.RasterizeError.timedOut, .snapshotFailed, .notSVG, .unprotected] {
             let rejection = IconImageValidator.Rejection.svgNotRendered(reason: error.message)
             XCTAssertEqual(rejection.message, error.message)
             XCTAssertFalse(rejection.message.isEmpty)
