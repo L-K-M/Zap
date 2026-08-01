@@ -21,7 +21,7 @@ struct IconSearchSheet: View {
     @State private var previews: [String: NSImage] = [:]
     @State private var isSearching = false
     @State private var isAdopting = false
-    @State private var problem: String?
+    @State private var problem: IconProblem?
     /// Whether the user has acknowledged what a search sends, this session.
     @State private var hasAcknowledgedDisclosure = false
     /// Bumped per search, so previews from a replaced one are discarded.
@@ -56,15 +56,13 @@ struct IconSearchSheet: View {
 
             Divider()
             HStack {
-                if let problem {
-                    Text(problem).font(.caption).foregroundStyle(.red)
-                }
                 Spacer()
                 Button("Cancel", action: onCancel)
             }
         }
         .padding(16)
         .frame(width: 560, height: 460)
+        .alert(iconProblem: $problem)
         // Dismissing the sheet retires both generations, which is what the
         // preview loop checks between renders. Without it, cancelling mid-search
         // leaves up to `previewLimit` fetch-and-rasterise rounds running for a
@@ -170,7 +168,6 @@ struct IconSearchSheet: View {
         searchGeneration += 1
         let generation = searchGeneration
         isSearching = true
-        problem = nil
         results = []
         previews = [:]
         Task {
@@ -179,7 +176,8 @@ struct IconSearchSheet: View {
                 guard generation == searchGeneration else { return }
                 isSearching = false
                 switch found {
-                case .failure(let error): problem = error.message
+                case .failure(let error):
+                    problem = .searchFailed(error.message, provider: provider.displayName)
                 case .success(let items):
                     results = items
                     previewGeneration += 1
@@ -231,7 +229,6 @@ struct IconSearchSheet: View {
     /// disabled — a sheet that has to be closed and reopened to pick anything.
     private func adopt(_ result: IconSearchResult) {
         isAdopting = true
-        problem = nil
         let generation = searchGeneration
         Task {
             let fetched = await provider.fetchImageData(for: result)
@@ -239,7 +236,9 @@ struct IconSearchSheet: View {
                 await MainActor.run {
                     isAdopting = false
                     guard generation == searchGeneration else { return }
-                    if case .failure(let error) = fetched { problem = error.message }
+                    if case .failure(let error) = fetched {
+                        problem = .fetchFailed(error.message, app: app)
+                    }
                 }
                 return
             }
@@ -248,8 +247,10 @@ struct IconSearchSheet: View {
                 isAdopting = false
                 guard generation == searchGeneration else { return }
                 switch rendered {
-                case .failure(let error): problem = error.message
-                case .success(let image): onAdopt(result, image)
+                case .failure(let error):
+                    problem = .rejected(.svgNotRendered(reason: error.message), app: app)
+                case .success(let image):
+                    onAdopt(result, image)
                 }
             }
         }

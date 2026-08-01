@@ -371,10 +371,18 @@ macOS reads a lot through ImageIO, but "readable" and "should be accepted" diffe
 | GIF / APNG | ✅ | Frame 0 only | Animation in a switcher that appears for 200 ms is a novelty, not a feature. |
 | JPEG / BMP | ✅ | Accept with a **warning** | No alpha. The result is a rectangle — i.e. still jailed, just differently. Say so in the UI. |
 | ICO | ✅ | Yes | Low-res in practice; warn under 128 px. |
-| **SVG** | ❌ | See §6.3 | Not decodable by `NSImage`/ImageIO. |
+| **SVG** | ❌ by ImageIO | Yes, rasterised | Not decodable by `NSImage`/ImageIO; `SVGRasterizer` renders it first (§6.3). Reaches Zap by every route a bitmap does — chosen file, dropped file, dragged link, search result. |
 
 Detect the type from the **decoded data** (`CGImageSourceGetType`), never from the
 file extension or the server's `Content-Type`.
+
+**Shipped:** `IconImport` is the single door for anything the user supplies. It
+sniffs the bytes, sends SVG to `SVGRasterizer` and everything else to
+`IconImageValidator`, and is `async` because the first of those drives a web view.
+`IconStore` takes an image rather than a file URL for the same reason: a synchronous
+URL-decoding convenience is a second ingestion path that silently refuses every SVG,
+which is exactly how SVG came to be rejected with "that file isn't an image Zap can
+read" after §6.3 had already shipped.
 
 ### 6.2 Dimensions, geometry, memory
 

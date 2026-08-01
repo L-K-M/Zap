@@ -35,11 +35,26 @@ final class IconStoreTests: XCTestCase {
         return IconTestSupport.writePNG(width: width, height: height, to: url, filled: filled)
     }
 
+    /// Adopts a file the way Settings does: decode it, then hand the *image* to
+    /// the store. `IconStore` deliberately takes no file URL — `IconImport` owns
+    /// turning bytes into an image, and for SVG that can't be done synchronously.
+    /// Every fixture here is a bitmap, so this takes `IconImport`'s bitmap branch
+    /// directly rather than standing up the web view its SVG branch needs
+    /// (`UNJAILED.md §9`'s manual list).
+    @discardableResult
+    private func adopt(_ url: URL,
+                       forBundleID bundleID: String) -> Result<IconManifest.Entry, IconImageValidator.Rejection> {
+        switch IconImageValidator.decode(contentsOf: url) {
+        case .failure(let rejection): return .failure(rejection)
+        case .success(let image): return store.setCustomIcon(image, forBundleID: bundleID)
+        }
+    }
+
     // MARK: Adopting a file
 
     func testAdoptingAFileStoresItAndRecordsTheEntry() throws {
         let entry = try XCTUnwrap(
-            store.setCustomIcon(from: sourcePNG(), forBundleID: "com.apple.Safari").successValue)
+            adopt(sourcePNG(), forBundleID: "com.apple.Safari").successValue)
 
         XCTAssertEqual(entry.file, "com.apple.Safari.png")
         XCTAssertEqual(entry.origin, .file)
@@ -54,7 +69,7 @@ final class IconStoreTests: XCTestCase {
     /// The stored file is Zap's own PNG output, not a copy of the source
     /// (`UNJAILED.md §6.4`).
     func testAdoptedFileIsReEncodedAsPNG() throws {
-        store.setCustomIcon(from: sourcePNG(), forBundleID: "a.b")
+        adopt(sourcePNG(), forBundleID: "a.b")
         let stored = try XCTUnwrap(store.imageURL(forBundleID: "a.b"))
         XCTAssertEqual(stored.pathExtension, "png")
 
@@ -63,7 +78,7 @@ final class IconStoreTests: XCTestCase {
     }
 
     func testAdoptingAnUndersizeFileIsRejectedAndStoresNothing() {
-        let result = store.setCustomIcon(from: sourcePNG(width: 32, height: 32), forBundleID: "a.b")
+        let result = adopt(sourcePNG(width: 32, height: 32), forBundleID: "a.b")
         XCTAssertEqual(result.failureValue, .tooSmall(width: 32, height: 32))
         XCTAssertNil(store.entry(forBundleID: "a.b"))
         XCTAssertNil(store.imageURL(forBundleID: "a.b"))
@@ -72,7 +87,7 @@ final class IconStoreTests: XCTestCase {
     func testAdoptingAnUnreadableFileIsRejected() {
         let junk = sourceDirectory.appendingPathComponent("junk.png")
         try? Data("not an image".utf8).write(to: junk)
-        XCTAssertEqual(store.setCustomIcon(from: junk, forBundleID: "a.b").failureValue, .unreadable)
+        XCTAssertEqual(adopt(junk, forBundleID: "a.b").failureValue, .unreadable)
         XCTAssertNil(store.entry(forBundleID: "a.b"))
     }
 
@@ -88,7 +103,7 @@ final class IconStoreTests: XCTestCase {
     }
 
     func testPinningReplacesAnExistingCustomIcon() throws {
-        store.setCustomIcon(from: sourcePNG(), forBundleID: "a.b")
+        adopt(sourcePNG(), forBundleID: "a.b")
         let stored = try XCTUnwrap(store.imageURL(forBundleID: "a.b"))
 
         store.pinToSystemIcon(forBundleID: "a.b")
@@ -98,7 +113,7 @@ final class IconStoreTests: XCTestCase {
     }
 
     func testClearingRemovesBothTheEntryAndTheFile() throws {
-        store.setCustomIcon(from: sourcePNG(), forBundleID: "a.b")
+        adopt(sourcePNG(), forBundleID: "a.b")
         let stored = try XCTUnwrap(store.imageURL(forBundleID: "a.b"))
 
         store.clearOverride(forBundleID: "a.b")
@@ -107,8 +122,8 @@ final class IconStoreTests: XCTestCase {
     }
 
     func testRemoveAllClearsEverything() throws {
-        store.setCustomIcon(from: sourcePNG(), forBundleID: "a.b")
-        store.setCustomIcon(from: sourcePNG(), forBundleID: "c.d")
+        adopt(sourcePNG(), forBundleID: "a.b")
+        adopt(sourcePNG(), forBundleID: "c.d")
         store.pinToSystemIcon(forBundleID: "e.f")
 
         store.removeAll()
@@ -121,7 +136,7 @@ final class IconStoreTests: XCTestCase {
     // MARK: Persistence
 
     func testEntriesSurviveAcrossInstances() throws {
-        store.setCustomIcon(from: sourcePNG(), forBundleID: "com.apple.Safari")
+        adopt(sourcePNG(), forBundleID: "com.apple.Safari")
         store.pinToSystemIcon(forBundleID: "com.apple.Mail")
 
         let reopened = IconStore(directory: directory)
@@ -168,7 +183,7 @@ final class IconStoreTests: XCTestCase {
     func testStoredFileNamesStayInsideTheDirectory() throws {
         // Even a bundle identifier that looks like a path lands in the directory.
         let entry = try XCTUnwrap(
-            store.setCustomIcon(from: sourcePNG(), forBundleID: "../../escape").successValue)
+            adopt(sourcePNG(), forBundleID: "../../escape").successValue)
         let file = try XCTUnwrap(entry.file)
         XCTAssertTrue(IconManifest.isSafeFileName(file))
 
