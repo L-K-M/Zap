@@ -9,7 +9,7 @@ struct IconsView: View {
     let iconResolver: IconResolver
 
     @State private var apps: [AppInfo] = []
-    @State private var statuses: [String: IconResolver.Status] = [:]
+    @State private var statuses: [String: IconArtworkStatus] = [:]
     @State private var search = ""
     @State private var problem: String?
     /// Bundle identifier of the row a drag is currently over.
@@ -78,49 +78,24 @@ struct IconsView: View {
     // MARK: Rows
 
     private func row(for app: AppInfo) -> some View {
-        HStack(spacing: 8) {
-            Image(nsImage: icon(for: app) ?? NSImage())
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 24, height: 24)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(app.name)
-                Text(rowStatus(for: app))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Menu {
-                Button("Choose File…") { chooseFile(for: app) }
-                Button("Use Original Artwork") { useOriginalArtwork(for: app) }
-                    .disabled(!hasOverride(app))
-                Button("Use System Icon") { useSystemIcon(for: app) }
-                    .disabled(statuses[app.bundleIdentifier]?.isPinnedToSystemIcon == true)
-            } label: {
-                Image(systemName: "ellipsis.circle")
-            }
-            .fixedSize()
-        }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
-        // §5.3: the browser is the search box. A drag from one carries a URL rather
-        // than a file, and that is the more important ingestion path of the two.
-        .dropDestination(for: URL.self) { urls, _ in
-            guard let url = urls.first else { return false }
-            return adopt(url, for: app)
-        } isTargeted: { targeted in
-            if targeted {
-                dropTarget = app.bundleIdentifier
-            } else if dropTarget == app.bundleIdentifier {
-                dropTarget = nil
-            }
-        }
-        .listRowBackground(dropTarget == app.bundleIdentifier
-                           ? Color.accentColor.opacity(0.15) : Color.clear)
+        IconRow(
+            app: app,
+            icon: icon(for: app),
+            status: rowStatus(for: app),
+            hasOverride: hasOverride(app),
+            isPinnedToSystemIcon: statuses[app.bundleIdentifier]?.isPinnedToSystemIcon == true,
+            isDropTarget: dropTarget == app.bundleIdentifier,
+            onChooseFile: { chooseFile(for: app) },
+            onUseOriginalArtwork: { useOriginalArtwork(for: app) },
+            onUseSystemIcon: { useSystemIcon(for: app) },
+            onDrop: { adopt($0, for: app) },
+            onDropTargeted: { targeted in
+                if targeted {
+                    dropTarget = app.bundleIdentifier
+                } else if dropTarget == app.bundleIdentifier {
+                    dropTarget = nil
+                }
+            })
     }
 
     /// What the row's caption says, including transient states the status fetch
@@ -301,7 +276,7 @@ struct IconsView: View {
 
     /// Statuses decode bundle artwork, so they're gathered off the main thread.
     private func reloadStatuses() {
-        iconResolver.statuses(forBundleIDs: apps.map(\.bundleIdentifier)) { resolved in
+        IconArtworkStatus.load(forBundleIDs: apps.map(\.bundleIdentifier), store: store) { resolved in
             statuses = resolved
         }
     }

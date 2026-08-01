@@ -16,29 +16,6 @@ import CoreGraphics
 /// the icon size changes.
 final class IconResolver {
 
-    /// What Settings shows about one app's artwork.
-    struct Status: Equatable {
-        /// The shape of the app's own artwork, or `nil` when none was readable.
-        var shape: IconShape?
-        /// Whether the user has supplied a file for this app.
-        var hasCustomIcon: Bool
-        /// Whether this app is pinned to the system icon.
-        var isPinnedToSystemIcon: Bool
-
-        var label: String {
-            if isPinnedToSystemIcon { return "System icon" }
-            if hasCustomIcon { return "Custom icon" }
-            guard let shape else { return "No original artwork found" }
-            return shape.label
-        }
-    }
-
-    /// Corner rounding applied to full-bleed artwork so an un-masked square icon
-    /// doesn't read as the only hard-cornered thing on screen (`UNJAILED.md §4.2`).
-    /// A fixed fraction of the shorter edge for now — §8.4 wants it on the
-    /// Appearance tab alongside the other layout controls, which is phase 2.
-    static let fullBleedCornerRadiusFraction = 0.225
-
     let store: IconStore
 
     private let queue = DispatchQueue(label: "com.zapapp.icon-resolver", qos: .utility)
@@ -82,7 +59,7 @@ final class IconResolver {
         self.mode = preferences.iconSourceMode
         self.iconSize = preferences.iconSize
         self.backingScale = scale
-        self.targetPixelSize = Self.pixelSize(forIconSize: preferences.iconSize, scale: scale)
+        self.targetPixelSize = IconRenderer.pixelSize(forIconSize: preferences.iconSize, scale: scale)
         self.bleed = preferences.iconBleed
         self.trimsTransparentEdges = preferences.iconTrimTransparentEdges
         self.drawsShadow = preferences.iconShadow
@@ -222,35 +199,6 @@ final class IconResolver {
         warm(bundleIDs: toWarm)
     }
 
-    // MARK: Settings
-
-    /// Describes one app's artwork. Decodes the bundle's icon, so it blocks —
-    /// call it off the main thread.
-    func status(forBundleID bundleID: String) -> Status {
-        let entry = store.entry(forBundleID: bundleID)
-        if entry?.origin == .system {
-            return Status(shape: nil, hasCustomIcon: false, isPinnedToSystemIcon: true)
-        }
-        if store.imageURL(forBundleID: bundleID) != nil {
-            return Status(shape: nil, hasCustomIcon: true, isPinnedToSystemIcon: false)
-        }
-        let shape = BundleArtwork.image(forBundleID: bundleID).map { IconShapeClassifier.classify($0) }
-        return Status(shape: shape, hasCustomIcon: false, isPinnedToSystemIcon: false)
-    }
-
-    /// Describes several apps at once, off the main thread, calling `completion`
-    /// back on the main queue.
-    func statuses(forBundleIDs bundleIDs: [String], completion: @escaping ([String: Status]) -> Void) {
-        queue.async { [weak self] in
-            guard let self else { return }
-            var result: [String: Status] = [:]
-            for bundleID in bundleIDs {
-                result[bundleID] = self.status(forBundleID: bundleID)
-            }
-            DispatchQueue.main.async { completion(result) }
-        }
-    }
-
     // MARK: Resolution
 
     private func enqueueResolve(_ bundleID: String, generation: Int) {
@@ -302,7 +250,8 @@ final class IconResolver {
             let shape = IconShapeClassifier.classify(image)
             guard shape.isWorthSubstituting else { return .useSystemIcon }
             if shape.needsCornerMask {
-                image = Self.maskingCorners(image, radiusFraction: Self.fullBleedCornerRadiusFraction)
+                image = IconRenderer.maskingCorners(
+                    image, radiusFraction: IconRenderer.fullBleedCornerRadiusFraction)
             }
         }
 
@@ -348,7 +297,7 @@ final class IconResolver {
     private func refreshTargetSize() {
         let scale = Self.maximumBackingScale()
         lock.lock()
-        let pixelSize = Self.pixelSize(forIconSize: iconSize, scale: scale)
+        let pixelSize = IconRenderer.pixelSize(forIconSize: iconSize, scale: scale)
         let unchanged = pixelSize == targetPixelSize && scale == backingScale
         targetPixelSize = pixelSize
         backingScale = scale
@@ -358,60 +307,8 @@ final class IconResolver {
         invalidate()
     }
 
-    /// Pixels an icon needs at `iconSize` points on the sharpest attached display,
-    /// rounded up to a whole pixel and never below a floor that keeps a
-    /// small-icon-size setting from caching something unusably soft.
-    static func pixelSize(forIconSize iconSize: Double, scale: CGFloat) -> Int {
-        let pixels = Int((iconSize * Double(max(scale, 1))).rounded(.up))
-        return max(IconImageValidator.Limits.warnBelowPixels, pixels)
-    }
-
     /// Must be called on the main thread — `NSScreen` is main-thread-only.
     private static func maximumBackingScale() -> CGFloat {
         NSScreen.screens.map(\.backingScaleFactor).max() ?? 2
-    }
-
-    // MARK: Image work
-
-    /// Resamples `image` so its longest edge is `longestEdge`, never upscaling.
-    static func downsample(_ image: CGImage, longestEdge: Int) -> CGImage {
-        let sourceLongest = max(image.width, image.height)
-        guard longestEdge > 0, sourceLongest > longestEdge else { return image }
-
-        let scale = Double(longestEdge) / Double(sourceLongest)
-        let width = max(1, Int((Double(image.width) * scale).rounded()))
-        let height = max(1, Int((Double(image.height) * scale).rounded()))
-        guard let context = makeContext(width: width, height: height) else { return image }
-
-        context.interpolationQuality = .high
-        context.draw(image, in: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
-        return context.makeImage() ?? image
-    }
-
-    /// Clips `image` to a rounded rectangle, for full-bleed artwork that would
-    /// otherwise be the only hard-cornered thing in the row.
-    static func maskingCorners(_ image: CGImage, radiusFraction: Double) -> CGImage {
-        let width = image.width
-        let height = image.height
-        guard width > 0, height > 0, let context = makeContext(width: width, height: height) else {
-            return image
-        }
-
-        let rect = CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height))
-        let radius = CGFloat(radiusFraction) * min(rect.width, rect.height)
-        context.interpolationQuality = .high
-        context.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
-        context.clip()
-        context.draw(image, in: rect)
-        return context.makeImage() ?? image
-    }
-
-    /// An sRGB bitmap context with alpha, so everything downstream — the alpha
-    /// classifier included — works in a known colour space (`UNJAILED.md §6.4`).
-    private static func makeContext(width: Int, height: Int) -> CGContext? {
-        let space = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
-        return CGContext(data: nil, width: width, height: height,
-                         bitsPerComponent: 8, bytesPerRow: 0, space: space,
-                         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
     }
 }

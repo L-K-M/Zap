@@ -7,46 +7,46 @@ import XCTest
 /// The parts of icon resolution that are pure functions. The cache itself needs a
 /// live `Preferences`, `NSScreen` and a background queue, so its behaviour is on
 /// the manual list in `UNJAILED.md §9`.
-final class IconResolverTests: XCTestCase {
+final class IconRendererTests: XCTestCase {
 
     // MARK: Cached size
 
     func testCachedPixelSizeFollowsTheBackingScale() {
-        XCTAssertEqual(IconResolver.pixelSize(forIconSize: 80, scale: 2), 160)
-        XCTAssertEqual(IconResolver.pixelSize(forIconSize: 128, scale: 2), 256)
-        XCTAssertEqual(IconResolver.pixelSize(forIconSize: 256, scale: 2), 512)
+        XCTAssertEqual(IconRenderer.pixelSize(forIconSize: 80, scale: 2), 160)
+        XCTAssertEqual(IconRenderer.pixelSize(forIconSize: 128, scale: 2), 256)
+        XCTAssertEqual(IconRenderer.pixelSize(forIconSize: 256, scale: 2), 512)
     }
 
     func testCachedPixelSizeHasAFloor() {
         // A tiny icon-size setting must not cache something that looks awful the
         // moment the user drags the slider back up.
-        XCTAssertEqual(IconResolver.pixelSize(forIconSize: 24, scale: 1),
+        XCTAssertEqual(IconRenderer.pixelSize(forIconSize: 24, scale: 1),
                        IconImageValidator.Limits.warnBelowPixels)
     }
 
     func testCachedPixelSizeRoundsUp() {
-        XCTAssertEqual(IconResolver.pixelSize(forIconSize: 100.5, scale: 1.5), 151)
+        XCTAssertEqual(IconRenderer.pixelSize(forIconSize: 100.5, scale: 1.5), 151)
     }
 
     // MARK: Downsampling
 
     func testDownsampleShrinksToTheRequestedEdge() {
         let image = IconTestSupport.makeImage(width: 1024, height: 1024)
-        let result = IconResolver.downsample(image, longestEdge: 160)
+        let result = IconRenderer.downsample(image, longestEdge: 160)
         XCTAssertEqual(result.width, 160)
         XCTAssertEqual(result.height, 160)
     }
 
     func testDownsampleKeepsTheAspectRatio() {
         let image = IconTestSupport.makeImage(width: 800, height: 400)
-        let result = IconResolver.downsample(image, longestEdge: 200)
+        let result = IconRenderer.downsample(image, longestEdge: 200)
         XCTAssertEqual(result.width, 200)
         XCTAssertEqual(result.height, 100)
     }
 
     func testDownsampleNeverUpscales() {
         let image = IconTestSupport.makeImage(width: 64, height: 64)
-        let result = IconResolver.downsample(image, longestEdge: 512)
+        let result = IconRenderer.downsample(image, longestEdge: 512)
         XCTAssertEqual(result.width, 64)
     }
 
@@ -58,15 +58,15 @@ final class IconResolverTests: XCTestCase {
         let square = IconTestSupport.makeImage(width: 256, height: 256)
         XCTAssertEqual(IconShapeClassifier.classify(square), .fullBleed)
 
-        let masked = IconResolver.maskingCorners(
-            square, radiusFraction: IconResolver.fullBleedCornerRadiusFraction)
+        let masked = IconRenderer.maskingCorners(
+            square, radiusFraction: IconRenderer.fullBleedCornerRadiusFraction)
         XCTAssertEqual(IconShapeClassifier.classify(masked), .roundedSquare)
         XCTAssertEqual(masked.width, 256)
     }
 
     func testMaskingCornersWithNoRadiusLeavesTheShapeAlone() {
         let square = IconTestSupport.makeImage(width: 128, height: 128)
-        let masked = IconResolver.maskingCorners(square, radiusFraction: 0)
+        let masked = IconRenderer.maskingCorners(square, radiusFraction: 0)
         XCTAssertEqual(IconShapeClassifier.classify(masked), .fullBleed)
     }
 
