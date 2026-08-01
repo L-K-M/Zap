@@ -188,7 +188,7 @@ struct AppearanceView: View {
         do {
             try data.write(to: url)
         } catch {
-            NSLog("Zap: failed to export theme: \(error.localizedDescription)")
+            NSLog("Zap: failed to export theme: %@", error.localizedDescription)
         }
     }
 
@@ -201,7 +201,7 @@ struct AppearanceView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard let data = try? Data(contentsOf: url),
               let preset = try? JSONDecoder().decode(AppearancePreset.self, from: data) else {
-            NSLog("Zap: couldn't read a theme from \(url.lastPathComponent)")
+            NSLog("Zap: couldn't read a theme from %@", url.lastPathComponent)
             return
         }
         preset.apply(to: preferences)
