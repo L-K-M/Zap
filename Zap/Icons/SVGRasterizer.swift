@@ -50,7 +50,7 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
     static let timeout: TimeInterval = 10
 
     /// How long the render itself may take, once the page is up. Shorter, because
-    /// by then the work left is a single capture.
+    /// by then the work left is a PDF capture and the draw into a bitmap.
     static let renderTimeout: TimeInterval = 5
 
     // MARK: Pure helpers

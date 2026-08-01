@@ -119,6 +119,52 @@ final class SVGRasterizerTests: XCTestCase {
         XCTAssertFalse(mask.isInk(row: 62, column: 32, threshold: 1))
     }
 
+    /// Alpha at one pixel, addressed the way `CGImage` defines rows: index 0 is the
+    /// top scanline. Deliberately not `AlphaMask`, which says outright that "row 0
+    /// is whichever edge Core Graphics drew first" — it declines to define the very
+    /// thing this test is about.
+    private func alpha(of image: CGImage, x: Int, y: Int) -> UInt8 {
+        let width = image.width
+        let height = image.height
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        let drawn: Bool = rgba.withUnsafeMutableBytes { buffer in
+            guard let base = buffer.baseAddress,
+                  let context = CGContext(data: base, width: width, height: height,
+                                          bitsPerComponent: 8, bytesPerRow: width * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return false }
+            context.clear(CGRect(x: 0, y: 0, width: width, height: height))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn, y >= 0, y < height, x >= 0, x < width else { return 0 }
+        return rgba[(y * width + x) * 4 + 3]
+    }
+
+    /// Which way up the page comes out.
+    ///
+    /// Every other fixture here is vertically symmetric, so all of them pass under
+    /// either orientation — this is the one that can tell them apart. PDF space puts
+    /// y=0 at the *bottom*, so ink at high y is the top of the page and must land in
+    /// the low-numbered rows of the bitmap.
+    ///
+    /// No flip is applied before `drawPDFPage`, and this asserts that's right: a
+    /// bitmap context's user space is bottom-left too, and its first row in memory
+    /// is the image's top. The two conventions already agree. `IconRenderer` relies
+    /// on the same round trip for every downsampled icon in the switcher, which is
+    /// why those aren't upside-down either.
+    func testInkAtTheTopOfThePageLandsAtTheTopOfTheBitmap() throws {
+        let pdf = onePagePDF(width: 100, height: 100) { context in
+            context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+            context.fill(CGRect(x: 0, y: 75, width: 100, height: 25))
+        }
+        let image = try XCTUnwrap(SVGRasterizer.image(fromPDF: pdf, side: 64))
+
+        XCTAssertEqual(alpha(of: image, x: 32, y: 8), 255, "top quarter should be inked")
+        XCTAssertEqual(alpha(of: image, x: 32, y: 56), 0, "bottom quarter should be clear")
+    }
+
     func testGarbageIsNotAPDF() {
         XCTAssertNil(SVGRasterizer.image(fromPDF: Data("not a pdf".utf8), side: 64))
         XCTAssertNil(SVGRasterizer.image(fromPDF: Data(), side: 64))
