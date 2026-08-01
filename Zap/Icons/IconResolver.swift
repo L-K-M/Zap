@@ -2,10 +2,14 @@ import AppKit
 import Combine
 import CoreGraphics
 
-/// Resolves a bundle identifier to the artwork the switcher should draw, and is
-/// the only part of this feature the ⌘-Tab hot path touches (`UNJAILED.md §8.2`).
+/// Resolves an app to the artwork the switcher should draw, and is the only part
+/// of this feature the ⌘-Tab hot path touches (`UNJAILED.md §8.2`).
 ///
-/// The rule is that `icon(forBundleID:)` costs a dictionary lookup and nothing
+/// Keyed by `IconIdentity` rather than a bundle identifier, because an identifier
+/// does not identify an app: site-specific-browser wrappers all report the
+/// browser's, and one override would then paint every one of them.
+///
+/// The rule is that `icon(for:)` costs a dictionary lookup and nothing
 /// else. Everything expensive — reading a bundle, decoding, resampling — happens
 /// on a background queue, either warmed at launch or kicked off by the first miss.
 /// A miss returns `nil`, which the caller reads as "use the system icon", so the
@@ -31,11 +35,11 @@ final class IconResolver {
         case image(NSImage)
     }
 
-    private var cache: [String: Resolution] = [:]
-    private var inFlight: Set<String> = []
-    /// Every bundle identifier seen, so an invalidation can re-warm them all
-    /// rather than waiting for each to be missed again.
-    private var known: Set<String> = []
+    private var cache: [IconIdentity: Resolution] = [:]
+    private var inFlight: Set<IconIdentity> = []
+    /// Every app seen, so an invalidation can re-warm them all rather than waiting
+    /// for each to be missed again.
+    private var known: Set<IconIdentity> = []
     /// Bumped on every invalidation. Work enqueued under an older generation is
     /// discarded when it lands, so a resolve started before an icon-size change
     /// can't overwrite the cache with an icon at the old size.
@@ -119,7 +123,7 @@ final class IconResolver {
         ) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   let bundleID = app.bundleIdentifier else { return }
-            self?.warm(bundleIDs: [bundleID])
+            self?.warm([IconIdentity(bundleIdentifier: bundleID, bundleURL: app.bundleURL)])
         }
 
         // Plugging in a sharper display makes every cached icon too soft for it,
@@ -142,83 +146,83 @@ final class IconResolver {
 
     // MARK: Hot path
 
-    /// The artwork to draw for `bundleID`, or `nil` to fall back to the system
+    /// The artwork to draw for `identity`, or `nil` to fall back to the system
     /// icon. A dictionary lookup; a miss schedules the work and returns `nil`.
-    func icon(forBundleID bundleID: String) -> NSImage? {
+    func icon(for identity: IconIdentity) -> NSImage? {
         lock.lock()
-        known.insert(bundleID)
-        let cached = cache[bundleID]
+        known.insert(identity)
+        let cached = cache[identity]
         var pendingGeneration: Int?
-        if cached == nil, !inFlight.contains(bundleID) {
-            inFlight.insert(bundleID)
+        if cached == nil, !inFlight.contains(identity) {
+            inFlight.insert(identity)
             pendingGeneration = generation
         }
         lock.unlock()
 
-        if let pendingGeneration { enqueueResolve(bundleID, generation: pendingGeneration) }
+        if let pendingGeneration { enqueueResolve(identity, generation: pendingGeneration) }
 
         if case .image(let image)? = cached { return image }
         return nil
     }
 
-    /// Resolves `bundleIDs` ahead of time so the first ⌘-Tab after launch already
+    /// Resolves `identities` ahead of time so the first ⌘-Tab after launch already
     /// has them.
-    func warm(bundleIDs: [String]) {
-        var pending: [String] = []
+    func warm(_ identities: [IconIdentity]) {
+        var pending: [IconIdentity] = []
         lock.lock()
         let generation = self.generation
-        for bundleID in bundleIDs {
-            known.insert(bundleID)
-            guard cache[bundleID] == nil, !inFlight.contains(bundleID) else { continue }
-            inFlight.insert(bundleID)
-            pending.append(bundleID)
+        for identity in identities {
+            known.insert(identity)
+            guard cache[identity] == nil, !inFlight.contains(identity) else { continue }
+            inFlight.insert(identity)
+            pending.append(identity)
         }
         lock.unlock()
 
-        for bundleID in pending { enqueueResolve(bundleID, generation: generation) }
+        for identity in pending { enqueueResolve(identity, generation: generation) }
     }
 
-    /// Drops cached artwork. Pass a bundle identifier to invalidate one app (after
-    /// the user changes its icon), or `nil` for all of them.
-    func invalidate(bundleID: String? = nil) {
-        var toWarm: [String] = []
+    /// Drops cached artwork. Pass an app to invalidate one (after the user changes
+    /// its icon), or `nil` for all of them.
+    func invalidate(_ identity: IconIdentity? = nil) {
+        var toWarm: [IconIdentity] = []
         lock.lock()
         // Retire everything already in flight along with the cached values: those
         // results were computed for the settings we just left.
         generation &+= 1
         inFlight.removeAll()
-        if let bundleID {
-            cache[bundleID] = nil
-            toWarm = [bundleID]
+        if let identity {
+            cache[identity] = nil
+            toWarm = [identity]
         } else {
             cache.removeAll()
             toWarm = Array(known)
         }
         lock.unlock()
 
-        warm(bundleIDs: toWarm)
+        warm(toWarm)
     }
 
     // MARK: Resolution
 
-    private func enqueueResolve(_ bundleID: String, generation: Int) {
+    private func enqueueResolve(_ identity: IconIdentity, generation: Int) {
         queue.async { [weak self] in
             guard let self else { return }
-            let resolution = self.resolve(bundleID)
+            let resolution = self.resolve(identity)
             self.lock.lock()
             // Dropped wholesale if an invalidation happened while this was in
             // flight — including the in-flight marker, which by then belongs to
             // whatever re-warm replaced it.
             if generation == self.generation {
-                self.cache[bundleID] = resolution
-                self.inFlight.remove(bundleID)
+                self.cache[identity] = resolution
+                self.inFlight.remove(identity)
             }
             self.lock.unlock()
         }
     }
 
     /// The resolution ladder from `UNJAILED.md §3`, first hit wins.
-    private func resolve(_ bundleID: String) -> Resolution {
+    private func resolve(_ identity: IconIdentity) -> Resolution {
         lock.lock()
         let mode = self.mode
         let pixelSize = self.targetPixelSize
@@ -230,17 +234,20 @@ final class IconResolver {
 
         guard mode.usesBundleArtwork else { return .useSystemIcon }
         // A per-app pin opts this app out entirely.
-        guard !store.isPinnedToSystemIcon(bundleID) else { return .useSystemIcon }
+        guard !store.isPinnedToSystemIcon(identity) else { return .useSystemIcon }
 
         var artwork: CGImage?
         var isCustom = false
 
-        if mode.usesCustomIcons, let custom = store.customImage(forBundleID: bundleID) {
+        if mode.usesCustomIcons, let custom = store.customImage(for: identity) {
             artwork = custom
             isCustom = true
         }
         if artwork == nil {
-            artwork = BundleArtwork.image(forBundleID: bundleID)
+            // Still by identifier: recovering an app's *own* artwork is a question
+            // about the bundle, and a wrapper that borrowed an identifier borrowed
+            // the artwork behind it too. Only the user's override is per-app here.
+            artwork = BundleArtwork.image(forBundleID: identity.bundleIdentifier)
         }
         guard var image = artwork else { return .useSystemIcon }
 

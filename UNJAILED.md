@@ -55,7 +55,7 @@ problems, all of which Zap gets to skip:
 |---|---|
 | Must modify the target app bundle | Reads only; substitutes at draw time |
 | Can't touch `/System/Applications` or App Store apps ([SquircleNoMore][sqnm]) | Reads any bundle it can `stat` — Apple's own apps included |
-| Reverts when the app updates | Keyed by bundle ID, survives updates |
+| Reverts when the app updates | Keyed by the app itself, survives updates |
 | Leaves Finder-info/resource-fork detritus that trips `codesign` | Writes nothing into any bundle |
 | Needs an undo story | Delete a preference row |
 
@@ -359,6 +359,17 @@ Rules:
 
 ## 6. Constraints on supported images
 
+**Shipped: what a stored icon is keyed by.** Not the bundle identifier, which
+does not identify an app. Site-specific-browser wrappers — Coherence, Unite, the
+Chrome/Electron family — ship one app bundle per site and every one of them reports
+the browser's identifier, so `/Applications/Claude ★.app`, `/Applications/CodeNomad.app`
+and `/Applications/CodeNomad Dev.app` were all `com.google.Chrome` and shared a
+single override between them. `IconIdentity` writes new overrides under the bundle
+*path*, which is unique, and reads fall back to the identifier so every icon set
+before the change still resolves — nothing was migrated. The trade is that an app
+which moves loses its icon where an identifier would have followed it; updating in
+place doesn't move it, and re-picking the file fixes it.
+
 ### 6.1 Formats
 
 macOS reads a lot through ImageIO, but "readable" and "should be accepted" differ.
@@ -551,7 +562,7 @@ Today `AppInfo.init?(runningApplication:)` reads `app.icon` directly, and
 flags that everything expensive happens on the main thread on the keystroke path;
 this feature must not add to that.
 
-- `IconResolver` holds a `[String: NSImage]` keyed by bundle ID, **pre-rendered
+- `IconResolver` holds a cache keyed by `IconIdentity`, **pre-rendered
   at the current icon size × the max backing scale factor**, with the shadow baked
   in (a SwiftUI `.shadow` on 40 icons per frame would show up — cf. `§P3`).
 - Warmed at launch and on preference change, off the main thread. Invalidated on
