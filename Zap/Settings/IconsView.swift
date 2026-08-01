@@ -230,6 +230,8 @@ struct IconsView: View {
                 }
             }
         }
+        // Accepted: the download is under way and the row says so.
+        return true
     }
 
     /// Shared outcome handling for every ingestion path.
