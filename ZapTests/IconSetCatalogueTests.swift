@@ -73,6 +73,27 @@ final class IconSetCatalogueTests: XCTestCase {
         XCTAssertGreaterThan(IconSetCatalogue.all.count, 1)
     }
 
+    /// Every row says what is in it, in its own words.
+    ///
+    /// The sets are far less alike than their names suggest — thousands of branded
+    /// logos in one, two hundred of a single desktop's applications in another,
+    /// monochrome glyphs in a third — so the summary is what makes the manager a
+    /// choice rather than a lucky dip. A row added without one would look complete
+    /// and offer the user nothing to choose on.
+    func testEverySetSaysWhatIsInIt() {
+        for set in IconSetCatalogue.all {
+            let summary = set.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+            XCTAssertGreaterThan(summary.count, 20, "\(set.id)'s summary says too little")
+            XCTAssertNotEqual(summary, set.name, "\(set.id)'s summary just repeats its name")
+        }
+    }
+
+    /// Ordered broadest-coverage first, because the picker opens on the first one
+    /// and the sheet's suggestions come from whichever set that is.
+    func testTheBroadestSetIsOfferedFirst() {
+        XCTAssertEqual(IconSetCatalogue.all.first, IconSetCatalogue.papirus)
+    }
+
     // MARK: Directory naming
 
     func testUnsafeSetIdentifiersAreRefused() {

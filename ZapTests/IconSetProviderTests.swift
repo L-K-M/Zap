@@ -8,7 +8,8 @@ final class IconSetProviderTests: XCTestCase {
     private var directory: URL!
 
     private let set = IconSet(
-        id: "testset", name: "Test Set", owner: "example", repository: "theme",
+        id: "testset", name: "Test Set", summary: "A set built by the tests.",
+        owner: "example", repository: "theme",
         branch: "main", license: "CC0-1.0",
         licenseURL: URL(string: "https://example.invalid/licence"),
         homepage: URL(string: "https://example.invalid/"),

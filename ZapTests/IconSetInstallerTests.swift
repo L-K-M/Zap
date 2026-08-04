@@ -16,7 +16,8 @@ final class IconSetInstallerTests: XCTestCase {
 
     private func makeSet(glob: String = "*/Papirus/64x64/apps/*.svg",
                          strip: Int = 4) -> IconSet {
-        IconSet(id: "testset", name: "Test Set", owner: "example", repository: "theme",
+        IconSet(id: "testset", name: "Test Set", summary: "A set built by the tests.",
+                owner: "example", repository: "theme",
                 branch: "main", license: "GPL-3.0", licenseURL: nil, homepage: nil,
                 archiveGlob: glob, strippedComponents: strip)
     }

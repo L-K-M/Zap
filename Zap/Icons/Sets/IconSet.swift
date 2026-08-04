@@ -23,6 +23,16 @@ struct IconSet: Identifiable, Equatable {
     let id: String
     let name: String
 
+    /// One line on what is actually in this set, shown in the manager.
+    ///
+    /// Not decoration. These themes differ enormously in what "icon theme" means —
+    /// thousands of branded app logos in one, two hundred of a single desktop's own
+    /// applications in another, monochrome 16 px glyphs in a third — and a name and
+    /// a licence say none of that. Without this, choosing between them means
+    /// installing one to find out, and "Adwaita" in particular delivers something
+    /// nobody would guess from the word.
+    let summary: String
+
     /// Where it lives. Archives come from `github.com/<owner>/<repository>`, which
     /// is upstream rather than a mirror — Pling hosts Papirus too, but 15 months
     /// behind, with an empty licence field and download links that expire.
