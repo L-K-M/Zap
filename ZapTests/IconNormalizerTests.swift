@@ -206,24 +206,36 @@ final class IconNormalizerTests: XCTestCase {
     /// Faint enough to be lift rather than a second shape. The old value was dark
     /// enough that on thin artwork the shadow read as ink in its own right.
     ///
-    /// Measured strictly *outside* the artwork's own bounding box, where every
-    /// sample is shadow and nothing else. Comparing whole-image ink fractions
-    /// instead would need slack for the artwork's antialiased edge — which sits over
-    /// the shadow and so lands a shade more opaque — and slack is exactly what would
-    /// let a doubled shadow opacity through unnoticed.
+    /// Measured strictly *outside* the artwork, where every sample is shadow and
+    /// nothing else. Comparing whole-image ink fractions instead would need slack
+    /// for the artwork's antialiased edge — which sits over the shadow and so lands
+    /// a shade more opaque — and slack is exactly what would let a doubled shadow
+    /// opacity through unnoticed.
+    ///
+    /// "Outside the artwork" comes from the **shadow-free** render, at a threshold
+    /// low enough to catch any cell the artwork tints at all. Taking the bounds off
+    /// the shadowed image at a high threshold would draw the box around the ink's
+    /// *opaque* core and leave its antialiased fringe on the outside, where this
+    /// would then measure the artwork's own edge and call it shadow. Both renders
+    /// place the artwork identically on the same canvas, so the shadow-free bounds
+    /// are exactly the region to exclude.
     func testTheShadowNeverReadsAsInk() throws {
         let image = IconTestSupport.makeImage(width: 256, height: 256)
+        let plain = IconNormalizer.normalize(image, targetExtent: 200, bleed: 0.15,
+                                             trim: true, shadow: false)
         let shadowed = IconNormalizer.normalize(image, targetExtent: 200, bleed: 0.15,
                                                 trim: true, shadow: true)
 
+        let artworkMask = try XCTUnwrap(AlphaMask(image: plain, longestEdge: 128))
+        let artwork = try XCTUnwrap(artworkMask.inkBounds(threshold: 1),
+                                    "every cell the artwork tints at all")
         let mask = try XCTUnwrap(AlphaMask(image: shadowed, longestEdge: 128))
-        let ink = try XCTUnwrap(mask.inkBounds(threshold: 200), "the artwork itself")
 
         var strongestOutside: UInt8 = 0
         for row in 0..<mask.height {
             for column in 0..<mask.width {
-                let insideArtwork = row >= ink.minRow && row <= ink.maxRow
-                    && column >= ink.minColumn && column <= ink.maxColumn
+                let insideArtwork = row >= artwork.minRow && row <= artwork.maxRow
+                    && column >= artwork.minColumn && column <= artwork.maxColumn
                 guard !insideArtwork else { continue }
                 strongestOutside = max(strongestOutside, mask.samples[row * mask.width + column])
             }
