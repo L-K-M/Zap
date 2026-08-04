@@ -14,8 +14,13 @@ import Foundation
 /// path that skipped this is precisely how SVG came to be refused with "that file
 /// isn't an image Zap can read".
 ///
-/// `async` because rasterising SVG drives a `WKWebView`. Bitmaps never suspend.
+/// `async` because rasterising SVG drives a `WKWebView`. Bitmaps never suspend —
+/// and neither does a cache hit, which `IconRenderCache` makes the common case for
+/// markup that has been seen before.
 enum IconImport {
+
+    /// Where rendered SVG is kept. Injectable so tests get their own directory.
+    static var cache = IconRenderCache.shared
 
     /// Which decoder some bytes are headed for.
     ///
@@ -60,8 +65,13 @@ enum IconImport {
             return IconImageValidator.decode(data: data)
                 .map { IconRenderer.downsample($0, longestEdge: side) }
         case .svg:
+            // Cached here rather than inside the rasteriser, so it covers the one
+            // door every route already comes through and the rasteriser stays a
+            // thing that renders rather than a thing that also remembers.
+            if let cached = cache.image(for: data, side: side) { return .success(cached) }
             switch await SVGRasterizer.rasterize(data, side: side) {
             case .success(let image):
+                cache.store(image, for: data, side: side)
                 return .success(image)
             case .failure(let error):
                 return .failure(.svgNotRendered(reason: error.message))

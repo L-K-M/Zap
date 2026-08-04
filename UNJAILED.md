@@ -359,6 +359,53 @@ Rules:
 
 ## 6. Constraints on supported images
 
+### 5.6 Icon sets — design, not built
+
+Linux desktops have large, coherent, freely licensed icon themes: Papirus, Numix,
+Tela, Adwaita, Breeze. They are exactly the artwork §5.2 concluded no *general*
+image search can honestly provide — thousands of app icons, drawn to one brief,
+with a licence stated at the top of the repository. Now that SVG renders (§6.3),
+they are reachable.
+
+**Decided:**
+
+| | |
+|---|---|
+| Zap fetches and updates the sets | The user shouldn't have to find, unpack or maintain a theme by hand |
+| Selection stays manual, per app | Same flow as today — a set is somewhere to pick *from*, not a mode that repaints everything |
+| Zap suggests matches | The point of picking from a set is not scrolling it; the app's name should surface its likely icon first |
+| Several sets, not one | Papirus is the example, not the feature |
+
+**What this is not.** Not a fourth `IconSourceMode`, and not artwork shipped with
+Zap — §11.2 rules that out on trademark, size and staleness, and a GPL-3.0 theme
+would add a licensing question on top. Zap fetches; the user chooses.
+
+**Shape.** A set is a search provider (§5.2's `IconSearchProvider`) whose corpus is
+a downloaded index rather than a remote API. Zap keeps a small catalogue — id, name,
+licence, homepage, where the index comes from — and per set an index of icon names
+to file paths. Search and suggestion run against the index offline; adopting one
+fetches a single SVG, which is a few kilobytes. Updating means re-fetching the
+index, not re-downloading a 60 MB theme.
+
+**The hard part is the naming, not the format.** `index.theme` is INI and the
+directory layout is specified. But themes name icons after Linux binaries and
+desktop entries, and Zap has bundle identifiers and display names:
+
+| Zap has | The theme wants | |
+|---|---|---|
+| `Google Chrome` / `com.google.Chrome` | `google-chrome` | ✅ from the normalised display name |
+| `Visual Studio Code` | `visual-studio-code` | ✅ |
+| `Docker Desktop` | `docker` | ❌ close, and wrong |
+| `com.tinyspeck.slackmacgap` | `slack` | ❌ the identifier is no help at all |
+
+So suggestions are a ranked guess — normalised display name, bundle-identifier
+tail, a few known aliases — and a miss costs nothing, because the user is already
+in the picker and the whole grid is there to scroll. Attribution rides on
+`IconSearchResult` as it does for any provider, so the set's licence reaches the
+manifest and any exported pack (§5.4).
+
+---
+
 **Shipped: what a stored icon is keyed by.** Not the bundle identifier, which
 does not identify an app. Site-specific-browser wrappers — Coherence, Unite, the
 Chrome/Electron family — ship one app bundle per site and every one of them reports
