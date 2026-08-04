@@ -224,6 +224,12 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
     /// see `alphaRecovered`. Sequential rather than concurrent so only one
     /// `WKWebView` is ever alive, which is the same reason the preview grid renders
     /// one at a time.
+    ///
+    /// That invariant holds *within* a call and is the caller's to keep *between*
+    /// them: two concurrent calls stand up two web views. Nothing does that today —
+    /// the preview loop awaits each render, and Settings allows one import per app —
+    /// but it is convention rather than structure, and browsing an icon set is what
+    /// will lean on it hardest. A gate belongs here when it does.
     static func rasterize(_ data: Data,
                           side: Int = IconImageValidator.Limits.masterLongestEdge)
     async -> Result<CGImage, RasterizeError> {
