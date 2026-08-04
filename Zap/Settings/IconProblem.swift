@@ -53,6 +53,12 @@ struct IconProblem: Identifiable, Error {
         IconProblem(title: "Zap couldn't search \(provider)", message: reason)
     }
 
+    /// An icon set that didn't download, unpack, or contain anything.
+    static func setInstallFailed(_ reason: String, set: IconSet) -> IconProblem {
+        IconProblem(title: "Zap couldn't install \(set.name)",
+                    message: "\(reason) Nothing on your Mac was changed.")
+    }
+
     /// Results came back but not one of them would draw. Distinct from a failed
     /// search: the provider answered, so the fault is on Zap's side of the line.
     static func previewsUnavailable(provider: String) -> IconProblem {

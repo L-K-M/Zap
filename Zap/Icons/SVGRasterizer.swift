@@ -225,18 +225,33 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
     /// `WKWebView` is ever alive, which is the same reason the preview grid renders
     /// one at a time.
     ///
-    /// That invariant holds *within* a call and is the caller's to keep *between*
-    /// them: two concurrent calls stand up two web views. Nothing does that today —
-    /// the preview loop awaits each render, and Settings allows one import per app —
-    /// but it is convention rather than structure, and browsing an icon set is what
-    /// will lean on it hardest. A gate belongs here when it does.
+    /// That invariant used to hold *within* a call and be the caller's to keep
+    /// *between* them — convention rather than structure. Icon sets are what leaned
+    /// on it hardest, so `SVGRenderGate` now makes it structural: the ceiling is
+    /// enforced here, where every path that renders an SVG passes through, instead
+    /// of at each of them separately.
     static func rasterize(_ data: Data,
                           side: Int = IconImageValidator.Limits.masterLongestEdge)
     async -> Result<CGImage, RasterizeError> {
+        // Sniffed before queueing: a file that isn't SVG shouldn't wait behind
+        // renders to be told so.
         guard isSVG(data), let markup = String(data: data, encoding: .utf8) else {
             return .failure(.notSVG)
         }
 
+        await SVGRenderGate.shared.acquire()
+        let result = await rasterizeMarkup(markup, side: side)
+        await SVGRenderGate.shared.release()
+        return result
+    }
+
+    /// The rasterisation itself, once a slot has been taken.
+    ///
+    /// Split out so `rasterize` has exactly one path between `acquire` and
+    /// `release` — every early return lives in here, where it is returned *from*
+    /// rather than out through the gate.
+    private static func rasterizeMarkup(_ markup: String, side: Int)
+    async -> Result<CGImage, RasterizeError> {
         let onBlack: CGImage
         switch await render(markup: markup, side: side, background: .black) {
         case .failure(let error): return .failure(error)

@@ -357,7 +357,7 @@ Rules:
 
 ---
 
-### 5.6 Icon sets — design, not built
+### 5.6 Icon sets — shipped
 
 Linux desktops have large, coherent, freely licensed icon themes: Papirus, Numix,
 Tela, Adwaita, Breeze. They are exactly the artwork §5.2 concluded no *general*
@@ -379,11 +379,35 @@ Zap — §11.2 rules that out on trademark, size and staleness, and a GPL-3.0 th
 would add a licensing question on top. Zap fetches; the user chooses.
 
 **Shape.** A set is a search provider (§5.2's `IconSearchProvider`) whose corpus is
-a downloaded index rather than a remote API. Zap keeps a small catalogue — id, name,
-licence, homepage, where the index comes from — and per set an index of icon names
-to file paths. Search and suggestion run against the index offline; adopting one
-fetches a single SVG, which is a few kilobytes. Updating means re-fetching the
-index, not re-downloading a 60 MB theme.
+local rather than a remote API. Zap keeps a small catalogue (`IconSetCatalogue`) —
+id, name, licence, homepage, and where in the theme's archive its application icons
+live — and installs one set per directory under
+`~/Library/Application Support/Zap/IconSets`. Search and suggestion run against
+what is installed, offline; adopting an icon reads one file.
+
+**What changed from the design: an index became a tarball.** The first plan was to
+fetch a *listing* and then one SVG per icon. Probing killed it. jsDelivr is the
+obvious listing API and it refuses Papirus outright at 50 MB, resolves `@latest`
+from an unsorted tag list where a 2002 tag can come last, and would still cost a
+request per icon. So Zap downloads the theme's GitHub source archive, extracts only
+the application icons out of it with `tar` and a per-set glob, and deletes the
+download: ~31 MB comes down for Papirus and ~4 MB stays. Updating is the same
+operation with an `If-None-Match`, so a theme that hasn't moved costs one round
+trip. `IconSetInstaller` is the only place in Zap that spawns a subprocess, which
+its own header says out loud rather than hiding.
+
+**Which sets.** Papirus, Tela and Numix Circle. Not the five named above: Adwaita
+and Breeze are overwhelmingly UI symbolics rather than application artwork, and
+`numix-icon-theme` — Numix's own repository — carries about twenty app icons, the
+large set everyone means being the separate `numix-icon-theme-circle`. Against a
+sample of common desktop apps the three shipped answer for nearly all of it and the
+two dropped for almost none.
+
+**No disclosure wall for a set.** §5.5's notice is shown before the first search of
+a provider that sends something; `IconSearchProvider.disclosure` is therefore
+optional, and a set answers `nil`. Putting a privacy wall in front of a search that
+cannot be observed is how people learn to click through the ones that can. For the
+same reason a set — and only a set — suggests matches on open, without being asked.
 
 **The hard part is the naming, not the format.** `index.theme` is INI and the
 directory layout is specified. But themes name icons after Linux binaries and
@@ -398,9 +422,17 @@ desktop entries, and Zap has bundle identifiers and display names:
 
 So suggestions are a ranked guess — normalised display name, bundle-identifier
 tail, a few known aliases — and a miss costs nothing, because the user is already
-in the picker and the whole grid is there to scroll. Attribution rides on
+in the picker and the whole grid is there to scroll. `IconNameGuess` is that guess,
+in four tiers: a hand-written alias, an exact normalised name, a word-boundary
+prefix either way (which is what finds `docker` for "Docker Desktop" with no alias
+needed), and a shared word of at least four letters. Attribution rides on
 `IconSearchResult` as it does for any provider, so the set's licence reaches the
 manifest and any exported pack (§5.4).
+
+**One knock-on.** A theme is thousands of SVGs the user is now expected to browse,
+and adopting from one is a render. Nothing enforced a ceiling on concurrent
+rasterisation before because nothing could ask for many at once; `SVGRenderGate`
+now does, at two, in the one place every render passes through (§6.3).
 
 ---
 

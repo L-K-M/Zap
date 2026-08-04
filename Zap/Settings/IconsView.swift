@@ -23,10 +23,32 @@ struct IconsView: View {
     @State private var inFlight: [String: String] = [:]
     /// The app whose search sheet is open, if any.
     @State private var searchingApp: AppInfo?
+    /// Whether the icon-set manager is open.
+    @State private var managingSets = false
 
     /// The keyless provider (`UNJAILED.md §5.2` conclusion 3). Held here rather
     /// than rebuilt per sheet so its set metadata is fetched once per session.
-    @State private var searchProvider: IconSearchProvider = IconifyClient()
+    @State private var remoteProvider: IconSearchProvider = IconifyClient()
+
+    /// The installed icon themes (`UNJAILED.md §5.6`).
+    @ObservedObject private var iconSets = IconSetLibrary.shared
+
+    /// Where a search sheet can look, best first.
+    ///
+    /// Installed sets lead. They are the only providers that can suggest anything
+    /// before being asked — their corpus is on disk — so opening the sheet on one
+    /// means opening it on a grid of likely icons rather than an empty box. The
+    /// remote provider is last and is always there, so the list is never empty.
+    ///
+    /// State rather than a computed property, and rebuilt only when the installed
+    /// sets can have changed: building one reads a directory of several thousand
+    /// files, and a computed property here would do that on every redraw of a sheet
+    /// that is open.
+    ///
+    /// Starts with the remote provider already in it so it is never empty — the
+    /// sheet takes the list as given and shows its first entry, and "no sources at
+    /// all" is not a state Zap can be in.
+    @State private var searchProviders: [IconSearchProvider] = [IconifyClient()]
 
     private var filteredApps: [AppInfo] {
         guard !search.isEmpty else { return apps }
@@ -54,7 +76,7 @@ struct IconsView: View {
         .sheet(item: $searchingApp) { app in
             IconSearchSheet(
                 app: app,
-                provider: searchProvider,
+                providers: searchProviders,
                 preferences: preferences,
                 onAdopt: { result, image in
                     searchingApp = nil
@@ -62,6 +84,19 @@ struct IconsView: View {
                 },
                 onCancel: { searchingApp = nil })
         }
+        .sheet(isPresented: $managingSets) {
+            IconSetsSheet(library: iconSets, onDone: {
+                managingSets = false
+                // A set may have been installed or removed; the next search sheet
+                // should offer what is actually there.
+                refreshProviders()
+            })
+        }
+    }
+
+    /// Rebuilds the provider list from what is installed now.
+    private func refreshProviders() {
+        searchProviders = iconSets.installedProviders() + [remoteProvider]
     }
 
     /// Stores a searched-for icon, carrying its credit into the manifest — §5.4
@@ -148,7 +183,14 @@ struct IconsView: View {
             HStack {
                 Button("Reset All Icons", role: .destructive, action: resetAll)
                 Spacer()
+                Button("Icon Sets…") { managingSets = true }
             }
+
+            Text(iconSets.records.isEmpty
+                 ? "Install an icon set for a few thousand app icons to pick from, offline, with matches suggested per app."
+                 : "Icon sets are offered in each app's search sheet, with matches suggested for that app.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
             Text("Drag an image onto a row from Finder, or straight from a browser — searching the web for an icon is free there, and Google Images can filter to transparent backgrounds only (Tools → Color → Transparent). Nothing about your apps is ever sent anywhere.")
                 .font(.caption)
@@ -337,6 +379,7 @@ struct IconsView: View {
         apps = (running + offline)
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         reloadStatuses()
+        refreshProviders()
     }
 
     /// Statuses decode bundle artwork, so they're gathered off the main thread.

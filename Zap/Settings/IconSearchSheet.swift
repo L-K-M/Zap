@@ -1,24 +1,37 @@
 import AppKit
 import SwiftUI
 
-/// Finds an icon for one app without leaving Zap (`UNJAILED.md §5.2`, §5.5).
+/// Finds an icon for one app without leaving Zap (`UNJAILED.md §5.2`, §5.5, §5.6).
 ///
 /// The privacy rules are structural, not advisory: the query is prefilled from the
 /// app's name but editable before it goes anywhere, nothing is sent until the user
 /// presses Search, the disclosure of what will be sent is shown before the first
 /// search of that provider, and the bundle identifier — the thing that would reveal
 /// what's installed — never leaves the machine.
+///
+/// An installed icon set is a provider like any other here, and the differences all
+/// fall out of its corpus being local: no disclosure, and suggestions on open
+/// rather than after a click. Nothing in the flow below special-cases it — the
+/// provider answers `disclosure` with `nil` and `suggestions` with something, and
+/// the sheet does what those answers imply.
 struct IconSearchSheet: View {
 
     let app: AppInfo
-    let provider: IconSearchProvider
+    /// Every source the user can pick from, in the order they're offered.
+    /// Never empty — the caller always has at least the keyless remote provider.
+    let providers: [IconSearchProvider]
     @ObservedObject var preferences: Preferences
     /// Called with the chosen result's artwork, already fetched and rasterised.
     var onAdopt: (IconSearchResult, CGImage) -> Void
     var onCancel: () -> Void
 
+    @State private var providerID: String
     @State private var query: String
     @State private var results: [IconSearchResult] = []
+    /// Whether `results` are the provider's own suggestions rather than the answer
+    /// to something typed. Only changes what the grid is labelled — a suggestion
+    /// and a result are the same thing to adopt.
+    @State private var showingSuggestions = false
     @State private var previews: [String: NSImage] = [:]
     /// Results whose preview couldn't be rendered. Without this a failed preview
     /// spins forever, which reads as "still loading" and never stops being wrong.
@@ -33,23 +46,35 @@ struct IconSearchSheet: View {
     /// isn't.
     @State private var searchGeneration = 0
 
-    init(app: AppInfo, provider: IconSearchProvider, preferences: Preferences,
+    init(app: AppInfo, providers: [IconSearchProvider], preferences: Preferences,
          onAdopt: @escaping (IconSearchResult, CGImage) -> Void,
          onCancel: @escaping () -> Void) {
         self.app = app
-        self.provider = provider
+        self.providers = providers
         self.preferences = preferences
         self.onAdopt = onAdopt
         self.onCancel = onCancel
+        _providerID = State(initialValue: providers.first?.id ?? "")
         // Prefilled, but the user edits it before anything is sent (§5.5).
         _query = State(initialValue: app.name)
+    }
+
+    /// The selected provider. Falls back to the first rather than going optional:
+    /// a sheet with no provider has nothing to draw, and the list can only shrink
+    /// under it if a set is removed from another window mid-search.
+    private var provider: IconSearchProvider {
+        providers.first { $0.id == providerID } ?? providers[0]
     }
 
     /// Whether this provider's disclosure has already been read. Persisted rather
     /// than per-sheet: §5.5 asks for it before the first search, and a notice shown
     /// every single time is one the user stops reading.
-    private var hasAcknowledgedDisclosure: Bool {
-        preferences.acknowledgedSearchProviders.contains(provider.id)
+    ///
+    /// A provider with nothing to disclose is never gated — see `disclosure` on
+    /// `IconSearchProvider`.
+    private var mustShowDisclosure: Bool {
+        provider.disclosure != nil
+            && !preferences.acknowledgedSearchProviders.contains(provider.id)
     }
 
     var body: some View {
@@ -57,7 +82,9 @@ struct IconSearchSheet: View {
             Text("Find an icon for \(app.name)")
                 .font(.headline)
 
-            if !hasAcknowledgedDisclosure {
+            if providers.count > 1 { providerPicker }
+
+            if mustShowDisclosure {
                 disclosure
             } else {
                 searchField
@@ -71,8 +98,15 @@ struct IconSearchSheet: View {
             }
         }
         .padding(16)
-        .frame(width: 560, height: 460)
+        .frame(width: 560, height: 480)
         .alert(iconProblem: $problem)
+        .onAppear(perform: loadSuggestions)
+        .onChange(of: providerID) { _ in
+            results = []
+            previews = [:]
+            previewFailures = []
+            loadSuggestions()
+        }
         // Dismissing the sheet retires both generations, which is what the
         // preview loop checks between renders. Without it, cancelling mid-search
         // leaves up to `resultLimit` fetch-and-rasterise rounds running for a
@@ -84,13 +118,25 @@ struct IconSearchSheet: View {
         }
     }
 
+    // MARK: Provider
+
+    private var providerPicker: some View {
+        Picker("Source", selection: $providerID) {
+            ForEach(providers, id: \.id) { candidate in
+                Text(candidate.displayName).tag(candidate.id)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+    }
+
     // MARK: Disclosure
 
     private var disclosure: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Before Zap searches", systemImage: "hand.raised")
                 .font(.subheadline.weight(.semibold))
-            Text(provider.disclosure)
+            Text(provider.disclosure ?? "")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Text("Searching is never automatic — nothing is sent until you press Search, and you can edit the words first.")
@@ -98,6 +144,9 @@ struct IconSearchSheet: View {
                 .foregroundStyle(.secondary)
             Button("Continue") {
                 preferences.acknowledgedSearchProviders.insert(provider.id)
+                // Suggestions were skipped while the wall was up; a provider that
+                // has any can offer them now.
+                loadSuggestions()
             }
             Spacer()
         }
@@ -116,27 +165,45 @@ struct IconSearchSheet: View {
     }
 
     private var resultsArea: some View {
-        Group {
-            if isSearching {
-                centered { ProgressView() }
-            } else if results.isEmpty {
-                centered {
-                    Text("No results yet.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 12)], spacing: 12) {
-                        ForEach(results) { result in
-                            resultCell(result)
-                        }
+        VStack(alignment: .leading, spacing: 6) {
+            if showingSuggestions, !results.isEmpty {
+                Text("Suggested for \(app.name)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Group {
+                if isSearching {
+                    centered { ProgressView() }
+                } else if results.isEmpty {
+                    centered {
+                        Text(emptyStateText)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
                     }
-                    .padding(.vertical, 4)
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 12)], spacing: 12) {
+                            ForEach(results) { result in
+                                resultCell(result)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// What an empty grid says. "No results yet" is right before the first search
+    /// and wrong after one that found nothing, and the difference matters most for
+    /// a local set — there, an empty answer is final rather than a prompt to wait.
+    private var emptyStateText: String {
+        if showingSuggestions {
+            return "No results yet. Type what you're looking for and press Search."
+        }
+        return "Nothing in \(provider.displayName) matched that."
     }
 
     private func resultCell(_ result: IconSearchResult) -> some View {
@@ -183,22 +250,49 @@ struct IconSearchSheet: View {
 
     // MARK: Actions
 
+    /// Asks the provider what it would offer for this app, unprompted.
+    ///
+    /// Safe to call unconditionally: the default implementation returns nothing, so
+    /// this is a no-op for every provider that would have to send something to
+    /// answer. Skipped while a disclosure is up, because a provider the user hasn't
+    /// agreed to yet shouldn't be doing anything at all.
+    private func loadSuggestions() {
+        guard !mustShowDisclosure else { return }
+        searchGeneration += 1
+        let generation = searchGeneration
+        let source = provider
+        Task {
+            let found = await source.suggestions(appName: app.name,
+                                                 bundleIdentifier: app.bundleIdentifier,
+                                                 limit: Self.resultLimit)
+            await MainActor.run {
+                guard generation == searchGeneration else { return }
+                showingSuggestions = true
+                results = found
+                previewGeneration += 1
+                loadPreviews(found, generation: previewGeneration)
+            }
+        }
+    }
+
     private func runSearch() {
         let text = query
         searchGeneration += 1
         let generation = searchGeneration
+        let source = provider
         isSearching = true
+        showingSuggestions = false
         results = []
         previews = [:]
         previewFailures = []
         Task {
-            let found = await provider.search(query: text, limit: Self.resultLimit)
+            let found = await source.search(query: text, limit: Self.resultLimit)
             await MainActor.run {
                 guard generation == searchGeneration else { return }
                 isSearching = false
                 switch found {
                 case .failure(let error):
-                    problem = .searchFailed(error.message, provider: provider.displayName)
+                    problem = .searchFailed(error.message, provider: source.displayName)
                 case .success(let items):
                     results = items
                     previewGeneration += 1
@@ -227,10 +321,11 @@ struct IconSearchSheet: View {
     /// cells on a spinner that never resolved — the whole grid looked like it was
     /// still loading when in fact nothing was left to wait for.
     private func loadPreviews(_ items: [IconSearchResult], generation: Int) {
+        let source = provider
         Task {
             var rendered = 0
             for item in items {
-                let image = await previewImage(for: item)
+                let image = await previewImage(for: item, from: source)
                 let stale = await MainActor.run { () -> Bool in
                     guard generation == previewGeneration else { return true }
                     if let image {
@@ -249,7 +344,7 @@ struct IconSearchSheet: View {
             if rendered == 0, !items.isEmpty {
                 await MainActor.run {
                     guard generation == previewGeneration else { return }
-                    problem = .previewsUnavailable(provider: provider.displayName)
+                    problem = .previewsUnavailable(provider: source.displayName)
                 }
             }
         }
@@ -258,8 +353,9 @@ struct IconSearchSheet: View {
     /// One preview, or `nil` if it couldn't be fetched or decoded. Goes through
     /// `IconImport` like every other ingestion path, so a provider that starts
     /// returning bitmaps is decoded rather than refused for not being SVG.
-    private func previewImage(for item: IconSearchResult) async -> CGImage? {
-        guard case .success(let data) = await provider.fetchImageData(for: item) else { return nil }
+    private func previewImage(for item: IconSearchResult,
+                              from source: IconSearchProvider) async -> CGImage? {
+        guard case .success(let data) = await source.fetchImageData(for: item) else { return nil }
         guard case .success(let image) = await IconImport.image(from: data, side: 128) else { return nil }
         return image
     }
@@ -282,8 +378,9 @@ struct IconSearchSheet: View {
     private func adopt(_ result: IconSearchResult) {
         isAdopting = true
         let generation = searchGeneration
+        let source = provider
         Task {
-            let fetched = await provider.fetchImageData(for: result)
+            let fetched = await source.fetchImageData(for: result)
             guard case .success(let data) = fetched else {
                 await MainActor.run {
                     isAdopting = false
