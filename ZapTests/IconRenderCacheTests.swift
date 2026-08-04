@@ -119,6 +119,11 @@ final class IconRenderCacheTests: XCTestCase {
         for index in 0..<5 {
             bounded.store(IconTestSupport.makeImage(width: 64, height: 64),
                           for: markup("icon-\(index)"), side: 64)
+            // Pruning orders by modification date, so the writes have to be
+            // distinguishable by it. APFS records nanoseconds and wouldn't need
+            // this; a coarser clock under CI would make the order — and this
+            // assertion — a coin toss.
+            Thread.sleep(forTimeInterval: 0.01)
         }
         XCTAssertNotNil(bounded.image(for: markup("icon-4"), side: 64))
     }

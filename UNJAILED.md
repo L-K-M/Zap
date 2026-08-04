@@ -357,8 +357,6 @@ Rules:
 
 ---
 
-## 6. Constraints on supported images
-
 ### 5.6 Icon sets — design, not built
 
 Linux desktops have large, coherent, freely licensed icon themes: Papirus, Numix,
@@ -405,6 +403,8 @@ in the picker and the whole grid is there to scroll. Attribution rides on
 manifest and any exported pack (§5.4).
 
 ---
+
+## 6. Constraints on supported images
 
 **Shipped: what a stored icon is keyed by.** Not the bundle identifier, which
 does not identify an app. Site-specific-browser wrappers — Coherence, Unite, the

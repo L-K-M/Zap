@@ -19,9 +19,6 @@ import Foundation
 /// markup that has been seen before.
 enum IconImport {
 
-    /// Where rendered SVG is kept. Injectable so tests get their own directory.
-    static var cache = IconRenderCache.shared
-
     /// Which decoder some bytes are headed for.
     ///
     /// Split out from the import itself so the *decision* is testable without
@@ -56,7 +53,8 @@ enum IconImport {
     /// memory cost for pictures the user may never scroll to. Both branches honour
     /// it, and neither upscales: a source smaller than `side` comes back untouched.
     static func image(from data: Data,
-                      side: Int = IconImageValidator.Limits.masterLongestEdge)
+                      side: Int = IconImageValidator.Limits.masterLongestEdge,
+                      cache: IconRenderCache = .shared)
     async -> Result<CGImage, IconImageValidator.Rejection> {
         switch route(for: data) {
         case .tooLarge(let bytes):
@@ -80,7 +78,9 @@ enum IconImport {
     }
 
     /// Reads and decodes the file at `url`.
-    static func image(contentsOf url: URL) async -> Result<CGImage, IconImageValidator.Rejection> {
+    static func image(contentsOf url: URL,
+                      cache: IconRenderCache = .shared)
+    async -> Result<CGImage, IconImageValidator.Rejection> {
         // Size from the filesystem first, so an oversized file is refused without
         // being pulled into memory to find out. `route` checks again on the bytes,
         // which is what catches a file with no readable size.
@@ -91,6 +91,6 @@ enum IconImport {
         guard let data = try? Data(contentsOf: url) else {
             return .failure(.unreadable)
         }
-        return await image(from: data)
+        return await image(from: data, cache: cache)
     }
 }
