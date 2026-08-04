@@ -3,8 +3,7 @@ import SwiftUI
 
 /// Hosts the SwiftUI `SettingsView` in a standard titled window. Used instead of
 /// the SwiftUI `Settings` scene so the agent app can present it on demand on
-/// macOS 13+. Restores `.accessory` activation policy when the window closes so
-/// the Dock icon disappears again.
+/// macOS 13+ while remaining an accessory app.
 final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     private var window: NSWindow?
@@ -13,10 +12,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let updateChecker: UpdateChecker
     private let iconResolver: IconResolver
 
-    /// The app that was frontmost when Settings opened. Closing Settings hands
-    /// activation back to it so Zap doesn't linger as the active app — see
-    /// `windowWillClose`.
-    private weak var appToRestoreOnClose: NSRunningApplication?
+    private var activationHandoff: ActivationHandoff?
 
     init(preferences: Preferences, inputMode: InputModeReporter,
          updateChecker: UpdateChecker, iconResolver: IconResolver) {
@@ -27,14 +23,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 
     func show() {
-        // Remember who was in front so closing Settings can return activation to
-        // them. Capture only on the way *into* Settings (when Zap isn't already
-        // `.regular`); a re-show of the open window has Zap itself frontmost.
-        if NSApp.activationPolicy() != .regular {
-            let frontmost = NSWorkspace.shared.frontmostApplication
-            appToRestoreOnClose = frontmost?.processIdentifier == NSRunningApplication.current.processIdentifier
-                ? nil : frontmost
-        }
+        // One handoff spans the complete lifetime of this presentation, including
+        // time spent hidden or behind another app.
+        beginActivationHandoff()
 
         if window == nil {
             let hosting = NSHostingController(rootView: SettingsView(
@@ -59,43 +50,34 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             self.window = window
         }
 
-        NSApp.setActivationPolicy(.regular)
-        // Unhides if a previous close resigned activation via `NSApp.hide(nil)`;
-        // ordering a window front while the process is hidden shows nothing.
         WindowEnumerator.activateSelfForOwnWindow()
+        window?.deminiaturize(nil)
         window?.makeKeyAndOrderFront(nil)
     }
 
     func windowWillClose(_ notification: Notification) {
-        // Critical: don't leave Zap as the active app. It became active (`.regular` +
-        // `activate`) to show Settings; if it stays the foreground app, the next
-        // ⌘-Tab shows the overlay but selecting an app does nothing — under macOS 14+
-        // cooperative activation the switcher's `NSRunningApplication.activate()` is
-        // silently ignored while Zap still holds activation. Hand activation back to
-        // the app the user came from *before* dropping to `.accessory`, while Zap is
-        // still a regular active app — the reliable direction for yielding activation
-        // (the switch-time path, where Zap's active state is ambiguous, is not).
-        // Hand back only while Zap still holds activation: the user may have
-        // clicked into another app while Settings stayed open, and re-activating
-        // the (stale) captured app now would yank them back out of it.
-        let zapIsFrontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
-            == NSRunningApplication.current.processIdentifier
-        if let previous = appToRestoreOnClose,
-           !previous.isTerminated,
-           previous.processIdentifier != NSRunningApplication.current.processIdentifier,
-           zapIsFrontmost {
-            WindowEnumerator.activate(previous)
-        } else if zapIsFrontmost {
-            // No app to hand back to — Zap was already frontmost when Settings
-            // opened, or that app has since quit. Resign activation explicitly so
-            // Zap doesn't linger as the frontmost app (which would make the next
-            // ⌘-Tab appear to do nothing); the system passes focus to whatever
-            // is next.
-            NSApp.hide(nil)
-        }
-        appToRestoreOnClose = nil
+        finishActivationHandoff()
+    }
 
-        // Return to menu-bar-agent behavior (no Dock icon).
-        NSApp.setActivationPolicy(.accessory)
+    func windowDidMiniaturize(_ notification: Notification) {
+        // A minimized Settings window is no longer a visible Zap destination. End
+        // its presentation now rather than leaving Zap active with no UI onscreen.
+        finishActivationHandoff()
+    }
+
+    func windowDidDeminiaturize(_ notification: Notification) {
+        // A Dock-driven restore does not pass through `show()`, so begin a fresh
+        // presentation here as well. The handoff retains the last external target.
+        beginActivationHandoff()
+    }
+
+    private func beginActivationHandoff() {
+        if activationHandoff == nil { activationHandoff = ActivationHandoff() }
+    }
+
+    private func finishActivationHandoff() {
+        let handoff = activationHandoff
+        activationHandoff = nil
+        handoff?.restore()
     }
 }

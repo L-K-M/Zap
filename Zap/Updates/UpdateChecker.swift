@@ -226,25 +226,11 @@ final class UpdateChecker: ObservableObject {
     /// Dock icon to click.
     @MainActor
     private func runModal(_ alert: NSAlert) -> NSApplication.ModalResponse {
-        // Remember who was in front before the alert activates Zap, so activation
-        // can be handed back afterwards. Without this, dismissing an update alert
-        // leaves Zap frontmost — and the next ⌘-Tab then appears to do nothing
-        // (see `SwitcherController.defaultSelection`).
-        let previous = NSWorkspace.shared.frontmostApplication
-        // Unhides too: a Settings close that resigned activation leaves the process
-        // hidden, and a hidden app's alert never reaches the screen.
+        let handoff = ActivationHandoff()
         WindowEnumerator.activateSelfForOwnWindow()
         alert.window.level = .floating
         let response = alert.runModal()
-        // Hand back only if Zap still holds activation: the user may have clicked
-        // into another app while the alert was up, and yanking them back out of
-        // it would be worse than leaving things alone.
-        if let previous,
-           !previous.isTerminated,
-           previous.processIdentifier != NSRunningApplication.current.processIdentifier,
-           NSWorkspace.shared.frontmostApplication?.processIdentifier == NSRunningApplication.current.processIdentifier {
-            WindowEnumerator.activate(previous)
-        }
+        handoff.restore()
         return response
     }
 

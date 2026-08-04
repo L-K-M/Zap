@@ -149,8 +149,8 @@ must **intercept the key event and suppress the system switcher**.
 ### Source of apps
 - `NSWorkspace.shared.runningApplications`, filtered to
   `activationPolicy == .regular` (apps that normally appear in the switcher/Dock),
-  with Zap itself explicitly excluded because Settings temporarily makes Zap a
-  regular app.
+  with Zap itself explicitly excluded as an invariant independently of its
+  activation policy.
 - Each gives an `NSRunningApplication`: `bundleIdentifier`, `localizedName`, `icon`,
   `processIdentifier`, and activation APIs.
 
@@ -159,7 +159,7 @@ must **intercept the key event and suppress the system switcher**.
   pre-selected (so a quick ⌘+Tab tap toggles between the two most recent apps).
 - Maintain our own MRU list by observing
   `NSWorkspace.didActivateApplicationNotification` and moving the activated app to the
-  front, ignoring Zap's own activations while Settings is open. The order is persisted
+  front, ignoring Zap's own activations while its UI is open. The order is persisted
   (a small capped array of MRU keys in `UserDefaults`) and seeds the tracker on the
   next launch.
 - Entries are keyed the way icon overrides are (`IconIdentity`): bundle **path**
@@ -174,14 +174,28 @@ must **intercept the key event and suppress the system switcher**.
   tap switches to the last app, matching native feel. When the frontmost app is
   *excluded* it is filtered out, so the default selection becomes index `0` instead
   (the previous visible app), preserving the toggle feel. When *Zap itself* is
-  frontmost the frontmost reads as `nil`, and what a tap should do depends on
-  whether a window of Zap's is actually on screen. With Settings open the user
-  really is in Zap, and Zap keeps itself out of the list, so index `0` is the most
-  recent app and the selection stays there. With nothing of Zap's on screen the
-  activation is *left over* from a closed Settings window or a dismissed update
-  alert: index `0` is then the app the user is looking at and believes they are in,
-  so the selection moves to index `1` — a tap must switch *away*, and committing it
-  also hands Zap's lingering activation over.
+  frontmost the frontmost reads as `nil`, and what a tap should do still depends on
+  whether a window of Zap's is actually on screen:
+  - **Settings or an update alert is up.** The user really is in Zap, and Zap keeps
+    itself out of the list, so index `0` is the most recent app and the selection
+    stays there.
+  - **Nothing of Zap's is on screen.** The activation is *left over*. Index `0` is
+    then the app the user is looking at and believes they are in, so the selection
+    moves to index `1` — a tap must switch *away*, which also hands the lingering
+    activation over.
+
+  The signal for "on screen" is the window, not the activation policy: Zap stays
+  `.accessory` for its whole lifetime, so the policy no longer distinguishes
+  anything. Settings is Zap's only `.normal`-level window (the overlay is
+  `.popUpMenu`, the status item's sits higher), and a modal alert is tracked by
+  `NSApp.modalWindow`.
+- An `ActivationHandoff` tracks the latest external app across nested Zap
+  presentations and restores it after the final visible UI closes, provided Zap is
+  still active. If that app is gone or activation remains unresolved, Zap
+  deactivates rather than lingering invisibly in front. It never changes its
+  `.accessory` activation policy or hides itself as part of the handoff — which is
+  what makes the leftover-activation case rare rather than routine, though the
+  selection rule above still covers it when it happens.
 - **Known limitation:** there is no public API for the system's own MRU order, so on a
   cold launch Zap starts from its *persisted* order from the previous session (with the
   current frontmost app promoted to the top). Switches made while Zap wasn't running
@@ -253,7 +267,8 @@ gradient, decoration, CRT, sizes) can be saved and shared as an `AppearancePrese
 
 ## 7. Settings Window
 
-A standard SwiftUI window opened from the menu-bar item, with tabs:
+A standard SwiftUI window opened from the menu-bar item while Zap remains an
+`.accessory` app, with tabs:
 
 1. **General** — launch at login (`SMAppService`), show-delay, window dwell +
    previews toggle, alternate hotkey.
@@ -305,6 +320,7 @@ Zap/
 │   │   ├── ScreenRecordingAuthorizer.swift  # gates window previews
 │   │   └── KeyCodes.swift
 │   ├── Switcher/
+│   │   ├── ActivationHandoff.swift  # restores focus after Zap-owned UI closes
 │   │   ├── SwitcherController.swift
 │   │   ├── AppListProvider.swift
 │   │   ├── MRUTracker.swift

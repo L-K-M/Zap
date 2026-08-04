@@ -37,7 +37,7 @@ Static review performed on 2026-06-01. Build/test verification could not be run 
    - References: `Zap/Settings/SettingsWindowController.swift:29-36`, `Zap/ZapApp.swift:5-15`
    - The app is configured as `LSUIElement`, but the Settings window temporarily switches activation policy to `.regular`. While Settings is open, Zap can gain a Dock/app-switcher presence, violating the project constraint that Zap never appears in its own switcher.
    - Fix idea: keep the app accessory-only and use an accessory-compatible settings window presentation, or explicitly filter Zap's own bundle identifier regardless of activation policy.
-   - **Resolution: FIXED.** `AppListProvider.currentApps()` now always filters out `Bundle.main.bundleIdentifier`, so Zap never lists itself even while Settings makes it `.regular`.
+   - **Resolution: FIXED.** Settings now stays accessory-style for its entire lifetime, and `AppListProvider.currentApps()` also filters out `Bundle.main.bundleIdentifier` as defense in depth.
 
 6. Multiple running instances with the same bundle identifier are not handled safely.
    - References: `Zap/Model/AppInfo.swift:13`, `Zap/Overlay/OverlayView.swift:25`, `Zap/Switcher/MRUTracker.swift:3-14`, `Zap/Switcher/AppListProvider.swift:35-40`
@@ -183,4 +183,4 @@ Static review performed on 2026-06-01. Build/test verification could not be run 
    - **Status: DONE.** See Medium #6.
 
 6. Consider keeping Settings accessory-style instead of switching the whole app to `.regular`.
-   - **Status: MITIGATED.** The self-listing invariant is now enforced by bundle-ID filtering regardless of activation policy; converting Settings to a fully accessory-style presentation remains optional future work.
+   - **Status: DONE.** Settings uses a normal key window while Zap remains `.accessory`; closing or minimizing it hands activation back (or deactivates Zap as a fallback) without changing process policy or hiding Zap.

@@ -393,20 +393,32 @@ final class SwitcherController {
 
     /// Whether a window of Zap's own is on screen, for `defaultSelection`.
     ///
-    /// Two signals, one per window Zap can put up, and neither is `NSApp.windows` —
-    /// that also carries the status item's window and the overlay panel, which are
-    /// exactly what this must not count.
+    /// Two signals, one per window Zap can put up.
     ///
-    /// - `.regular` is set for the lifetime of the Settings window and dropped when
-    ///   it closes (`SettingsWindowController`), so it tracks that one precisely.
-    /// - An update alert runs `.accessory`, so the policy says nothing about it —
-    ///   `modalWindow` does, for as long as `runModal` is running. The switcher can
-    ///   genuinely reach this: the event tap is registered on `.commonModes`, and
-    ///   AppKit counts the modal-panel mode among those, so ⌘-Tab is still
-    ///   intercepted while an alert is up. `runModal` blocking the main thread does
-    ///   not make the alert unreachable.
+    /// - **Settings.** This used to read `NSApp.activationPolicy() == .regular`,
+    ///   which worked only because opening Settings switched the whole process to
+    ///   `.regular`. Zap now stays `.accessory` for its entire lifetime — that policy
+    ///   churn was the root cause this file's retry machinery was compensating for —
+    ///   so the policy no longer says anything, and a check on it would answer
+    ///   "nothing on screen" while Settings is in front.
+    ///
+    ///   The window itself is the signal instead. The old comment rejected
+    ///   `NSApp.windows` outright, because it also carries the status item's window
+    ///   and the overlay panel; the objection is to the *unfiltered* list. Level
+    ///   separates them exactly: Settings is Zap's only `.normal`-level window, the
+    ///   overlay is `.popUpMenu` (`OverlayWindowController`), and a status item's
+    ///   window sits above both. `isVisible` is false for a miniaturised window,
+    ///   which is the right answer — a minimised Settings is not a destination, and
+    ///   `SettingsWindowController` ends its activation handoff at that point too.
+    ///
+    /// - **An update alert.** It runs modal, and `modalWindow` tracks it for as long
+    ///   as `runModal` is running. The switcher can genuinely reach this: the event
+    ///   tap is registered on `.commonModes`, and AppKit counts the modal-panel mode
+    ///   among those, so ⌘-Tab is still intercepted while an alert is up. `runModal`
+    ///   blocking the main thread does not make the alert unreachable.
     private static func zapIsShowingAWindow() -> Bool {
-        NSApp.activationPolicy() == .regular || NSApp.modalWindow != nil
+        if NSApp.modalWindow != nil { return true }
+        return NSApp.windows.contains { $0.isVisible && $0.level == .normal }
     }
 
     private func advanceSelection(forward: Bool) {

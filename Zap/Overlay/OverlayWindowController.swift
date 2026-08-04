@@ -18,8 +18,8 @@ final class OverlayWindowController {
     private var windowCreatedAt = Date()
 
     /// Borderless transparent windows can occasionally stop drawing after long
-    /// compositor uptime / activation-policy churn. Recycle while hidden so the
-    /// next presentation starts from a fresh WindowServer/SwiftUI host.
+    /// compositor uptime. Recycle while hidden so the next presentation starts
+    /// from a fresh WindowServer/SwiftUI host.
     private let maximumWindowAge: TimeInterval = 30 * 60
 
     private(set) var isVisible = false

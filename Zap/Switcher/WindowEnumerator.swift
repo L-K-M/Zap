@@ -40,6 +40,12 @@ struct WindowInfo: Identifiable, Equatable {
 /// so callers should gate use behind `AccessibilityAuthorizer.isTrusted`.
 enum WindowEnumerator {
 
+    /// Cancels verification belonging to an older activation request. Every
+    /// activation path and workspace activation notification runs on the main
+    /// thread, so a simple generation is enough.
+    private static var activationGeneration = 0
+    private static var activationObserver: NSObjectProtocol?
+
     private static let finderBundleID = "com.apple.finder"
 
     /// How long a single Accessibility round-trip to another process may take
@@ -245,52 +251,27 @@ enum WindowEnumerator {
 
     // MARK: Activation
 
-    /// Activates `app`, correctly handing activation over from Zap.
-    ///
-    /// macOS 14 introduced *cooperative activation*: once Zap has been the active
-    /// app (which happens the moment the Settings window opens via `NSApp.activate`),
-    /// it becomes part of the activation context. Hand off explicitly using Apple's
-    /// documented sequence: the currently-active app yields to the target, then the
-    /// target requests activation. A short verification retry covers silent no-ops
-    /// where the activation request was accepted but not honored on that run-loop
-    /// turn (seen after interacting with Settings/color controls).
+    /// Activates `app`, correctly handing activation over from Zap. macOS 14's
+    /// cooperative activation requires the active app to yield before the target
+    /// requests activation.
     @discardableResult
     static func activate(_ app: NSRunningApplication, allWindows: Bool = false) -> Bool {
-        // Who the target is being asked to take over from. The verification retry
-        // may re-request activation only while the frontmost app is *still* this
-        // one — see `shouldRetryActivation`.
+        ensureActivationObserver()
+        activationGeneration &+= 1
+        let generation = activationGeneration
         let originPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let activated = requestActivation(of: app, allWindows: allWindows)
         if activated {
             verifyActivation(of: app, allWindows: allWindows, remainingRetries: 2,
-                             originPID: originPID)
+                             originPID: originPID, generation: generation)
         }
         return activated
-    }
-
-    /// Brings *Zap* forward to show a window of its own (Settings, an update alert).
-    ///
-    /// Unhides first when it has to. Closing Settings with nobody to hand activation
-    /// back to resigns it with `NSApp.hide(nil)`, which leaves the process hidden —
-    /// and a hidden app's windows don't reach the screen. Zap is `.accessory` with no
-    /// Dock icon and is filtered out of its own switcher, so nothing the user can
-    /// click would unhide it: without this, Settings and update alerts would be
-    /// unreachable until Zap is relaunched. `unhide` activates as well, but the
-    /// explicit `activate` still runs — it is the documented request, and `unhide`
-    /// is only reached on the hidden path.
-    static func activateSelfForOwnWindow() {
-        if NSApp.isHidden { NSApp.unhide(nil) }
-        if #available(macOS 14.0, *) {
-            NSApp.activate()
-        } else {
-            NSApp.activate(ignoringOtherApps: true)
-        }
     }
 
     @discardableResult
     private static func requestActivation(of app: NSRunningApplication, allWindows: Bool) -> Bool {
         if #available(macOS 14.0, *) {
-            var options: NSApplication.ActivationOptions = [.activateIgnoringOtherApps]
+            var options: NSApplication.ActivationOptions = []
             if allWindows { options.insert(.activateAllWindows) }
             NSApp.yieldActivation(to: app)
             return app.activate(options: options)
@@ -301,28 +282,70 @@ enum WindowEnumerator {
         }
     }
 
-    /// Pure retry rule for the activation verification: re-request only while the
-    /// target still isn't frontmost *and* the frontmost is unchanged since the
-    /// original request. A changed frontmost means a newer, deliberate activation
-    /// has since landed — e.g. the user's own ⌘-Tab switch committed right after
-    /// Settings closed, or a second quick tap — which a blind retry would undo,
-    /// yanking the user back out of the app they just switched to.
-    static func shouldRetryActivation(frontmostPID: pid_t?, targetPID: pid_t, originPID: pid_t?) -> Bool {
-        frontmostPID != targetPID && frontmostPID == originPID
+    /// Brings Zap forward to show a window of its own. Unhiding remains necessary
+    /// when the user explicitly chose the standard Hide command from Zap's menu.
+    static func activateSelfForOwnWindow() {
+        ensureActivationObserver()
+        activationGeneration &+= 1
+        if NSApp.isHidden { NSApp.unhide(nil) }
+        if #available(macOS 14.0, *) {
+            NSApp.activate()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    /// User-driven activations do not pass through this type. Observe them so a
+    /// delayed verification can never mistake a deliberate return to the request's
+    /// origin for a failed activation and yank the user back to the old target.
+    private static func ensureActivationObserver() {
+        guard activationObserver == nil else { return }
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            activationGeneration &+= 1
+        }
+    }
+
+    /// Pure retry rule: retry only if this is still the newest request and the
+    /// frontmost application has not changed since it was made.
+    static func shouldRetryActivation(frontmostPID: pid_t?, targetPID: pid_t,
+                                      originPID: pid_t?, requestGeneration: Int,
+                                      currentGeneration: Int) -> Bool {
+        requestGeneration == currentGeneration
+            && frontmostPID != targetPID
+            && frontmostPID == originPID
     }
 
     private static func verifyActivation(of app: NSRunningApplication, allWindows: Bool,
-                                         remainingRetries: Int, originPID: pid_t?) {
-        guard remainingRetries > 0 else { return }
+                                         remainingRetries: Int, originPID: pid_t?,
+                                         generation: Int) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
             guard !app.isTerminated else { return }
             let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
             guard shouldRetryActivation(frontmostPID: frontmostPID,
                                         targetPID: app.processIdentifier,
-                                        originPID: originPID) else { return }
-            requestActivation(of: app, allWindows: allWindows)
+                                        originPID: originPID,
+                                        requestGeneration: generation,
+                                        currentGeneration: activationGeneration) else { return }
+
+            guard remainingRetries > 0 else {
+                // A request can return true without ever taking focus. If Zap is
+                // still the active source, resign so it cannot remain invisibly in
+                // front after its own UI closes.
+                if NSApp.isActive { NSApp.deactivate() }
+                return
+            }
+
+            guard requestActivation(of: app, allWindows: allWindows) else {
+                if NSApp.isActive { NSApp.deactivate() }
+                return
+            }
             verifyActivation(of: app, allWindows: allWindows,
-                             remainingRetries: remainingRetries - 1, originPID: originPID)
+                             remainingRetries: remainingRetries - 1,
+                             originPID: originPID, generation: generation)
         }
     }
 
