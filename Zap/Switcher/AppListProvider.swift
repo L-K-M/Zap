@@ -19,7 +19,7 @@ final class AppListProvider {
 
     /// `UserDefaults` key under which the MRU order is persisted across launches.
     private static let mruOrderKey = "mruOrder"
-    /// How many bundle identifiers to persist — generous for any realistic app set
+    /// How many MRU keys to persist — generous for any realistic app set
     /// while keeping the stored array bounded.
     private static let mruPersistLimit = 50
 
@@ -74,11 +74,15 @@ final class AppListProvider {
             ?? NSRunningApplication(processIdentifier: info.processIdentifier)
     }
 
-    /// The bundle identifier of the currently frontmost application, if any.
-    /// Used to decide the initial switcher selection.
-    func frontmostBundleID() -> String? {
-        let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        return bundleID.flatMap { isOwnBundleID($0) ? nil : $0 }
+    /// The MRU key of the currently frontmost application, if any.
+    /// Used to decide the initial switcher selection. A key, not a bundle
+    /// identifier: comparing identifiers would mistake one Chrome wrapper for
+    /// another (see `AppInfo.mruKey`).
+    func frontmostAppKey() -> String? {
+        guard let front = NSWorkspace.shared.frontmostApplication,
+              let bundleID = front.bundleIdentifier,
+              !isOwnBundleID(bundleID) else { return nil }
+        return Self.mruKey(bundleID: bundleID, bundleURL: front.bundleURL)
     }
 
     /// Pure exclusion filter — exposed for unit testing.
@@ -108,12 +112,18 @@ final class AppListProvider {
         return info.replacingIcon(icon)
     }
 
+    /// The MRU key for a live process — `AppInfo.mruKey` without the snapshot,
+    /// so activations and snapshots agree on what identifies an app.
+    private static func mruKey(bundleID: String, bundleURL: URL?) -> String {
+        IconIdentity(bundleIdentifier: bundleID, bundleURL: bundleURL).storageKey
+    }
+
     private func seedMRU() {
-        if let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
-           !isOwnBundleID(front) {
-            mru.recordActivation(bundleID: front)
-            persistMRU()
-        }
+        guard let front = NSWorkspace.shared.frontmostApplication,
+              let bundleID = front.bundleIdentifier,
+              !isOwnBundleID(bundleID) else { return }
+        mru.recordActivation(key: Self.mruKey(bundleID: bundleID, bundleURL: front.bundleURL))
+        persistMRU()
     }
 
     /// Saves the (capped) MRU order so the next launch can seed from it.
@@ -138,7 +148,7 @@ final class AppListProvider {
                 let bundleID = app.bundleIdentifier,
                 !isOwnBundleID(bundleID)
             else { return }
-            mru.recordActivation(bundleID: bundleID)
+            mru.recordActivation(key: Self.mruKey(bundleID: bundleID, bundleURL: app.bundleURL))
             persistMRU()
         }
     }

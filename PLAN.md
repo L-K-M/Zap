@@ -160,8 +160,16 @@ must **intercept the key event and suppress the system switcher**.
 - Maintain our own MRU list by observing
   `NSWorkspace.didActivateApplicationNotification` and moving the activated app to the
   front, ignoring Zap's own activations while Settings is open. The order is persisted
-  (a small capped array of bundle IDs in `UserDefaults`) and seeds the tracker on the
+  (a small capped array of MRU keys in `UserDefaults`) and seeds the tracker on the
   next launch.
+- Entries are keyed the way icon overrides are (`IconIdentity`): bundle **path**
+  first, bundle identifier as fallback. The identifier alone collapses
+  site-specific-browser wrappers — every Chrome web app reports
+  `com.google.Chrome` — into one recency slot, which dragged all of them forward
+  whenever one was used and left them in process-table order among themselves.
+  Orders persisted before this change hold bare identifiers; ranking falls back
+  to the identifier so they still seed sensibly, and entries rewrite themselves
+  to paths as apps are activated (no migration).
 - On show: order = MRU list; default selection = index `1` (second item) so a single
   tap switches to the last app, matching native feel. When the frontmost app is
   *excluded* it is filtered out, so the default selection becomes index `0` instead
@@ -263,7 +271,8 @@ Menu-bar `NSStatusItem` menu: *Settings…*, *Pause Zap*, *Quit*.
 
 - `UserDefaults` (small, simple): excluded bundle IDs, color/appearance settings,
   alternate hotkey, launch-at-login flag, show delay, and the MRU order (a capped
-  array of bundle IDs, so a cold launch starts from the previous session's order).
+  array of MRU keys — bundle paths, with pre-path entries as bare identifiers —
+  so a cold launch starts from the previous session's order).
 - No database needed.
 
 ---
