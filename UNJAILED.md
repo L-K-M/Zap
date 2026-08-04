@@ -696,6 +696,15 @@ And silhouette: free-form art on a translucent blurred panel loses its edges.
 A soft drop shadow (which Apple's own icons get for free from the plate) restores
 it — baked into the cached bitmap, not applied per frame.
 
+**It has to be offset.** The first pass was centred, tight and fairly dark, which
+is lift under a blobby icon and an *outline* under a spiky one: with no offset
+there is no side the light comes from, so every edge gets identical dark edging,
+and artwork that is mostly thin rays and deep notches gets the shadow collecting
+in the notches and tracing each ray. The Anthropic mark showed it as a brown rim
+around every point, and read as a bug in SVG rendering rather than as a shadow at
+all. Offset down, wider, fainter: once a shadow is *placed* it needs far less
+contrast to be legible than one relying on darkness alone.
+
 ### 8.4 Settings
 
 A new **Icons** tab (`SettingsView` already has six; a seventh is fine).
