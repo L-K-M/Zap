@@ -56,6 +56,10 @@ final class IconSetInstallerTests: XCTestCase {
     /// that the glob is supposed to leave behind.
     private func makeArchive(apps: [String] = ["firefox", "slack", "google-chrome"]) throws -> Data {
         let root = scratch.appendingPathComponent("build", isDirectory: true)
+        // Cleared first: a test that builds two archives in a row was otherwise
+        // getting the union of them, because the second call laid its files down
+        // beside the first call's and `tar` took both.
+        try? FileManager.default.removeItem(at: root)
         let theme = root.appendingPathComponent("theme-main/Papirus", isDirectory: true)
         let appsDirectory = theme.appendingPathComponent("64x64/apps", isDirectory: true)
         let places = theme.appendingPathComponent("64x64/places", isDirectory: true)
