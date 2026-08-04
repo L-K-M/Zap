@@ -119,10 +119,8 @@ final class AppListProvider {
     }
 
     private func seedMRU() {
-        guard let front = NSWorkspace.shared.frontmostApplication,
-              let bundleID = front.bundleIdentifier,
-              !isOwnBundleID(bundleID) else { return }
-        mru.recordActivation(key: Self.mruKey(bundleID: bundleID, bundleURL: front.bundleURL))
+        guard let key = frontmostAppKey() else { return }
+        mru.recordActivation(key: key)
         persistMRU()
     }
 
