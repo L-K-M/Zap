@@ -115,7 +115,7 @@ struct IconSetProvider: IconSearchProvider {
             providerID: iconSet.id,
             imageURL: url,
             isVector: true,
-            credit: iconSet.name,
+            credit: iconSet.creditedName,
             creditURL: iconSet.homepage,
             license: iconSet.license)
     }

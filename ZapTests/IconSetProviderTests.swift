@@ -8,10 +8,12 @@ final class IconSetProviderTests: XCTestCase {
     private var directory: URL!
 
     private let set = IconSet(
-        id: "testset", name: "Test Set", owner: "example", repository: "theme",
+        id: "testset", name: "Test Set", summary: "A set built by the tests.",
+        owner: "example", repository: "theme",
         branch: "main", license: "CC0-1.0",
         licenseURL: URL(string: "https://example.invalid/licence"),
         homepage: URL(string: "https://example.invalid/"),
+        credit: nil,
         archiveGlob: "*/apps/*.svg", strippedComponents: 2)
 
     private let names: Set<String> = [
@@ -56,6 +58,23 @@ final class IconSetProviderTests: XCTestCase {
     func testHyphensBecomeSpacesInTheTitle() throws {
         let result = try XCTUnwrap(makeProvider().result(forIconName: "google-chrome"))
         XCTAssertEqual(result.title, "google chrome")
+    }
+
+    /// A theme that asks to be credited by a name other than its own gets it, all
+    /// the way into the manifest — which is where §5.4's requirement actually lands.
+    func testAnOverridingCreditReachesTheResult() throws {
+        let asking = IconSet(
+            id: "testset", name: "Test Set", summary: "A set built by the tests.",
+            owner: "example", repository: "theme", branch: "main", license: "CC0-1.0",
+            licenseURL: nil, homepage: nil, credit: "The Drawing Collective",
+            archiveGlob: "*/apps/*.svg", strippedComponents: 2)
+        let provider = IconSetProvider(iconSet: asking, directory: directory, iconNames: names)
+
+        let result = try XCTUnwrap(provider.result(forIconName: "firefox"))
+        XCTAssertEqual(result.credit, "The Drawing Collective")
+        // The provider id stays the set's, so the manifest still records which set
+        // an icon came from rather than who to thank for it.
+        XCTAssertEqual(result.providerID, "testset")
     }
 
     /// A name the path check refuses produces no result at all, rather than one

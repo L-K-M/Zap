@@ -34,7 +34,7 @@ struct IconSetsSheet: View {
                 row(for: set)
             }
             .listStyle(.inset)
-            .frame(minHeight: 180)
+            .frame(minHeight: 220)
 
             if let note {
                 Label(note, systemImage: "checkmark.circle")
@@ -56,7 +56,7 @@ struct IconSetsSheet: View {
             }
         }
         .padding(16)
-        .frame(width: 560, height: 420)
+        .frame(width: 560, height: 500)
         .alert(iconProblem: $problem)
     }
 
@@ -67,6 +67,14 @@ struct IconSetsSheet: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(set.name)
                     .font(.body.weight(.medium))
+                // What the set actually contains, before the licence and before the
+                // install button. These themes are far less alike than their names
+                // suggest, and this is the difference between choosing one and
+                // finding out by installing it.
+                Text(set.summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(status(for: set))
                     .font(.caption)
                     .foregroundStyle(.secondary)

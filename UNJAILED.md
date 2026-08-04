@@ -396,12 +396,43 @@ operation with an `If-None-Match`, so a theme that hasn't moved costs one round
 trip. `IconSetInstaller` is the only place in Zap that spawns a subprocess, which
 its own header says out loud rather than hiding.
 
-**Which sets.** Papirus, Tela and Numix Circle. Not the five named above: Adwaita
-and Breeze are overwhelmingly UI symbolics rather than application artwork, and
-`numix-icon-theme` — Numix's own repository — carries about twenty app icons, the
-large set everyone means being the separate `numix-icon-theme-circle`. Against a
-sample of common desktop apps the three shipped answer for nearly all of it and the
-two dropped for almost none.
+**Which sets.** All five named above, with one correction: "Numix" means
+`numix-icon-theme-circle`, not `numix-icon-theme` — Numix's own repository carries
+about twenty application icons, the large set everyone means being the separate
+circle one.
+
+They are not equivalent, and the catalogue says so per row rather than implying a
+menu of interchangeable options. Measured against a sample of eighteen common
+desktop applications:
+
+| | app icons | of the sample |
+|---|---|---|
+| Papirus | thousands, branded | 16/18 |
+| Numix Circle | thousands, branded, round | 17/18 |
+| Tela | thousands, branded | 15/18 |
+| Breeze | ~206, nearly all KDE's own | 0/18 — but 6/8 KDE apps |
+| Adwaita | none in colour | — |
+
+Adwaita's `master` has no full-colour `apps` directory at all; its
+application-shaped icons are `symbolic/legacy`, drawn at 16 px in a single grey
+under generic freedesktop names (`web-browser`, `utilities-terminal`). Breeze's
+are real full-colour artwork, just for KDE's applications rather than the wider
+desktop.
+
+Both are shipped anyway, because a set that covers *your* case beats one that
+covers the average: Krita and Kdenlive are cross-platform and Breeze draws them,
+and Adwaita is the right answer for anyone who wants a uniformly monochrome row.
+What that requires is that the manager say which is which before you install it —
+hence `IconSet.summary`, shown in the row. A name and a licence do not distinguish
+"thousands of branded logos" from "16 px grey glyphs", and finding out by
+installing 30 MB is not a choice.
+
+**Credit is the theme's to specify.** Adwaita's `COPYING` ends "When attributing
+the artwork, using 'GNOME Project' is enough", which is an instruction rather than
+a preference — §5.4 makes honouring it the condition for using the work. So
+`IconSet.credit` overrides the theme's own title where upstream asks, and that is
+what reaches `IconSearchResult`, the manifest, and any exported pack. The rest
+carry `nil` and are credited by name.
 
 **No disclosure wall for a set.** §5.5's notice is shown before the first search of
 a provider that sends something; `IconSearchProvider.disclosure` is therefore

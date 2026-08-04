@@ -23,6 +23,16 @@ struct IconSet: Identifiable, Equatable {
     let id: String
     let name: String
 
+    /// One line on what is actually in this set, shown in the manager.
+    ///
+    /// Not decoration. These themes differ enormously in what "icon theme" means —
+    /// thousands of branded app logos in one, two hundred of a single desktop's own
+    /// applications in another, monochrome 16 px glyphs in a third — and a name and
+    /// a licence say none of that. Without this, choosing between them means
+    /// installing one to find out, and "Adwaita" in particular delivers something
+    /// nobody would guess from the word.
+    let summary: String
+
     /// Where it lives. Archives come from `github.com/<owner>/<repository>`, which
     /// is upstream rather than a mirror — Pling hosts Papirus too, but 15 months
     /// behind, with an empty licence field and download links that expire.
@@ -37,6 +47,18 @@ struct IconSet: Identifiable, Equatable {
     let license: String
     let licenseURL: URL?
     let homepage: URL?
+
+    /// Who to name in the credit, when the theme asks for something other than its
+    /// own title.
+    ///
+    /// Adwaita's `COPYING` ends "When attributing the artwork, using 'GNOME Project'
+    /// is enough" — an explicit request from the people who drew it, and §5.4 makes
+    /// honouring that the condition for using their work at all. Most themes say
+    /// nothing, and for those the theme's name is the credit.
+    let credit: String?
+
+    /// The name that reaches the manifest and any exported icon pack.
+    var creditedName: String { credit ?? name }
 
     /// Which paths inside the archive are worth extracting, as `tar` matches them.
     /// The leading `*` is the archive's own root directory, which carries the commit
@@ -55,5 +77,5 @@ struct IconSet: Identifiable, Equatable {
     }
 
     /// A short line for the picker and for the manifest's credit.
-    var attribution: String { "\(name) · \(license)" }
+    var attribution: String { "\(creditedName) · \(license)" }
 }
