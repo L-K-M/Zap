@@ -427,6 +427,13 @@ hence `IconSet.summary`, shown in the row. A name and a licence do not distingui
 "thousands of branded logos" from "16 px grey glyphs", and finding out by
 installing 30 MB is not a choice.
 
+**Credit is the theme's to specify.** Adwaita's `COPYING` ends "When attributing
+the artwork, using 'GNOME Project' is enough", which is an instruction rather than
+a preference — §5.4 makes honouring it the condition for using the work. So
+`IconSet.credit` overrides the theme's own title where upstream asks, and that is
+what reaches `IconSearchResult`, the manifest, and any exported pack. The rest
+carry `nil` and are credited by name.
+
 **No disclosure wall for a set.** §5.5's notice is shown before the first search of
 a provider that sends something; `IconSearchProvider.disclosure` is therefore
 optional, and a set answers `nil`. Putting a privacy wall in front of a search that

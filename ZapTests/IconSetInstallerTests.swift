@@ -19,6 +19,7 @@ final class IconSetInstallerTests: XCTestCase {
         IconSet(id: "testset", name: "Test Set", summary: "A set built by the tests.",
                 owner: "example", repository: "theme",
                 branch: "main", license: "GPL-3.0", licenseURL: nil, homepage: nil,
+                credit: nil,
                 archiveGlob: glob, strippedComponents: strip)
     }
 

@@ -48,6 +48,18 @@ struct IconSet: Identifiable, Equatable {
     let licenseURL: URL?
     let homepage: URL?
 
+    /// Who to name in the credit, when the theme asks for something other than its
+    /// own title.
+    ///
+    /// Adwaita's `COPYING` ends "When attributing the artwork, using 'GNOME Project'
+    /// is enough" — an explicit request from the people who drew it, and §5.4 makes
+    /// honouring that the condition for using their work at all. Most themes say
+    /// nothing, and for those the theme's name is the credit.
+    let credit: String?
+
+    /// The name that reaches the manifest and any exported icon pack.
+    var creditedName: String { credit ?? name }
+
     /// Which paths inside the archive are worth extracting, as `tar` matches them.
     /// The leading `*` is the archive's own root directory, which carries the commit
     /// or tag in its name and so can't be written out here.
@@ -65,5 +77,5 @@ struct IconSet: Identifiable, Equatable {
     }
 
     /// A short line for the picker and for the manifest's credit.
-    var attribution: String { "\(name) · \(license)" }
+    var attribution: String { "\(creditedName) · \(license)" }
 }

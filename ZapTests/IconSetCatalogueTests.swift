@@ -27,8 +27,19 @@ final class IconSetCatalogueTests: XCTestCase {
         for set in IconSetCatalogue.all {
             XCTAssertFalse(set.license.isEmpty, "\(set.id) has no licence")
             XCTAssertNotNil(set.homepage, "\(set.id) has no homepage to credit")
+            XCTAssertNotNil(set.licenseURL, "\(set.id) has no licence to link to")
             XCTAssertTrue(set.attribution.contains(set.license))
+            XCTAssertTrue(set.attribution.contains(set.creditedName))
         }
+    }
+
+    /// A theme that asks to be credited by a particular name gets it — Adwaita's
+    /// `COPYING` says "using 'GNOME Project' is enough", and honouring that is the
+    /// condition §5.4 attaches to using the artwork at all.
+    func testASetIsCreditedTheWayItAsksToBe() {
+        XCTAssertEqual(IconSetCatalogue.adwaita.creditedName, "GNOME Project")
+        // And a theme that asks for nothing is credited by its own name.
+        XCTAssertEqual(IconSetCatalogue.papirus.creditedName, "Papirus")
     }
 
     /// The invariant `IconSet.strippedComponents` documents: the count is the glob's

@@ -42,6 +42,7 @@ enum IconSetCatalogue {
         license: "GPL-3.0",
         licenseURL: URL(string: "https://www.gnu.org/licenses/gpl-3.0.html"),
         homepage: URL(string: "https://github.com/PapirusDevelopmentTeam/papirus-icon-theme"),
+        credit: nil,
         // `papirus-icon-theme-master/Papirus/64x64/apps/firefox.svg` → `firefox.svg`.
         // 64 px is the largest fixed size Papirus ships and its icons are SVG, so
         // the size in the path bounds nothing about how sharply they render.
@@ -58,6 +59,7 @@ enum IconSetCatalogue {
         license: "GPL-3.0",
         licenseURL: URL(string: "https://www.gnu.org/licenses/gpl-3.0.html"),
         homepage: URL(string: "https://github.com/vinceliuice/Tela-icon-theme"),
+        credit: nil,
         // Tela is built rather than shipped: the repository holds sources and an
         // installer, and the application icons are the scalable ones under `src`.
         // `Tela-icon-theme-master/src/scalable/apps/firefox.svg` → `firefox.svg`.
@@ -74,6 +76,7 @@ enum IconSetCatalogue {
         license: "GPL-3.0",
         licenseURL: URL(string: "https://www.gnu.org/licenses/gpl-3.0.html"),
         homepage: URL(string: "https://github.com/numixproject/numix-icon-theme-circle"),
+        credit: nil,
         // `numix-icon-theme-circle-master/Numix-Circle/48/apps/firefox.svg`. The 48
         // names the theme's nominal size; the files under it are SVG.
         archiveGlob: "*/Numix-Circle/48/apps/*.svg",
@@ -93,6 +96,7 @@ enum IconSetCatalogue {
         license: "LGPL-2.1",
         licenseURL: URL(string: "https://github.com/KDE/breeze-icons/blob/master/COPYING.LIB"),
         homepage: URL(string: "https://github.com/KDE/breeze-icons"),
+        credit: nil,
         // `breeze-icons-master/icons/apps/48/kate.svg` → `kate.svg`. 48 is where
         // nearly all of them are: the other sizes hold a few dozen between them.
         archiveGlob: "*/icons/apps/48/*.svg",
@@ -109,6 +113,9 @@ enum IconSetCatalogue {
         license: "LGPL-3.0 or CC BY-SA 3.0",
         licenseURL: URL(string: "https://github.com/GNOME/adwaita-icon-theme/blob/master/COPYING"),
         homepage: URL(string: "https://github.com/GNOME/adwaita-icon-theme"),
+        // Upstream asks for this by name, in `COPYING`: "When attributing the
+        // artwork, using 'GNOME Project' is enough."
+        credit: "GNOME Project",
         // `symbolic/legacy`, because that is where Adwaita's application-shaped
         // icons are and there is nowhere else: `master` has no full-colour `apps`
         // directory. The names all end `-symbolic`, which the guesser handles —
