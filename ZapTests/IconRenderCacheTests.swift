@@ -113,6 +113,23 @@ final class IconRenderCacheTests: XCTestCase {
         XCTAssertLessThanOrEqual(entries.count, 3)
     }
 
+    // MARK: Wiring
+
+    /// That `IconImport` actually consults the cache, not just that the cache works.
+    ///
+    /// Seeds an entry and asks for an import of the same markup: a hit returns the
+    /// seeded image without a web view ever starting. If the lookup were dropped in
+    /// a refactor this would fall through to a real render, which is both wrong and
+    /// slow — the failure the isolated tests above could never see.
+    func testImportingSVGConsultsTheCache() async throws {
+        let svg = Data("<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0 0h1v1z\"/></svg>".utf8)
+        cache.store(IconTestSupport.makeImage(width: 96, height: 96), for: svg, side: 96)
+
+        let imported = await IconImport.image(from: svg, side: 96, cache: cache)
+        let image = try XCTUnwrap(imported.successValue)
+        XCTAssertEqual(image.width, 96)
+    }
+
     /// Pruning keeps the newest, so the entry just written is still there.
     func testPruningKeepsTheMostRecentEntry() throws {
         let bounded = IconRenderCache(directory: directory, maximumEntries: 2)

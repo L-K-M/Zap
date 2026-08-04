@@ -25,9 +25,13 @@ struct IconRenderCache {
 
     let directory: URL
 
-    /// How many renders to keep. Each is a PNG at most `masterLongestEdge` square,
-    /// so a few hundred is single-digit megabytes — small next to what re-rendering
-    /// them costs, and bounded so a long browsing session can't grow without limit.
+    /// How many renders to keep.
+    ///
+    /// Most entries are 128 px previews and cost a few KB; the rest are 1024 px
+    /// masters, which for flat icon artwork land somewhere in the hundreds of KB.
+    /// So a few hundred entries is tens of megabytes at worst, not the single digits
+    /// this comment used to claim — still small next to what re-rendering them
+    /// costs, and bounded so a long browsing session can't grow without limit.
     let maximumEntries: Int
 
     init(directory: URL = IconRenderCache.defaultDirectory(), maximumEntries: Int = 256) {
