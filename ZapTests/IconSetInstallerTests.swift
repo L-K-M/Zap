@@ -82,8 +82,24 @@ final class IconSetInstallerTests: XCTestCase {
         tar.arguments = ["-czf", archive.path, "-C", root.path, "theme-main"]
         try tar.run()
         tar.waitUntilExit()
-        XCTAssertEqual(tar.terminationStatus, 0, "couldn't build the test archive")
+        // Thrown rather than asserted: `XCTAssertEqual` records the failure and
+        // carries on, and the next line would then read a missing or half-written
+        // archive and fail again somewhere less informative.
+        guard tar.terminationStatus == 0 else {
+            throw FixtureError.tarFailed(status: tar.terminationStatus)
+        }
         return try Data(contentsOf: archive)
+    }
+
+    enum FixtureError: Error, CustomStringConvertible {
+        case tarFailed(status: Int32)
+
+        var description: String {
+            switch self {
+            case .tarFailed(let status):
+                return "couldn't build the test archive: tar exited \(status)"
+            }
+        }
     }
 
     // MARK: Installing

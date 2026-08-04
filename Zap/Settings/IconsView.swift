@@ -26,10 +26,6 @@ struct IconsView: View {
     /// Whether the icon-set manager is open.
     @State private var managingSets = false
 
-    /// The keyless provider (`UNJAILED.md §5.2` conclusion 3). Held here rather
-    /// than rebuilt per sheet so its set metadata is fetched once per session.
-    @State private var remoteProvider: IconSearchProvider = IconifyClient()
-
     /// The installed icon themes (`UNJAILED.md §5.6`).
     @ObservedObject private var iconSets = IconSetLibrary.shared
 
@@ -45,9 +41,13 @@ struct IconsView: View {
     /// files, and a computed property here would do that on every redraw of a sheet
     /// that is open.
     ///
-    /// Starts with the remote provider already in it so it is never empty — the
-    /// sheet takes the list as given and shows its first entry, and "no sources at
-    /// all" is not a state Zap can be in.
+    /// Starts with the keyless remote provider (`UNJAILED.md §5.2` conclusion 3)
+    /// already in it so it is never empty — the sheet takes the list as given and
+    /// shows its first entry, and "no sources at all" is not a state Zap can be in.
+    ///
+    /// That one instance is also the only one: `refreshProviders` carries it over
+    /// rather than building another, so the set metadata behind it is fetched once
+    /// per session rather than once per rebuild.
     @State private var searchProviders: [IconSearchProvider] = [IconifyClient()]
 
     private var filteredApps: [AppInfo] {
@@ -94,9 +94,13 @@ struct IconsView: View {
         }
     }
 
-    /// Rebuilds the provider list from what is installed now.
+    /// Rebuilds the provider list from what is installed now, keeping the remote
+    /// provider that is already there.
+    ///
+    /// It is always last — sets lead, and the list is never empty — so `last` is it.
     private func refreshProviders() {
-        searchProviders = iconSets.installedProviders() + [remoteProvider]
+        let remote = searchProviders.last ?? IconifyClient()
+        searchProviders = iconSets.installedProviders() + [remote]
     }
 
     /// Stores a searched-for icon, carrying its credit into the manifest — §5.4

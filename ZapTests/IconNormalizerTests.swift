@@ -205,19 +205,33 @@ final class IconNormalizerTests: XCTestCase {
 
     /// Faint enough to be lift rather than a second shape. The old value was dark
     /// enough that on thin artwork the shadow read as ink in its own right.
+    ///
+    /// Measured strictly *outside* the artwork's own bounding box, where every
+    /// sample is shadow and nothing else. Comparing whole-image ink fractions
+    /// instead would need slack for the artwork's antialiased edge — which sits over
+    /// the shadow and so lands a shade more opaque — and slack is exactly what would
+    /// let a doubled shadow opacity through unnoticed.
     func testTheShadowNeverReadsAsInk() throws {
         let image = IconTestSupport.makeImage(width: 256, height: 256)
-        let plain = IconNormalizer.normalize(image, targetExtent: 200, bleed: 0.15,
-                                             trim: true, shadow: false)
         let shadowed = IconNormalizer.normalize(image, targetExtent: 200, bleed: 0.15,
                                                 trim: true, shadow: true)
 
-        // At the threshold the rest of the app calls ink, the shadow is invisible:
-        // what it adds is confined to the partial coverage the test above measures.
-        // A little slack for the artwork's own antialiased edge, which sits over the
-        // shadow and so lands a shade more opaque than it would alone.
-        XCTAssertLessThan(try inkFraction(of: shadowed),
-                          try inkFraction(of: plain) * 1.1)
+        let mask = try XCTUnwrap(AlphaMask(image: shadowed, longestEdge: 128))
+        let ink = try XCTUnwrap(mask.inkBounds(threshold: 200), "the artwork itself")
+
+        var strongestOutside: UInt8 = 0
+        for row in 0..<mask.height {
+            for column in 0..<mask.width {
+                let insideArtwork = row >= ink.minRow && row <= ink.maxRow
+                    && column >= ink.minColumn && column <= ink.maxColumn
+                guard !insideArtwork else { continue }
+                strongestOutside = max(strongestOutside, mask.samples[row * mask.width + column])
+            }
+        }
+
+        XCTAssertGreaterThan(strongestOutside, 0, "the shadow has to be visible at all")
+        XCTAssertLessThan(strongestOutside, IconShapeClassifier.inkThreshold,
+                          "the shadow must stay below what the rest of the app calls ink")
     }
 
     private func inkFraction(of image: CGImage, threshold: UInt8 = 128) throws -> Double {

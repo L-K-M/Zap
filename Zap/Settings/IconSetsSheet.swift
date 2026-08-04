@@ -99,8 +99,13 @@ struct IconSetsSheet: View {
                 Button("Check for Updates") { install(set) }
                     .disabled(busy)
                 Button("Remove", role: .destructive) {
-                    library.remove(set)
-                    note = "Removed \(set.name). Icons you already picked from it are unaffected."
+                    // `@MainActor in` for the same reason `install` has it: this is a
+                    // SwiftUI action closure, which carries no isolation of its own,
+                    // and `remove` publishes.
+                    Task { @MainActor in
+                        library.remove(set)
+                        note = "Removed \(set.name). Icons you already picked from it are unaffected."
+                    }
                 }
                 .disabled(busy)
             }

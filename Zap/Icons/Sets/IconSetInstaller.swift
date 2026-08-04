@@ -121,8 +121,17 @@ enum IconSetInstaller {
         guard !icons.isEmpty else { return .failure(.nothingMatched(glob: set.archiveGlob)) }
 
         do {
-            try? FileManager.default.removeItem(at: directory)
-            try FileManager.default.moveItem(at: staging, to: directory)
+            if FileManager.default.fileExists(atPath: directory.path) {
+                // Removing first and *then* moving would undo the whole point of
+                // staging: a `moveItem` that fails — full disk, a permissions
+                // change, something holding a file open — would leave the user with
+                // nothing where they had a working theme, under an error message
+                // saying nothing was changed. `replaceItemAt` swaps the two and puts
+                // the original back if it can't finish.
+                _ = try FileManager.default.replaceItemAt(directory, withItemAt: staging)
+            } else {
+                try FileManager.default.moveItem(at: staging, to: directory)
+            }
         } catch {
             return .failure(.extraction(error.localizedDescription))
         }
@@ -186,7 +195,12 @@ enum IconSetInstaller {
         ]
         let errors = Pipe()
         process.standardError = errors
-        process.standardOutput = Pipe()
+        // `/dev/null`, not a pipe nobody reads. `tar -x` shouldn't write to stdout,
+        // but if a future flag or a chattier `tar` ever did, an undrained pipe fills
+        // at 64 KB and the child blocks on the write — deadlocking against the
+        // `readDataToEndOfFile` on stderr below, which is waiting for a process that
+        // is waiting for us.
+        process.standardOutput = FileHandle.nullDevice
 
         do {
             try process.run()

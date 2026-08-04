@@ -82,6 +82,11 @@ final class SVGRenderGateTests: XCTestCase {
 
     /// A waiter must be resumed by whoever leaves, not left for the next arrival to
     /// step over. With `limit` 1 this is the whole hand-off in one line.
+    ///
+    /// The wait below is on `waitingCount`, not on a clock. A fixed sleep would pass
+    /// either way on a loaded runner — if the waiter hadn't suspended yet it would
+    /// simply take the free slot when it eventually ran, exercising the *other* path
+    /// and reporting success for a hand-off that never happened.
     func testAWaiterIsResumedWhenTheHolderLeaves() async {
         let gate = SVGRenderGate(limit: 1)
         await gate.acquire()
@@ -90,8 +95,15 @@ final class SVGRenderGateTests: XCTestCase {
             await gate.acquire()
             return true
         }
-        // Give the waiter a chance to actually suspend inside the gate.
-        try? await Task.sleep(nanoseconds: 5_000_000)
+        var spins = 0
+        while await gate.waitingCount == 0 {
+            spins += 1
+            guard spins < 100_000 else {
+                return XCTFail("the waiter never suspended inside the gate")
+            }
+            await Task.yield()
+        }
+
         await gate.release()
 
         let resumed = await waiter.value

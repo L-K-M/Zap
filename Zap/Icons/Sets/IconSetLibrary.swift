@@ -78,14 +78,17 @@ final class IconSetLibrary: ObservableObject {
     /// that hasn't moved answers 304 and nothing is downloaded.
     ///
     /// `IconSetInstaller.install` is a plain `async` function on no actor, so the
-    /// download and the `tar` run off the main thread; everything that publishes is
-    /// hopped back onto it explicitly.
+    /// download and the `tar` run off the main thread; everything that touches
+    /// `records` is hopped back onto it explicitly — the read included, so the
+    /// dictionary is only ever reached from one thread.
     func install(_ set: IconSet, session: URLSession = .shared)
     async -> Result<IconSetInstaller.Outcome, IconSetInstaller.InstallError> {
         guard let destination = directory(forSetID: set.id) else { return .failure(.badURL) }
 
-        let previousETag = records[set.id]?.etag
-        await MainActor.run { installing = set.id }
+        let previousETag = await MainActor.run { () -> String? in
+            installing = set.id
+            return records[set.id]?.etag
+        }
 
         let outcome = await IconSetInstaller.install(set, into: destination,
                                                     ifNoneMatch: previousETag,
@@ -107,6 +110,13 @@ final class IconSetLibrary: ObservableObject {
     /// Icons already adopted from it are untouched — they were re-encoded into
     /// Zap's own PNGs at adoption time (`IconStore`), so nothing here is load-bearing
     /// for an icon the user is already using.
+    ///
+    /// `@MainActor` so the two ways `records` is written are both pinned to one
+    /// thread by the compiler rather than by this comment. It is the method a future
+    /// caller reaches for from a button handler without thinking about threads, and
+    /// a `@Published` dictionary written from two of them is undefined behaviour
+    /// before it is a SwiftUI warning.
+    @MainActor
     func remove(_ set: IconSet) {
         if let destination = directory(forSetID: set.id) {
             try? FileManager.default.removeItem(at: destination)

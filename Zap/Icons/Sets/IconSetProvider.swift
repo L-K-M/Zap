@@ -32,14 +32,15 @@ struct IconSetProvider: IconSearchProvider {
     // MARK: Searching
 
     func search(query: String, limit: Int) async -> Result<[IconSearchResult], IconSearchError> {
-        .success(Self.ranked(query: query, in: iconNames, limit: limit).map(result(forIconName:)))
+        .success(Self.ranked(query: query, in: iconNames, limit: limit)
+            .compactMap(result(forIconName:)))
     }
 
     /// The set's own guesses for an app, best first (`IconNameGuess`).
     func suggestions(appName: String, bundleIdentifier: String, limit: Int) async -> [IconSearchResult] {
         IconNameGuess.matches(appName: appName, bundleIdentifier: bundleIdentifier,
                               in: iconNames, limit: limit)
-            .map { result(forIconName: $0.iconName) }
+            .compactMap { result(forIconName: $0.iconName) }
     }
 
     /// Ranks `iconNames` against a typed query. Pure, so the ordering is testable
@@ -97,15 +98,22 @@ struct IconSetProvider: IconSearchProvider {
 
     // MARK: Results and paths
 
-    func result(forIconName name: String) -> IconSearchResult {
-        IconSearchResult(
+    /// A result for one icon, or `nil` when the name can't be resolved to a file
+    /// inside the set.
+    ///
+    /// Optional rather than falling back to the set's directory for `imageURL`. A
+    /// result whose artwork can't be located has nothing truthful to put there — the
+    /// directory is the parent of every icon in the set, not this one's artwork —
+    /// and it would fail in `fetchImageData` anyway, so it is better never offered.
+    /// Every caller `compactMap`s, so an unresolvable name drops out of the grid
+    /// instead of becoming a cell that can only disappoint.
+    func result(forIconName name: String) -> IconSearchResult? {
+        guard let url = fileURL(forIconName: name) else { return nil }
+        return IconSearchResult(
             id: Self.resultID(setID: iconSet.id, iconName: name),
             title: name.replacingOccurrences(of: "-", with: " "),
             providerID: iconSet.id,
-            // The sheet never fetches this itself — `fetchImageData` re-derives the
-            // path from the name below — but a result carries where its artwork is,
-            // and for this provider that is a file.
-            imageURL: fileURL(forIconName: name) ?? directory,
+            imageURL: url,
             isVector: true,
             credit: iconSet.name,
             creditURL: iconSet.homepage,

@@ -38,6 +38,11 @@ actor SVGRenderGate {
     /// How many renders hold a slot right now. For tests.
     var activeCount: Int { active }
 
+    /// How many are queued behind them. For tests — the hand-off in `release` is
+    /// only exercised if a waiter has actually suspended, and a test that guesses
+    /// at that with a sleep is testing the other path half the time.
+    var waitingCount: Int { waiting.count }
+
     /// Waits until a slot is free, then takes it. Every `acquire` must be paired
     /// with exactly one `release`.
     func acquire() async {

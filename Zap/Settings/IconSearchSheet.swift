@@ -258,6 +258,16 @@ struct IconSearchSheet: View {
     /// agreed to yet shouldn't be doing anything at all.
     private func loadSuggestions() {
         guard !mustShowDisclosure else { return }
+        // Retires any search in flight, so the spinner has to come down here.
+        //
+        // `runSearch` lowers `isSearching` behind its own generation guard, which is
+        // right when a *newer search* replaced it — the flag still describes
+        // something running — and wrong when this did: suggestions are not a
+        // searching state, so nothing would ever lower it again and the grid would
+        // sit on a `ProgressView` for the rest of the sheet's life. Switching
+        // provider mid-search is the way to hit that, and it is the ordinary way to
+        // use the picker: start a remote search, get bored, switch to a local set.
+        isSearching = false
         searchGeneration += 1
         let generation = searchGeneration
         let source = provider

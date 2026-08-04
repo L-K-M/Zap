@@ -44,8 +44,8 @@ final class IconSetProviderTests: XCTestCase {
         XCTAssertFalse(makeProvider().requiresAPIKey)
     }
 
-    func testResultsCarryTheSetsAttribution() {
-        let result = makeProvider().result(forIconName: "firefox")
+    func testResultsCarryTheSetsAttribution() throws {
+        let result = try XCTUnwrap(makeProvider().result(forIconName: "firefox"))
         XCTAssertEqual(result.providerID, "testset")
         XCTAssertEqual(result.credit, "Test Set")
         XCTAssertEqual(result.license, "CC0-1.0")
@@ -53,8 +53,21 @@ final class IconSetProviderTests: XCTestCase {
         XCTAssertTrue(result.isVector)
     }
 
-    func testHyphensBecomeSpacesInTheTitle() {
-        XCTAssertEqual(makeProvider().result(forIconName: "google-chrome").title, "google chrome")
+    func testHyphensBecomeSpacesInTheTitle() throws {
+        let result = try XCTUnwrap(makeProvider().result(forIconName: "google-chrome"))
+        XCTAssertEqual(result.title, "google chrome")
+    }
+
+    /// A name the path check refuses produces no result at all, rather than one
+    /// carrying a URL that points at the set's directory instead of an icon.
+    func testANameThatCannotBeResolvedProducesNoResult() {
+        XCTAssertNil(makeProvider().result(forIconName: "../escape"))
+    }
+
+    /// The artwork's real location, not the folder it lives in.
+    func testAResultPointsAtItsOwnFile() throws {
+        let result = try XCTUnwrap(makeProvider().result(forIconName: "firefox"))
+        XCTAssertEqual(result.imageURL.lastPathComponent, "firefox.svg")
     }
 
     // MARK: Ranking
@@ -144,15 +157,17 @@ final class IconSetProviderTests: XCTestCase {
         try markup.write(to: directory.appendingPathComponent("firefox.svg"))
 
         let provider = makeProvider()
-        let fetched = await provider.fetchImageData(for: provider.result(forIconName: "firefox"))
+        let result = try XCTUnwrap(provider.result(forIconName: "firefox"))
+        let fetched = await provider.fetchImageData(for: result)
         XCTAssertEqual(fetched.successValue, markup)
     }
 
     /// The set was searched, then emptied behind Zap's back. Nothing went over a
     /// wire, so the failure must not claim a download went wrong.
-    func testFetchingAMissingIconFailsAsUnavailable() async {
+    func testFetchingAMissingIconFailsAsUnavailable() async throws {
         let provider = makeProvider()
-        let fetched = await provider.fetchImageData(for: provider.result(forIconName: "firefox"))
+        let result = try XCTUnwrap(provider.result(forIconName: "firefox"))
+        let fetched = await provider.fetchImageData(for: result)
         guard case .failure(.unavailable) = fetched else {
             return XCTFail("expected .unavailable, got \(fetched)")
         }
