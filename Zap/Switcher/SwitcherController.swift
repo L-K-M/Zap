@@ -338,7 +338,7 @@ final class SwitcherController {
         // but if the frontmost app was excluded (and thus filtered out), index 0
         // already *is* the previous visible app — selecting index 1 would skip it.
         selectedIndex = defaultSelection(forward: forward, apps: apps,
-                                         frontmostBundleID: provider.frontmostBundleID())
+                                         frontmostAppKey: provider.frontmostAppKey())
         isSessionActive = true
         startStrandedSessionWatchdog()
 
@@ -359,6 +359,10 @@ final class SwitcherController {
     /// excluded), index 0 is already the previous app, so highlight it instead.
     /// Reverse: highlight the least-recently-used app (last index).
     ///
+    /// The frontmost app is named by its MRU key, not its bundle identifier —
+    /// an identifier would mistake one Chrome wrapper for another and tap-toggle
+    /// into the app the user is already in (see `AppInfo.mruKey`).
+    ///
     /// A `nil` frontmost means Zap *itself* is frontmost, and that covers two
     /// situations a tap should treat differently — which is what
     /// `zapIsShowingAWindow` distinguishes:
@@ -373,17 +377,17 @@ final class SwitcherController {
     ///   dead switcher. Highlight index 1, exactly as when the frontmost app
     ///   survives: committing it is a real switch, which also hands Zap's lingering
     ///   activation over and cures the state.
-    static func defaultSelection(forward: Bool, apps: [AppInfo], frontmostBundleID: String?,
+    static func defaultSelection(forward: Bool, apps: [AppInfo], frontmostAppKey: String?,
                                  zapIsShowingAWindow: Bool = false) -> Int {
         guard !apps.isEmpty else { return 0 }
         guard forward else { return apps.count - 1 }
         guard apps.count > 1 else { return 0 }
-        guard let frontmostBundleID else { return zapIsShowingAWindow ? 0 : 1 }
-        return apps.first?.bundleIdentifier == frontmostBundleID ? 1 : 0
+        guard let frontmostAppKey else { return zapIsShowingAWindow ? 0 : 1 }
+        return apps.first?.mruKey == frontmostAppKey ? 1 : 0
     }
 
-    private func defaultSelection(forward: Bool, apps: [AppInfo], frontmostBundleID: String?) -> Int {
-        Self.defaultSelection(forward: forward, apps: apps, frontmostBundleID: frontmostBundleID,
+    private func defaultSelection(forward: Bool, apps: [AppInfo], frontmostAppKey: String?) -> Int {
+        Self.defaultSelection(forward: forward, apps: apps, frontmostAppKey: frontmostAppKey,
                               zapIsShowingAWindow: Self.zapIsShowingAWindow())
     }
 
@@ -847,7 +851,8 @@ final class SwitcherController {
                               name: app.name,
                               processIdentifier: app.processIdentifier,
                               icon: app.icon,
-                              isHidden: hidden)
+                              isHidden: hidden,
+                              bundleURL: app.bundleURL)
         overlay.refreshApps(apps)
     }
 

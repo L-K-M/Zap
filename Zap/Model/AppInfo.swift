@@ -31,6 +31,11 @@ struct AppInfo: Identifiable, Equatable {
         IconIdentity(bundleIdentifier: bundleIdentifier, bundleURL: bundleURL)
     }
 
+    /// How the MRU order knows this app: the icon store's key — bundle path when
+    /// known, identifier otherwise. Both stores need wrapper apps that share a
+    /// bundle identifier told apart, so they share one notion of identity.
+    var mruKey: String { iconIdentity.storageKey }
+
     /// Designated initializer (also used by tests).
     init(bundleIdentifier: String, name: String, processIdentifier: pid_t,
          icon: NSImage? = nil, isHidden: Bool = false, bundleURL: URL? = nil) {

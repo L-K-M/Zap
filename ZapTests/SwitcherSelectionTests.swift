@@ -9,7 +9,7 @@ final class SwitcherSelectionTests: XCTestCase {
 
     func testEmptyListSelectsZero() {
         XCTAssertEqual(
-            SwitcherController.defaultSelection(forward: true, apps: [], frontmostBundleID: nil),
+            SwitcherController.defaultSelection(forward: true, apps: [], frontmostAppKey: nil),
             0
         )
     }
@@ -17,7 +17,7 @@ final class SwitcherSelectionTests: XCTestCase {
     func testSingleAppSelectsZero() {
         let apps = [app("a")]
         XCTAssertEqual(
-            SwitcherController.defaultSelection(forward: true, apps: apps, frontmostBundleID: "a"),
+            SwitcherController.defaultSelection(forward: true, apps: apps, frontmostAppKey: "a"),
             0
         )
     }
@@ -26,7 +26,7 @@ final class SwitcherSelectionTests: XCTestCase {
         // Frontmost (a) is at index 0, so the previous app is index 1.
         let apps = [app("a"), app("b"), app("c")]
         XCTAssertEqual(
-            SwitcherController.defaultSelection(forward: true, apps: apps, frontmostBundleID: "a"),
+            SwitcherController.defaultSelection(forward: true, apps: apps, frontmostAppKey: "a"),
             1
         )
     }
@@ -35,7 +35,7 @@ final class SwitcherSelectionTests: XCTestCase {
         // Frontmost app was filtered out, so index 0 is already the previous app.
         let apps = [app("b"), app("c")]
         XCTAssertEqual(
-            SwitcherController.defaultSelection(forward: true, apps: apps, frontmostBundleID: "a"),
+            SwitcherController.defaultSelection(forward: true, apps: apps, frontmostAppKey: "a"),
             0
         )
     }
@@ -48,7 +48,7 @@ final class SwitcherSelectionTests: XCTestCase {
         // switcher. The real previous app is index 1.
         let apps = [app("b"), app("c")]
         XCTAssertEqual(
-            SwitcherController.defaultSelection(forward: true, apps: apps, frontmostBundleID: nil,
+            SwitcherController.defaultSelection(forward: true, apps: apps, frontmostAppKey: nil,
                                                 zapIsShowingAWindow: false),
             1
         )
@@ -60,7 +60,7 @@ final class SwitcherSelectionTests: XCTestCase {
         // index 1 would skip straight past it.
         let apps = [app("b"), app("c")]
         XCTAssertEqual(
-            SwitcherController.defaultSelection(forward: true, apps: apps, frontmostBundleID: nil,
+            SwitcherController.defaultSelection(forward: true, apps: apps, frontmostAppKey: nil,
                                                 zapIsShowingAWindow: true),
             0
         )
@@ -70,7 +70,7 @@ final class SwitcherSelectionTests: XCTestCase {
         let apps = [app("a")]
         for showingAWindow in [true, false] {
             XCTAssertEqual(
-                SwitcherController.defaultSelection(forward: true, apps: apps, frontmostBundleID: nil,
+                SwitcherController.defaultSelection(forward: true, apps: apps, frontmostAppKey: nil,
                                                     zapIsShowingAWindow: showingAWindow),
                 0
             )
@@ -84,12 +84,12 @@ final class SwitcherSelectionTests: XCTestCase {
         let apps = [app("b"), app("c")]
         for showingAWindow in [true, false] {
             XCTAssertEqual(
-                SwitcherController.defaultSelection(forward: true, apps: apps, frontmostBundleID: "b",
+                SwitcherController.defaultSelection(forward: true, apps: apps, frontmostAppKey: "b",
                                                     zapIsShowingAWindow: showingAWindow),
                 1
             )
             XCTAssertEqual(
-                SwitcherController.defaultSelection(forward: true, apps: apps, frontmostBundleID: "a",
+                SwitcherController.defaultSelection(forward: true, apps: apps, frontmostAppKey: "a",
                                                     zapIsShowingAWindow: showingAWindow),
                 0
             )
@@ -99,8 +99,32 @@ final class SwitcherSelectionTests: XCTestCase {
     func testReverseSelectsLastIndex() {
         let apps = [app("a"), app("b"), app("c")]
         XCTAssertEqual(
-            SwitcherController.defaultSelection(forward: false, apps: apps, frontmostBundleID: "a"),
+            SwitcherController.defaultSelection(forward: false, apps: apps, frontmostAppKey: "a"),
             2
+        )
+    }
+
+    func testWrapperSharingFrontmostIdentifierIsNotMistakenForIt() {
+        // Two Chrome wrappers, one bundle identifier. When the frontmost one is
+        // not at index 0, index 0 is already the previous app — comparing bundle
+        // identifiers saw a match anyway and tap-toggled into the app the user
+        // was already in.
+        let claude = AppInfo(bundleIdentifier: "com.google.Chrome", name: "Claude ★",
+                             processIdentifier: 1,
+                             bundleURL: URL(fileURLWithPath: "/Applications/Claude ★.app"))
+        let nomad = AppInfo(bundleIdentifier: "com.google.Chrome", name: "CodeNomad",
+                            processIdentifier: 2,
+                            bundleURL: URL(fileURLWithPath: "/Applications/CodeNomad.app"))
+
+        XCTAssertEqual(
+            SwitcherController.defaultSelection(forward: true, apps: [claude, nomad],
+                                                frontmostAppKey: nomad.mruKey),
+            0
+        )
+        XCTAssertEqual(
+            SwitcherController.defaultSelection(forward: true, apps: [nomad, claude],
+                                                frontmostAppKey: nomad.mruKey),
+            1
         )
     }
 }

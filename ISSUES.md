@@ -44,6 +44,7 @@ Static review performed on 2026-06-01. Build/test verification could not be run 
    - `AppInfo.id` and MRU tracking use only bundle identifier. Duplicate bundle IDs can produce duplicate SwiftUI `ForEach` IDs, collapse MRU entries, and cause activation to resolve to a different process via `byBundle.first`.
    - Fix idea: use process identifier in `AppInfo.id`, and track MRU by a stable per-running-app key where possible.
    - **Resolution: FIXED (partial).** `AppInfo.id` is now `"\(bundleIdentifier):\(processIdentifier)"`, making `ForEach` IDs unique; `runningApplication(for:)` already prefers a pid match. MRU intentionally stays keyed on bundle identifier (the system tracks app-level, not process-level, recency), which is the correct granularity for switcher ordering.
+   - **Revisited:** app-level granularity was right, but the bundle identifier is not an app-level key — site-specific-browser wrappers (Chrome web apps) all report `com.google.Chrome`, so they shared one MRU slot and one frontmost-comparison identity. MRU is now keyed like icon overrides (`IconIdentity`: bundle path first, identifier as legacy fallback); see `AppInfo.mruKey`. Still open in this family: exclusions are identifier-keyed (excluding one wrapper excludes all), and `runningApplication(for:)`'s `byBundle.first` fallback can resolve to a sibling wrapper if the pid lookup fails.
 
 7. Window close failures are ignored and desynchronize the overlay.
    - References: `Zap/Switcher/SwitcherController.swift:316-324`, `Zap/Switcher/WindowEnumerator.swift:65-77`
