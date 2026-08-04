@@ -28,8 +28,15 @@ import WebKit
 /// document or there is no document. Fewer ways to be wrong, same guarantee, and
 /// it is the mechanism the web platform provides for exactly this.
 ///
+/// Transparency is recovered rather than requested: WebKit composites the page
+/// onto white whichever way it is captured, so the document is rendered **twice**
+/// over opaque backgrounds of its own and the alpha comes out of the difference
+/// (`alphaRecovered`) — independent of what WebKit paints underneath, which is the
+/// whole point, and exact under sRGB compositing.
+///
 /// It runs once per icon inside a Settings sheet — never on the switcher's hot
-/// path — and the result is baked to PNG on disk, so the cost is paid once.
+/// path — and the result is baked to PNG on disk, so the two renders are paid
+/// for once.
 final class SVGRasterizer: NSObject, WKNavigationDelegate {
 
     enum RasterizeError: Error, Equatable {
@@ -92,49 +99,169 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
     static let contentSecurityPolicy = "default-src 'none'; base-uri 'none'; "
         + "form-action 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:"
 
+    /// The two backdrops the document is rendered against — see `alphaRecovered`.
+    ///
+    /// An enum rather than a colour string because the value is interpolated into
+    /// the document's CSS, a few lines from the policy that makes the document safe
+    /// to build at all. Two cases cannot carry an injection; a `String` parameter
+    /// invites one from a call site that doesn't exist yet.
+    enum Backdrop: String, CaseIterable {
+        case black = "#000"
+        case white = "#fff"
+    }
+
     /// Wraps SVG markup in a minimal document that scales it to fill the viewport
-    /// on a transparent background.
+    /// over an opaque `background`.
+    ///
+    /// Opaque on purpose, and it is the point of the whole exercise. Asking WebKit
+    /// for a transparent render doesn't work: `takeSnapshot` composites onto white,
+    /// and so does `createPDF`. Whatever it paints under the page is not ours to
+    /// turn off — so the document paints its *own* background over it, twice, and
+    /// the alpha is recovered from the difference.
     ///
     /// The policy goes first in `<head>`, before anything that could load: a `<meta>`
     /// CSP applies from the point the parser reads it, so putting it after the markup
     /// would be decoration.
-    static func htmlDocument(forSVG svg: String) -> String {
+    static func htmlDocument(forSVG svg: String, background: Backdrop) -> String {
         """
         <!DOCTYPE html><html><head>\
         <meta http-equiv="Content-Security-Policy" content="\(contentSecurityPolicy)">
         <meta charset="utf-8">
         <style>
-        html,body{margin:0;padding:0;background:transparent;overflow:hidden}
+        html,body{margin:0;padding:0;background:\(background.rawValue);overflow:hidden}
         svg{width:100vw;height:100vh;display:block}
         </style></head><body>\(svg)</body></html>
         """
     }
 
-    // MARK: Rasterising
+    // MARK: Alpha
 
-    /// Renders `data` into a square bitmap of `side` points. `completion` is called
-    /// on the main queue, exactly once.
-    static func rasterize(_ data: Data,
-                          side: Int = IconImageValidator.Limits.masterLongestEdge,
-                          completion: @escaping (Result<CGImage, RasterizeError>) -> Void) {
-        guard isSVG(data), let markup = String(data: data, encoding: .utf8) else {
-            DispatchQueue.main.async { completion(.failure(.notSVG)) }
-            return
+    /// Recovers exact per-pixel alpha from the same artwork rendered on black and
+    /// on white.
+    ///
+    /// Compositing one source pixel (colour `C`, alpha `α`) over a backdrop `B`
+    /// gives `α·C + (1−α)·B`. Render it twice, once with `B = 0` and once with
+    /// `B = 1`, and the two results differ by exactly the transparency:
+    ///
+    ///     black = α·C
+    ///     white = α·C + (1 − α)
+    ///     white − black = 1 − α        →  α = 1 − (white − black)
+    ///
+    /// The output is premultiplied, so the colour needs no work at all: premultiplied
+    /// RGB *is* `α·C`, which is the black pass unchanged. Only the alpha channel is
+    /// computed.
+    ///
+    /// Exact under sRGB compositing rather than a heuristic — and the qualifier is
+    /// load-bearing. The subtraction is linear in whatever space the two passes were
+    /// composited in, so it recovers α precisely while that space is the one the
+    /// bytes are encoded in. sRGB is the default for compositing an SVG over a page
+    /// background, and `color-interpolation-filters: linearRGB` only governs what
+    /// happens *inside* a filter, not the composite that lands on the backdrop. An
+    /// SVG that pushed the final composite into linear light would make the
+    /// recovered alpha drift in the midtones, which is worth knowing before trusting
+    /// the word "exact" further than it goes.
+    ///
+    /// What it does not depend on at all is what WebKit paints beneath the page —
+    /// the document's own opaque background hides that in both passes, so it
+    /// cancels. That is why this replaced trying to talk WebKit into a transparent
+    /// render, which failed twice in two different ways.
+    static func alphaRecovered(black: CGImage, white: CGImage) -> CGImage? {
+        let width = black.width
+        let height = black.height
+        guard width > 0, height > 0, white.width == width, white.height == height else { return nil }
+
+        guard var onBlack = samples(of: black), let onWhite = samples(of: white) else { return nil }
+
+        for pixel in stride(from: 0, to: onBlack.count, by: 4) {
+            // Averaged over the three channels: they agree in theory, and rounding
+            // in an 8-bit render is what makes that "almost" in practice. The `+ 1`
+            // is the usual integer-division trick for rounding to nearest instead
+            // of truncating; a negative sum, which only noise produces, truncates
+            // toward zero and is caught by the clamp below either way.
+            let opacityLoss = (Int(onWhite[pixel]) - Int(onBlack[pixel])
+                + Int(onWhite[pixel + 1]) - Int(onBlack[pixel + 1])
+                + Int(onWhite[pixel + 2]) - Int(onBlack[pixel + 2]) + 1) / 3
+            onBlack[pixel + 3] = UInt8(clamping: 255 - opacityLoss)
         }
-        DispatchQueue.main.async {
-            // `WKWebView` is main-thread-only, and the instance has to outlive this
-            // scope — it is its own delegate for the duration, so it holds itself
-            // until `finish` lets go.
-            SVGRasterizer(side: side).start(markup: markup, completion: completion)
-        }
+
+        guard let provider = CGDataProvider(data: Data(onBlack) as CFData),
+              let composed = CGImage(width: width, height: height,
+                                     bitsPerComponent: 8, bitsPerPixel: 32,
+                                     bytesPerRow: width * 4,
+                                     space: CGColorSpace(name: CGColorSpace.sRGB)
+                                         ?? CGColorSpaceCreateDeviceRGB(),
+                                     bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                                     provider: provider, decode: nil,
+                                     shouldInterpolate: false, intent: .defaultIntent)
+        else { return nil }
+        return composed
     }
 
-    /// `async` convenience over the same one-shot render.
+    /// `image` as tightly packed premultiplied RGBA bytes.
+    private static func samples(of image: CGImage) -> [UInt8]? {
+        let width = image.width
+        let height = image.height
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        let drawn: Bool = rgba.withUnsafeMutableBytes { buffer in
+            guard let base = buffer.baseAddress,
+                  let context = CGContext(data: base, width: width, height: height,
+                                          bitsPerComponent: 8, bytesPerRow: width * 4,
+                                          space: CGColorSpace(name: CGColorSpace.sRGB)
+                                              ?? CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        return drawn ? rgba : nil
+    }
+
+    // MARK: Rasterising
+
+    /// Renders `data` into a square bitmap of `side` points, transparency intact.
+    ///
+    /// Two passes, because one cannot separate a pixel's colour from its alpha —
+    /// see `alphaRecovered`. Sequential rather than concurrent so only one
+    /// `WKWebView` is ever alive, which is the same reason the preview grid renders
+    /// one at a time.
     static func rasterize(_ data: Data,
                           side: Int = IconImageValidator.Limits.masterLongestEdge)
     async -> Result<CGImage, RasterizeError> {
+        guard isSVG(data), let markup = String(data: data, encoding: .utf8) else {
+            return .failure(.notSVG)
+        }
+
+        let onBlack: CGImage
+        switch await render(markup: markup, side: side, background: .black) {
+        case .failure(let error): return .failure(error)
+        case .success(let image): onBlack = image
+        }
+
+        let onWhite: CGImage
+        switch await render(markup: markup, side: side, background: .white) {
+        case .failure(let error): return .failure(error)
+        case .success(let image): onWhite = image
+        }
+
+        guard let composed = alphaRecovered(black: onBlack, white: onWhite) else {
+            NSLog("Zap: SVG alpha recovery failed")
+            return .failure(.snapshotFailed)
+        }
+        return .success(composed)
+    }
+
+    /// One pass: the document over `background`, rendered opaque.
+    private static func render(markup: String, side: Int,
+                               background: Backdrop) async -> Result<CGImage, RasterizeError> {
         await withCheckedContinuation { continuation in
-            rasterize(data, side: side) { continuation.resume(returning: $0) }
+            DispatchQueue.main.async {
+                // `WKWebView` is main-thread-only, and the instance has to outlive
+                // this scope — it is its own delegate for the duration, so it holds
+                // itself until `finish` lets go.
+                SVGRasterizer(side: side).start(markup: markup, background: background) {
+                    continuation.resume(returning: $0)
+                }
+            }
         }
     }
 
@@ -153,7 +280,7 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
     }
 
     /// Main queue only.
-    private func start(markup: String,
+    private func start(markup: String, background: Backdrop,
                        completion: @escaping (Result<CGImage, RasterizeError>) -> Void) {
         self.completion = completion
         self.selfRetain = self
@@ -165,9 +292,6 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: side, height: side),
                                 configuration: configuration)
         webView.navigationDelegate = self
-        // So the snapshot carries the SVG's own transparency rather than the web
-        // view's default white page.
-        webView.underPageBackgroundColor = .clear
         self.webView = webView
         self.host = Self.hostWindow(for: webView, side: side)
 
@@ -179,7 +303,8 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         // a relative URL against — the property §6.3 wants from `data:`. The
         // document carries its own Content Security Policy, so there is nothing to
         // set up first and no way for this to be reached unprotected.
-        webView.loadHTMLString(Self.htmlDocument(forSVG: markup), baseURL: nil)
+        webView.loadHTMLString(Self.htmlDocument(forSVG: markup, background: background),
+                               baseURL: nil)
     }
 
     /// Parks `webView` in a window, because a detached one renders nothing.
