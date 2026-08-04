@@ -13,6 +13,11 @@ final class ActivationHandoff {
 
     private var isTracking = true
 
+    /// How many Zap presentations are currently open. For tests: the nesting rule
+    /// — only the last one to close hands activation back — is the part of this
+    /// type most likely to break silently, and it is otherwise unobservable.
+    static var openPresentations: Int { presentationCount }
+
     init() {
         assert(Thread.isMainThread)
         Self.presentationCount += 1
@@ -46,11 +51,19 @@ final class ActivationHandoff {
 
         let target = Self.target
 
-        guard shouldRestore, NSApp.isActive else { return }
+        // `shouldRestore` first, then read `NSApp` once. It was sampled twice on
+        // the same path, which left the tested predicate's `zapIsActive` argument
+        // looking like an open question when the guard here has already settled it,
+        // and invited the two reads to drift apart under a later edit. Ordering
+        // matters as well as counting: a presentation dropped without `restore()`
+        // must return before touching `NSApp` at all.
+        guard shouldRestore else { return }
+        let zapIsActive = NSApp.isActive
+        guard zapIsActive else { return }
         guard let target,
               Self.shouldRestore(targetPID: target.processIdentifier,
                                  targetIsTerminated: target.isTerminated,
-                                 zapIsActive: NSApp.isActive,
+                                 zapIsActive: zapIsActive,
                                  ownPID: Self.ownPID) else {
             NSApp.deactivate()
             return
