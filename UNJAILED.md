@@ -55,7 +55,7 @@ problems, all of which Zap gets to skip:
 |---|---|
 | Must modify the target app bundle | Reads only; substitutes at draw time |
 | Can't touch `/System/Applications` or App Store apps ([SquircleNoMore][sqnm]) | Reads any bundle it can `stat` — Apple's own apps included |
-| Reverts when the app updates | Keyed by bundle ID, survives updates |
+| Reverts when the app updates | Keyed by the app itself, survives updates |
 | Leaves Finder-info/resource-fork detritus that trips `codesign` | Writes nothing into any bundle |
 | Needs an undo story | Delete a preference row |
 
@@ -357,7 +357,128 @@ Rules:
 
 ---
 
+### 5.6 Icon sets — shipped
+
+Linux desktops have large, coherent, freely licensed icon themes: Papirus, Numix,
+Tela, Adwaita, Breeze. They are exactly the artwork §5.2 concluded no *general*
+image search can honestly provide — thousands of app icons, drawn to one brief,
+with a licence stated at the top of the repository. Now that SVG renders (§6.3),
+they are reachable.
+
+**Decided:**
+
+| | |
+|---|---|
+| Zap fetches and updates the sets | The user shouldn't have to find, unpack or maintain a theme by hand |
+| Selection stays manual, per app | Same flow as today — a set is somewhere to pick *from*, not a mode that repaints everything |
+| Zap suggests matches | The point of picking from a set is not scrolling it; the app's name should surface its likely icon first |
+| Several sets, not one | Papirus is the example, not the feature |
+
+**What this is not.** Not a fourth `IconSourceMode`, and not artwork shipped with
+Zap — §11.2 rules that out on trademark, size and staleness, and a GPL-3.0 theme
+would add a licensing question on top. Zap fetches; the user chooses.
+
+**Shape.** A set is a search provider (§5.2's `IconSearchProvider`) whose corpus is
+local rather than a remote API. Zap keeps a small catalogue (`IconSetCatalogue`) —
+id, name, licence, homepage, and where in the theme's archive its application icons
+live — and installs one set per directory under
+`~/Library/Application Support/Zap/IconSets`. Search and suggestion run against
+what is installed, offline; adopting an icon reads one file.
+
+**What changed from the design: an index became a tarball.** The first plan was to
+fetch a *listing* and then one SVG per icon. Probing killed it. jsDelivr is the
+obvious listing API and it refuses Papirus outright at 50 MB, resolves `@latest`
+from an unsorted tag list where a 2002 tag can come last, and would still cost a
+request per icon. So Zap downloads the theme's GitHub source archive, extracts only
+the application icons out of it with `tar` and a per-set glob, and deletes the
+download: ~31 MB comes down for Papirus and ~4 MB stays. Updating is the same
+operation with an `If-None-Match`, so a theme that hasn't moved costs one round
+trip. `IconSetInstaller` is the only place in Zap that spawns a subprocess, which
+its own header says out loud rather than hiding.
+
+**Which sets.** All five named above, with one correction: "Numix" means
+`numix-icon-theme-circle`, not `numix-icon-theme` — Numix's own repository carries
+about twenty application icons, the large set everyone means being the separate
+circle one.
+
+They are not equivalent, and the catalogue says so per row rather than implying a
+menu of interchangeable options. Measured against a sample of eighteen common
+desktop applications:
+
+| | app icons | of the sample |
+|---|---|---|
+| Papirus | thousands, branded | 16/18 |
+| Numix Circle | thousands, branded, round | 17/18 |
+| Tela | thousands, branded | 15/18 |
+| Breeze | ~206, nearly all KDE's own | 0/18 — but 6/8 KDE apps |
+| Adwaita | none in colour | — |
+
+Adwaita's `master` has no full-colour `apps` directory at all; its
+application-shaped icons are `symbolic/legacy`, drawn at 16 px in a single grey
+under generic freedesktop names (`web-browser`, `utilities-terminal`). Breeze's
+are real full-colour artwork, just for KDE's applications rather than the wider
+desktop.
+
+Both are shipped anyway, because a set that covers *your* case beats one that
+covers the average: Krita and Kdenlive are cross-platform and Breeze draws them,
+and Adwaita is the right answer for anyone who wants a uniformly monochrome row.
+What that requires is that the manager say which is which before you install it —
+hence `IconSet.summary`, shown in the row. A name and a licence do not distinguish
+"thousands of branded logos" from "16 px grey glyphs", and finding out by
+installing 30 MB is not a choice.
+
+**Credit is the theme's to specify.** Adwaita's `COPYING` ends "When attributing
+the artwork, using 'GNOME Project' is enough", which is an instruction rather than
+a preference — §5.4 makes honouring it the condition for using the work. So
+`IconSet.credit` overrides the theme's own title where upstream asks, and that is
+what reaches `IconSearchResult`, the manifest, and any exported pack. The rest
+carry `nil` and are credited by name.
+
+**No disclosure wall for a set.** §5.5's notice is shown before the first search of
+a provider that sends something; `IconSearchProvider.disclosure` is therefore
+optional, and a set answers `nil`. Putting a privacy wall in front of a search that
+cannot be observed is how people learn to click through the ones that can. For the
+same reason a set — and only a set — suggests matches on open, without being asked.
+
+**The hard part is the naming, not the format.** `index.theme` is INI and the
+directory layout is specified. But themes name icons after Linux binaries and
+desktop entries, and Zap has bundle identifiers and display names:
+
+| Zap has | The theme wants | |
+|---|---|---|
+| `Google Chrome` / `com.google.Chrome` | `google-chrome` | ✅ from the normalised display name |
+| `Visual Studio Code` | `visual-studio-code` | ✅ |
+| `Docker Desktop` | `docker` | ❌ close, and wrong |
+| `com.tinyspeck.slackmacgap` | `slack` | ❌ the identifier is no help at all |
+
+So suggestions are a ranked guess — normalised display name, bundle-identifier
+tail, a few known aliases — and a miss costs nothing, because the user is already
+in the picker and the whole grid is there to scroll. `IconNameGuess` is that guess,
+in four tiers: a hand-written alias, an exact normalised name, a word-boundary
+prefix either way (which is what finds `docker` for "Docker Desktop" with no alias
+needed), and a shared word of at least four letters. Attribution rides on
+`IconSearchResult` as it does for any provider, so the set's licence reaches the
+manifest and any exported pack (§5.4).
+
+**One knock-on.** A theme is thousands of SVGs the user is now expected to browse,
+and adopting from one is a render. Nothing enforced a ceiling on concurrent
+rasterisation before because nothing could ask for many at once; `SVGRenderGate`
+now does, at two, in the one place every render passes through (§6.3).
+
+---
+
 ## 6. Constraints on supported images
+
+**Shipped: what a stored icon is keyed by.** Not the bundle identifier, which
+does not identify an app. Site-specific-browser wrappers — Coherence, Unite, the
+Chrome/Electron family — ship one app bundle per site and every one of them reports
+the browser's identifier, so `/Applications/Claude ★.app`, `/Applications/CodeNomad.app`
+and `/Applications/CodeNomad Dev.app` were all `com.google.Chrome` and shared a
+single override between them. `IconIdentity` writes new overrides under the bundle
+*path*, which is unique, and reads fall back to the identifier so every icon set
+before the change still resolves — nothing was migrated. The trade is that an app
+which moves loses its icon where an identifier would have followed it; updating in
+place doesn't move it, and re-picking the file fixes it.
 
 ### 6.1 Formats
 
@@ -551,7 +672,7 @@ Today `AppInfo.init?(runningApplication:)` reads `app.icon` directly, and
 flags that everything expensive happens on the main thread on the keystroke path;
 this feature must not add to that.
 
-- `IconResolver` holds a `[String: NSImage]` keyed by bundle ID, **pre-rendered
+- `IconResolver` holds a cache keyed by `IconIdentity`, **pre-rendered
   at the current icon size × the max backing scale factor**, with the shadow baked
   in (a SwiftUI `.shadow` on 40 icons per frame would show up — cf. `§P3`).
 - Warmed at launch and on preference change, off the main thread. Invalidated on
@@ -605,6 +726,15 @@ beside a narrow icon.
 And silhouette: free-form art on a translucent blurred panel loses its edges.
 A soft drop shadow (which Apple's own icons get for free from the plate) restores
 it — baked into the cached bitmap, not applied per frame.
+
+**It has to be offset.** The first pass was centred, tight and fairly dark, which
+is lift under a blobby icon and an *outline* under a spiky one: with no offset
+there is no side the light comes from, so every edge gets identical dark edging,
+and artwork that is mostly thin rays and deep notches gets the shadow collecting
+in the notches and tracing each ray. The Anthropic mark showed it as a brown rim
+around every point, and read as a bug in SVG rendering rather than as a shadow at
+all. Offset down, wider, fainter: once a shadow is *placed* it needs far less
+contrast to be legible than one relying on darkness alone.
 
 ### 8.4 Settings
 

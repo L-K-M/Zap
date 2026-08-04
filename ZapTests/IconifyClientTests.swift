@@ -85,12 +85,15 @@ final class IconifyClientTests: XCTestCase {
 
     // MARK: Provider surface
 
-    func testProviderIsKeylessAndDisclosesWhatItSends() {
+    func testProviderIsKeylessAndDisclosesWhatItSends() throws {
         let client = IconifyClient()
         XCTAssertFalse(client.requiresAPIKey)
-        // §5.5: the disclosure has to say what leaves the machine.
-        XCTAssertTrue(client.disclosure.contains("api.iconify.design"))
-        XCTAssertFalse(client.disclosure.isEmpty)
+        // §5.5: the disclosure has to say what leaves the machine. A provider that
+        // sends something may not answer `nil` — that answer is reserved for the
+        // ones with nothing to disclose, and it skips the wall.
+        let disclosure = try XCTUnwrap(client.disclosure)
+        XCTAssertTrue(disclosure.contains("api.iconify.design"))
+        XCTAssertFalse(disclosure.isEmpty)
     }
 
     /// §5.5's "never search automatically" is only worth anything if an empty query

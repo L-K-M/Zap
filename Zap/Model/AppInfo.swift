@@ -16,19 +16,35 @@ struct AppInfo: Identifiable, Equatable {
     /// Snapshot-only: it is not part of the app's identity (see `==`).
     let isHidden: Bool
 
+    /// Where the app bundle lives. Carried because a bundle identifier does not
+    /// identify an app on its own — site-specific-browser wrappers all report the
+    /// browser's — and `IconIdentity` needs the path to tell them apart.
+    let bundleURL: URL?
+
     /// Unique per running process. Two instances of the same app share a bundle
     /// identifier, so the pid is needed to keep SwiftUI `ForEach` IDs distinct
     /// and to activate the correct process.
     var id: String { "\(bundleIdentifier):\(processIdentifier)" }
 
+    /// How the icon store knows this app.
+    var iconIdentity: IconIdentity {
+        IconIdentity(bundleIdentifier: bundleIdentifier, bundleURL: bundleURL)
+    }
+
+    /// How the MRU order knows this app: the icon store's key — bundle path when
+    /// known, identifier otherwise. Both stores need wrapper apps that share a
+    /// bundle identifier told apart, so they share one notion of identity.
+    var mruKey: String { iconIdentity.storageKey }
+
     /// Designated initializer (also used by tests).
     init(bundleIdentifier: String, name: String, processIdentifier: pid_t,
-         icon: NSImage? = nil, isHidden: Bool = false) {
+         icon: NSImage? = nil, isHidden: Bool = false, bundleURL: URL? = nil) {
         self.bundleIdentifier = bundleIdentifier
         self.name = name
         self.processIdentifier = processIdentifier
         self.icon = icon
         self.isHidden = isHidden
+        self.bundleURL = bundleURL
     }
 
     /// Builds an `AppInfo` from a running application, or returns `nil` when the
@@ -42,7 +58,8 @@ struct AppInfo: Identifiable, Equatable {
             name: app.localizedName ?? bundleID,
             processIdentifier: app.processIdentifier,
             icon: app.icon,
-            isHidden: app.isHidden
+            isHidden: app.isHidden,
+            bundleURL: app.bundleURL
         )
     }
 
@@ -53,7 +70,8 @@ struct AppInfo: Identifiable, Equatable {
     /// perturb selection or the MRU order.
     func replacingIcon(_ icon: NSImage?) -> AppInfo {
         AppInfo(bundleIdentifier: bundleIdentifier, name: name,
-                processIdentifier: processIdentifier, icon: icon, isHidden: isHidden)
+                processIdentifier: processIdentifier, icon: icon, isHidden: isHidden,
+                bundleURL: bundleURL)
     }
 
     static func == (lhs: AppInfo, rhs: AppInfo) -> Bool {

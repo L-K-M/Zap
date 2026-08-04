@@ -34,9 +34,24 @@ enum IconNormalizer {
     /// the trim can't visibly clip the artwork.
     static let trimResolution = 256
 
-    /// Shadow geometry, as fractions of the canvas.
-    private static let shadowBlurFraction = 0.045
-    private static let shadowAlpha = 0.38
+    /// Shadow geometry, as fractions of the canvas so it holds at every icon size.
+    ///
+    /// Tuned away from a first pass that was centred, tight and dark. That reads as
+    /// lift under a blobby icon and as an *outline* under a spiky one: with no
+    /// offset there is no side the light is coming from, so every edge gets the same
+    /// dark edging, and on artwork that is mostly thin rays and deep notches the
+    /// shadow collects in the notches and traces each ray. The Anthropic mark showed
+    /// it plainly — a brown rim around every point.
+    ///
+    /// So: offset downward, wider, and fainter. The offset is what makes it read as
+    /// a shadow rather than a halo, and once it is offset the density can come down,
+    /// because a shadow that is *placed* needs far less contrast to be legible than
+    /// one that has only its darkness to say it is there.
+    ///
+    /// At the default 80 pt icon this is about a 6 px drop on a 2× display.
+    private static let shadowBlurFraction = 0.075
+    private static let shadowOffsetFraction = 0.03
+    private static let shadowAlpha = 0.24
 
     // MARK: Pure layout
 
@@ -151,9 +166,11 @@ enum IconNormalizer {
 
         context.interpolationQuality = .high
         if shadow {
-            // Centred and soft: a silhouette, not a lighting effect. Sized off the
-            // canvas so it holds up at every icon size.
-            context.setShadow(offset: .zero,
+            // Negative `y` is *down*: this is a bitmap context, so the origin is at
+            // the bottom-left and the axis points up. Getting the sign wrong here
+            // compiles, renders, and looks almost right — the shadow simply lands
+            // above the icon, which is the one place a shadow never is.
+            context.setShadow(offset: CGSize(width: 0, height: CGFloat(-canvas * shadowOffsetFraction)),
                               blur: CGFloat(canvas * shadowBlurFraction),
                               color: CGColor(gray: 0, alpha: CGFloat(shadowAlpha)))
         }

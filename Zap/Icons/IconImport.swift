@@ -14,7 +14,9 @@ import Foundation
 /// path that skipped this is precisely how SVG came to be refused with "that file
 /// isn't an image Zap can read".
 ///
-/// `async` because rasterising SVG drives a `WKWebView`. Bitmaps never suspend.
+/// `async` because rasterising SVG drives a `WKWebView`. Bitmaps never suspend —
+/// and neither does a cache hit, which `IconRenderCache` makes the common case for
+/// markup that has been seen before.
 enum IconImport {
 
     /// Which decoder some bytes are headed for.
@@ -51,7 +53,8 @@ enum IconImport {
     /// memory cost for pictures the user may never scroll to. Both branches honour
     /// it, and neither upscales: a source smaller than `side` comes back untouched.
     static func image(from data: Data,
-                      side: Int = IconImageValidator.Limits.masterLongestEdge)
+                      side: Int = IconImageValidator.Limits.masterLongestEdge,
+                      cache: IconRenderCache = .shared)
     async -> Result<CGImage, IconImageValidator.Rejection> {
         switch route(for: data) {
         case .tooLarge(let bytes):
@@ -60,8 +63,13 @@ enum IconImport {
             return IconImageValidator.decode(data: data)
                 .map { IconRenderer.downsample($0, longestEdge: side) }
         case .svg:
+            // Cached here rather than inside the rasteriser, so it covers the one
+            // door every route already comes through and the rasteriser stays a
+            // thing that renders rather than a thing that also remembers.
+            if let cached = cache.image(for: data, side: side) { return .success(cached) }
             switch await SVGRasterizer.rasterize(data, side: side) {
             case .success(let image):
+                cache.store(image, for: data, side: side)
                 return .success(image)
             case .failure(let error):
                 return .failure(.svgNotRendered(reason: error.message))
@@ -70,7 +78,9 @@ enum IconImport {
     }
 
     /// Reads and decodes the file at `url`.
-    static func image(contentsOf url: URL) async -> Result<CGImage, IconImageValidator.Rejection> {
+    static func image(contentsOf url: URL,
+                      cache: IconRenderCache = .shared)
+    async -> Result<CGImage, IconImageValidator.Rejection> {
         // Size from the filesystem first, so an oversized file is refused without
         // being pulled into memory to find out. `route` checks again on the bytes,
         // which is what catches a file with no readable size.
@@ -81,6 +91,6 @@ enum IconImport {
         guard let data = try? Data(contentsOf: url) else {
             return .failure(.unreadable)
         }
-        return await image(from: data)
+        return await image(from: data, cache: cache)
     }
 }

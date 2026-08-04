@@ -12,7 +12,7 @@ struct IconifyClient: IconSearchProvider {
 
     let id = "iconify"
     let displayName = "Iconify"
-    var disclosure: String {
+    var disclosure: String? {
         "Sends only the words you type to api.iconify.design. Your app list, your bundle identifiers and the app you're changing are never sent."
     }
 

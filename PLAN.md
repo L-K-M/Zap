@@ -160,18 +160,42 @@ must **intercept the key event and suppress the system switcher**.
 - Maintain our own MRU list by observing
   `NSWorkspace.didActivateApplicationNotification` and moving the activated app to the
   front, ignoring Zap's own activations while its UI is open. The order is persisted
-  (a small capped array of bundle IDs in `UserDefaults`) and seeds the tracker on the
+  (a small capped array of MRU keys in `UserDefaults`) and seeds the tracker on the
   next launch.
+- Entries are keyed the way icon overrides are (`IconIdentity`): bundle **path**
+  first, bundle identifier as fallback. The identifier alone collapses
+  site-specific-browser wrappers — every Chrome web app reports
+  `com.google.Chrome` — into one recency slot, which dragged all of them forward
+  whenever one was used and left them in process-table order among themselves.
+  Orders persisted before this change hold bare identifiers; ranking falls back
+  to the identifier so they still seed sensibly, and entries rewrite themselves
+  to paths as apps are activated (no migration).
 - On show: order = MRU list; default selection = index `1` (second item) so a single
   tap switches to the last app, matching native feel. When the frontmost app is
   *excluded* it is filtered out, so the default selection becomes index `0` instead
-  (the previous visible app), preserving the toggle feel. When Zap's own Settings
-  or an update alert is frontmost, Zap is absent from the list and index `0` is the
-  most recent external app. An `ActivationHandoff` tracks the latest external app
-  across nested Zap presentations and restores it after the final visible UI closes,
-  provided Zap is still active. If that app is gone or activation remains unresolved,
-  Zap deactivates rather than lingering invisibly in front. It never changes its
-  `.accessory` activation policy or hides itself as part of the handoff.
+  (the previous visible app), preserving the toggle feel. When *Zap itself* is
+  frontmost the frontmost reads as `nil`, and what a tap should do still depends on
+  whether a window of Zap's is actually on screen:
+  - **Settings or an update alert is up.** The user really is in Zap, and Zap keeps
+    itself out of the list, so index `0` is the most recent app and the selection
+    stays there.
+  - **Nothing of Zap's is on screen.** The activation is *left over*. Index `0` is
+    then the app the user is looking at and believes they are in, so the selection
+    moves to index `1` — a tap must switch *away*, which also hands the lingering
+    activation over.
+
+  The signal for "on screen" is the window, not the activation policy: Zap stays
+  `.accessory` for its whole lifetime, so the policy no longer distinguishes
+  anything. Settings is Zap's only `.normal`-level window (the overlay is
+  `.popUpMenu`, the status item's sits higher), and a modal alert is tracked by
+  `NSApp.modalWindow`.
+- An `ActivationHandoff` tracks the latest external app across nested Zap
+  presentations and restores it after the final visible UI closes, provided Zap is
+  still active. If that app is gone or activation remains unresolved, Zap
+  deactivates rather than lingering invisibly in front. It never changes its
+  `.accessory` activation policy or hides itself as part of the handoff — which is
+  what makes the leftover-activation case rare rather than routine, though the
+  selection rule above still covers it when it happens.
 - **Known limitation:** there is no public API for the system's own MRU order, so on a
   cold launch Zap starts from its *persisted* order from the previous session (with the
   current frontmost app promoted to the top). Switches made while Zap wasn't running
@@ -262,7 +286,8 @@ Menu-bar `NSStatusItem` menu: *Settings…*, *Pause Zap*, *Quit*.
 
 - `UserDefaults` (small, simple): excluded bundle IDs, color/appearance settings,
   alternate hotkey, launch-at-login flag, show delay, and the MRU order (a capped
-  array of bundle IDs, so a cold launch starts from the previous session's order).
+  array of MRU keys — bundle paths, with pre-path entries as bare identifiers —
+  so a cold launch starts from the previous session's order).
 - No database needed.
 
 ---

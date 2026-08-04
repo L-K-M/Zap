@@ -337,8 +337,8 @@ final class SwitcherController {
         // most-recent apps, like the native switcher. Normally that's index 1,
         // but if the frontmost app was excluded (and thus filtered out), index 0
         // already *is* the previous visible app — selecting index 1 would skip it.
-        selectedIndex = Self.defaultSelection(forward: forward, apps: apps,
-                                              frontmostBundleID: provider.frontmostBundleID())
+        selectedIndex = defaultSelection(forward: forward, apps: apps,
+                                         frontmostAppKey: provider.frontmostAppKey())
         isSessionActive = true
         startStrandedSessionWatchdog()
 
@@ -358,15 +358,67 @@ final class SwitcherController {
     /// MRU apps — but if the frontmost app didn't survive filtering (it's
     /// excluded), index 0 is already the previous app, so highlight it instead.
     /// Reverse: highlight the least-recently-used app (last index).
-    /// A `nil` frontmost means no frontmost app survived the switcher filter (for
-    /// example, Zap is showing Settings), so index 0 is the most recent eligible
-    /// app rather than the app currently in front.
-    static func defaultSelection(forward: Bool, apps: [AppInfo], frontmostBundleID: String?) -> Int {
+    ///
+    /// The frontmost app is named by its MRU key, not its bundle identifier —
+    /// an identifier would mistake one Chrome wrapper for another and tap-toggle
+    /// into the app the user is already in (see `AppInfo.mruKey`).
+    ///
+    /// A `nil` frontmost means Zap *itself* is frontmost, and that covers two
+    /// situations a tap should treat differently — which is what
+    /// `zapIsShowingAWindow` distinguishes:
+    ///
+    /// - **A window of Zap's is on screen** (Settings). The user really is in Zap,
+    ///   and Zap keeps itself out of its own list, so index 0 *is* the app a tap
+    ///   should reach — highlighting index 1 would skip past the most recent app.
+    /// - **Nothing of Zap's is on screen.** Activation is left over from a closed
+    ///   Settings window or a dismissed update alert. The MRU list skips Zap's own
+    ///   activations, so index 0 is the app the user is looking at and believes
+    ///   they are in; committing it would re-commit the current app and read as a
+    ///   dead switcher. Highlight index 1, exactly as when the frontmost app
+    ///   survives: committing it is a real switch, which also hands Zap's lingering
+    ///   activation over and cures the state.
+    static func defaultSelection(forward: Bool, apps: [AppInfo], frontmostAppKey: String?,
+                                 zapIsShowingAWindow: Bool = false) -> Int {
         guard !apps.isEmpty else { return 0 }
         guard forward else { return apps.count - 1 }
         guard apps.count > 1 else { return 0 }
-        guard let frontmostBundleID else { return 0 }
-        return apps.first?.bundleIdentifier == frontmostBundleID ? 1 : 0
+        guard let frontmostAppKey else { return zapIsShowingAWindow ? 0 : 1 }
+        return apps.first?.mruKey == frontmostAppKey ? 1 : 0
+    }
+
+    private func defaultSelection(forward: Bool, apps: [AppInfo], frontmostAppKey: String?) -> Int {
+        Self.defaultSelection(forward: forward, apps: apps, frontmostAppKey: frontmostAppKey,
+                              zapIsShowingAWindow: Self.zapIsShowingAWindow())
+    }
+
+    /// Whether a window of Zap's own is on screen, for `defaultSelection`.
+    ///
+    /// Two signals, one per window Zap can put up.
+    ///
+    /// - **Settings.** This used to read `NSApp.activationPolicy() == .regular`,
+    ///   which worked only because opening Settings switched the whole process to
+    ///   `.regular`. Zap now stays `.accessory` for its entire lifetime — that policy
+    ///   churn was the root cause this file's retry machinery was compensating for —
+    ///   so the policy no longer says anything, and a check on it would answer
+    ///   "nothing on screen" while Settings is in front.
+    ///
+    ///   The window itself is the signal instead. The old comment rejected
+    ///   `NSApp.windows` outright, because it also carries the status item's window
+    ///   and the overlay panel; the objection is to the *unfiltered* list. Level
+    ///   separates them exactly: Settings is Zap's only `.normal`-level window, the
+    ///   overlay is `.popUpMenu` (`OverlayWindowController`), and a status item's
+    ///   window sits above both. `isVisible` is false for a miniaturised window,
+    ///   which is the right answer — a minimised Settings is not a destination, and
+    ///   `SettingsWindowController` ends its activation handoff at that point too.
+    ///
+    /// - **An update alert.** It runs modal, and `modalWindow` tracks it for as long
+    ///   as `runModal` is running. The switcher can genuinely reach this: the event
+    ///   tap is registered on `.commonModes`, and AppKit counts the modal-panel mode
+    ///   among those, so ⌘-Tab is still intercepted while an alert is up. `runModal`
+    ///   blocking the main thread does not make the alert unreachable.
+    private static func zapIsShowingAWindow() -> Bool {
+        if NSApp.modalWindow != nil { return true }
+        return NSApp.windows.contains { $0.isVisible && $0.level == .normal }
     }
 
     private func advanceSelection(forward: Bool) {
@@ -811,7 +863,8 @@ final class SwitcherController {
                               name: app.name,
                               processIdentifier: app.processIdentifier,
                               icon: app.icon,
-                              isHidden: hidden)
+                              isHidden: hidden,
+                              bundleURL: app.bundleURL)
         overlay.refreshApps(apps)
     }
 
