@@ -16,7 +16,9 @@ import Foundation
 /// markup doesn't say better. Two apps given the same icon render it once.
 ///
 /// What lands on disk is Zap's own PNG output, exactly as in `IconStore`, so
-/// nothing of the source container survives here either (`UNJAILED.md §6.4`).
+/// nothing of the source container survives here either (`UNJAILED.md §6.4`) —
+/// but it lives in `~/Library/Caches` rather than beside the icons, because
+/// everything in it can be made again and a stored icon cannot.
 struct IconRenderCache {
 
     static let shared = IconRenderCache()
@@ -33,8 +35,16 @@ struct IconRenderCache {
         self.maximumEntries = maximumEntries
     }
 
+    /// `~/Library/Caches`, not Application Support next to the icons themselves.
+    ///
+    /// The two directories mean different things and this is the difference: a
+    /// stored icon is the user's choice and cannot be re-derived — the SVG it came
+    /// from may be long gone — while everything here is reproducible from markup
+    /// Zap will fetch again anyway. So this doesn't belong in a backup, and the
+    /// system is welcome to reclaim it under disk pressure. A purged cache is a
+    /// slow render, which is the same thing a miss already is.
     static func defaultDirectory() -> URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         return base.appendingPathComponent("Zap/RenderCache", isDirectory: true)
     }
