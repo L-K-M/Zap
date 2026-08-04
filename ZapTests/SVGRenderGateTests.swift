@@ -8,12 +8,17 @@ import XCTest
 /// and a waiter is never resumed, which in the app looks like an icon that renders
 /// forever. Everything here would time out rather than fail if that happened, which
 /// is the signal.
+///
+/// Every actor read is hoisted into a local before being asserted on. `XCTAssert*`
+/// takes its arguments as autoclosures, and an autoclosure can't `await` — the
+/// hoist isn't style, it's the only way to write these.
 final class SVGRenderGateTests: XCTestCase {
 
     func testASlotIsTakenImmediatelyWhenOneIsFree() async {
         let gate = SVGRenderGate(limit: 2)
         await gate.acquire()
         await gate.acquire()
+
         let active = await gate.activeCount
         XCTAssertEqual(active, 2)
     }
@@ -22,22 +27,29 @@ final class SVGRenderGateTests: XCTestCase {
         let gate = SVGRenderGate(limit: 1)
         await gate.acquire()
         await gate.release()
-        XCTAssertEqual(await gate.activeCount, 0)
+
+        let afterRelease = await gate.activeCount
+        XCTAssertEqual(afterRelease, 0)
 
         // And the freed slot is usable rather than merely counted.
         await gate.acquire()
-        XCTAssertEqual(await gate.activeCount, 1)
+        let afterReacquire = await gate.activeCount
+        XCTAssertEqual(afterReacquire, 1)
     }
 
     func testReleasingMoreThanWasTakenDoesNotGoNegative() async {
         let gate = SVGRenderGate(limit: 1)
         await gate.release()
-        XCTAssertEqual(await gate.activeCount, 0)
+
+        let active = await gate.activeCount
+        XCTAssertEqual(active, 0)
     }
 
     func testALimitBelowOneIsStillOne() async {
         let gate = SVGRenderGate(limit: 0)
-        XCTAssertEqual(gate.limit, 1)
+
+        let limit = await gate.limit
+        XCTAssertEqual(limit, 1)
     }
 
     /// The point of the thing: many callers, never more than `limit` inside at once,
@@ -59,10 +71,13 @@ final class SVGRenderGateTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(await counter.completed, 20)
-        XCTAssertLessThanOrEqual(await counter.peak, 2)
+        let completed = await counter.completed
+        let peak = await counter.peak
+        let active = await gate.activeCount
+        XCTAssertEqual(completed, 20)
+        XCTAssertLessThanOrEqual(peak, 2)
         // Every slot handed back, so the gate is reusable afterwards.
-        XCTAssertEqual(await gate.activeCount, 0)
+        XCTAssertEqual(active, 0)
     }
 
     /// A waiter must be resumed by whoever leaves, not left for the next arrival to
@@ -81,8 +96,10 @@ final class SVGRenderGateTests: XCTestCase {
 
         let resumed = await waiter.value
         XCTAssertTrue(resumed)
+
         await gate.release()
-        XCTAssertEqual(await gate.activeCount, 0)
+        let active = await gate.activeCount
+        XCTAssertEqual(active, 0)
     }
 }
 
