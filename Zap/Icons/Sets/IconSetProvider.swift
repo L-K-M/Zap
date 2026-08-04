@@ -14,14 +14,17 @@ import Foundation
 /// directory listing per keystroke — would be slower and would race the installer.
 struct IconSetProvider: IconSearchProvider {
 
-    let set: IconSet
+    /// Named `iconSet` rather than `set`: inside a computed property's body the
+    /// parser reads a leading `set` as the start of a setter, so `{ iconSet.id }` is a
+    /// syntax error rather than a property access.
+    let iconSet: IconSet
     /// Where the icons are, as `IconSetLibrary` laid them out.
     let directory: URL
     /// Every icon in the set, without the `.svg`.
     let iconNames: Set<String>
 
-    var id: String { set.id }
-    var displayName: String { set.name }
+    var id: String { iconSet.id }
+    var displayName: String { iconSet.name }
     /// Nothing is sent, so there is nothing to disclose — and a wall saying so
     /// before every first search would be a notice about an event that can't happen.
     var disclosure: String? { nil }
@@ -72,10 +75,10 @@ struct IconSetProvider: IconSearchProvider {
     // MARK: Fetching
 
     func fetchImageData(for result: IconSearchResult) async -> Result<Data, IconSearchError> {
-        guard let name = Self.iconName(fromResultID: result.id, setID: set.id),
+        guard let name = Self.iconName(fromResultID: result.id, setID: iconSet.id),
               iconNames.contains(name),
               let url = fileURL(forIconName: name) else {
-            return .failure(.unavailable("That icon isn't in the installed copy of \(set.name)."))
+            return .failure(.unavailable("That icon isn't in the installed copy of \(iconSet.name)."))
         }
 
         // Bounded like any other source, even though Zap unpacked this file itself:
@@ -96,17 +99,17 @@ struct IconSetProvider: IconSearchProvider {
 
     func result(forIconName name: String) -> IconSearchResult {
         IconSearchResult(
-            id: Self.resultID(setID: set.id, iconName: name),
+            id: Self.resultID(setID: iconSet.id, iconName: name),
             title: name.replacingOccurrences(of: "-", with: " "),
-            providerID: set.id,
+            providerID: iconSet.id,
             // The sheet never fetches this itself — `fetchImageData` re-derives the
             // path from the name below — but a result carries where its artwork is,
             // and for this provider that is a file.
             imageURL: fileURL(forIconName: name) ?? directory,
             isVector: true,
-            credit: set.name,
-            creditURL: set.homepage,
-            license: set.license)
+            credit: iconSet.name,
+            creditURL: iconSet.homepage,
+            license: iconSet.license)
     }
 
     static func resultID(setID: String, iconName: String) -> String { "\(setID):\(iconName)" }

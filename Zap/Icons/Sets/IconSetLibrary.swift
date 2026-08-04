@@ -128,7 +128,7 @@ final class IconSetLibrary: ObservableObject {
         guard records[set.id] != nil, let destination = directory(forSetID: set.id) else { return nil }
         let names = IconSetInstaller.installedIconNames(in: destination)
         guard !names.isEmpty else { return nil }
-        return IconSetProvider(set: set, directory: destination, iconNames: names)
+        return IconSetProvider(iconSet: set, directory: destination, iconNames: names)
     }
 
     /// Providers for every installed set, in catalogue order.

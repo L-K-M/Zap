@@ -31,7 +31,7 @@ final class IconSetProviderTests: XCTestCase {
     }
 
     private func makeProvider() -> IconSetProvider {
-        IconSetProvider(set: set, directory: directory, iconNames: names)
+        IconSetProvider(iconSet: set, directory: directory, iconNames: names)
     }
 
     // MARK: Provider surface
