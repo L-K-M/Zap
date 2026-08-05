@@ -130,8 +130,112 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         <style>
         html,body{margin:0;padding:0;background:\(background.rawValue);overflow:hidden}
         svg{width:100vw;height:100vh;display:block}
-        </style></head><body>\(svg)</body></html>
+        </style></head><body>\(scalable(svg))</body></html>
         """
+    }
+
+    // MARK: Making the markup scale
+
+    /// Gives the root `<svg>` a `viewBox` when it hasn't got one, so the CSS above
+    /// can actually scale it.
+    ///
+    /// **An SVG without a `viewBox` does not scale.** `width:100vw` resizes the
+    /// *viewport*; the `viewBox` is what maps user units onto it, and with none the
+    /// mapping stays 1:1. So `<svg width="64" height="64">` — which is every Papirus
+    /// icon, and Adwaita's at 16 — paints its artwork into the top-left 64 px of a
+    /// 1024 px canvas and leaves the rest empty. Nothing downstream can tell that
+    /// from artwork that is genuinely 64 px: `IconNormalizer` trims to the ink and
+    /// scales it back up, so the icon arrives soft, and the trim's 4 px mask cells
+    /// are 6% of a 64 px artwork rather than 0.4% of a full one — enough that
+    /// dropping a boundary cell flattens a rounded edge into a straight chord.
+    /// Both were reported together, from this one cause.
+    ///
+    /// Only the two attributes that make a `viewBox` derivable are read, and only in
+    /// units that mean pixels. A percentage width says nothing about user space, and
+    /// anything else — `em`, `mm`, a missing height — is left exactly as it was:
+    /// today's behaviour for markup this can't improve, rather than a guess.
+    ///
+    /// Nothing from the document is echoed into it. The inserted attribute is built
+    /// from digits this validated itself, so hostile markup has nothing to reach.
+    static func scalable(_ svg: String) -> String {
+        guard let tag = rootSVGTagRange(in: svg) else { return svg }
+        let attributes = svg[tag]
+        // `viewBox` case-sensitively: it is the only spelling a renderer honours, so
+        // a document with `viewbox` has no working one and is worth fixing.
+        guard !attributes.contains("viewBox") else { return svg }
+        guard let width = pixelAttribute("width", in: attributes),
+              let height = pixelAttribute("height", in: attributes) else { return svg }
+
+        // After `<svg`, before whatever the tag already says. Its own attributes
+        // stay in place and untouched.
+        let insertion = svg.index(tag.lowerBound, offsetBy: 4)
+        return svg.replacingCharacters(in: insertion..<insertion,
+                                       with: " viewBox=\"0 0 \(width) \(height)\"")
+    }
+
+    /// The range of the root `<svg …>` start tag, quotes respected so a `>` inside
+    /// an attribute value can't end it early.
+    private static func rootSVGTagRange(in svg: String) -> Range<String.Index>? {
+        guard let start = svg.range(of: "<svg", options: [.caseInsensitive]) else { return nil }
+
+        var quote: Character?
+        var index = start.upperBound
+        while index < svg.endIndex {
+            let character = svg[index]
+            if let open = quote {
+                if character == open { quote = nil }
+            } else if character == "\"" || character == "'" {
+                quote = character
+            } else if character == ">" {
+                return start.lowerBound..<index
+            }
+            index = svg.index(after: index)
+        }
+        return nil
+    }
+
+    /// The value of `name` as a plain pixel count, or `nil` when it isn't one.
+    ///
+    /// Returned as the digits the document actually wrote — `16.004` stays
+    /// `16.004` — so nothing depends on how a `Double` would print. Validated
+    /// character by character, so what comes back is only ever digits and at most
+    /// one dot.
+    static func pixelAttribute(_ name: String, in tag: Substring) -> String? {
+        // ` name=` or `\tname=`: the leading separator keeps `width` from matching
+        // inside `stroke-width`.
+        guard let equals = tag.range(of: "\\s\(name)\\s*=\\s*", options: [.regularExpression])
+        else { return nil }
+
+        var rest = tag[equals.upperBound...]
+        if let opening = rest.first, opening == "\"" || opening == "'" {
+            guard let closing = rest.dropFirst().firstIndex(of: opening) else { return nil }
+            rest = rest[rest.index(after: rest.startIndex)..<closing]
+        } else if let space = rest.firstIndex(where: { $0.isWhitespace }) {
+            // Unquoted, which XML forbids and HTML parsers accept anyway: the value
+            // ends at the next space, not at the end of the tag.
+            rest = rest[..<space]
+        }
+
+        var digits = ""
+        var dots = 0
+        for character in rest {
+            if character.isASCII, character.isNumber {
+                digits.append(character)
+            } else if character == "." {
+                dots += 1
+                guard dots == 1 else { return nil }
+                digits.append(character)
+            } else {
+                break
+            }
+        }
+        // Whatever follows the number has to be nothing or `px`. A `%` is a share
+        // of a viewport that doesn't imply a user-space size, and a physical unit
+        // would need a DPI this has no business inventing.
+        let unit = rest.dropFirst(digits.count).trimmingCharacters(in: .whitespaces).lowercased()
+        guard unit.isEmpty || unit == "px" else { return nil }
+        guard let value = Double(digits), value > 0, value.isFinite else { return nil }
+        return digits
     }
 
     // MARK: Alpha

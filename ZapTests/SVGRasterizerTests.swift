@@ -48,6 +48,80 @@ final class SVGRasterizerTests: XCTestCase {
         XCTAssertTrue(html.contains("<svg id=\"marker\"></svg>"))
     }
 
+    // MARK: Making the markup scale
+
+    /// The shape every Papirus icon has: a size and no `viewBox`, which means the
+    /// CSS viewport grows to 1024 and the artwork stays 64 px in the corner of it.
+    func testASizedSVGWithNoViewBoxGetsOne() {
+        let scaled = SVGRasterizer.scalable(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"64\" height=\"64\" version=\"1.1\">")
+        XCTAssertTrue(scaled.hasPrefix("<svg viewBox=\"0 0 64 64\" xmlns="), scaled)
+        // Its own attributes survive untouched.
+        XCTAssertTrue(scaled.contains("width=\"64\" height=\"64\" version=\"1.1\""), scaled)
+    }
+
+    /// Adwaita's, whose height is fractional. The digits the document wrote are the
+    /// digits that come back — nothing round-trips through a `Double`'s description.
+    func testAFractionalSizeIsCarriedVerbatim() {
+        let scaled = SVGRasterizer.scalable("<svg width=\"16\" height=\"16.004\">")
+        XCTAssertTrue(scaled.contains("viewBox=\"0 0 16 16.004\""), scaled)
+    }
+
+    func testMarkupThatAlreadyScalesIsLeftAlone() {
+        let markup = "<svg viewBox=\"0 0 48 48\" width=\"64\" height=\"64\">"
+        XCTAssertEqual(SVGRasterizer.scalable(markup), markup)
+    }
+
+    /// `viewbox` is not `viewBox`, and no renderer honours it — so that document
+    /// doesn't scale either, and gets a real one.
+    func testAMiscasedViewBoxDoesNotCount() {
+        let scaled = SVGRasterizer.scalable("<svg viewbox=\"0 0 48 48\" width=\"64\" height=\"64\">")
+        XCTAssertTrue(scaled.contains("viewBox=\"0 0 64 64\""), scaled)
+    }
+
+    /// A percentage says nothing about user space, and a physical unit would need a
+    /// DPI to invent. Both leave the markup as it was rather than guess.
+    func testOnlyPixelSizesAreUsable() {
+        for markup in ["<svg width=\"100%\" height=\"100%\">",
+                       "<svg width=\"2em\" height=\"2em\">",
+                       "<svg width=\"10mm\" height=\"10mm\">",
+                       "<svg width=\"64\">",
+                       "<svg height=\"64\">",
+                       "<svg>"] {
+            XCTAssertEqual(SVGRasterizer.scalable(markup), markup, markup)
+        }
+    }
+
+    func testAnExplicitPixelUnitIsAccepted() {
+        XCTAssertTrue(SVGRasterizer.scalable("<svg width=\"64px\" height=\"64px\">")
+            .contains("viewBox=\"0 0 64 64\""))
+    }
+
+    /// `stroke-width` is not `width`. Without the boundary the tag would be read as
+    /// 2 units wide and every icon would be scaled by five hundred.
+    func testAHyphenatedAttributeIsNotMistakenForWidth() {
+        let markup = "<svg stroke-width=\"2\" height=\"64\">"
+        XCTAssertEqual(SVGRasterizer.scalable(markup), markup)
+    }
+
+    /// A `>` inside an attribute value must not end the tag early — the scan would
+    /// otherwise miss the size sitting after it.
+    func testAGreaterThanInsideAnAttributeDoesNotEndTheTag() {
+        let scaled = SVGRasterizer.scalable("<svg data-note=\"a>b\" width=\"64\" height=\"64\">")
+        XCTAssertTrue(scaled.contains("viewBox=\"0 0 64 64\""), scaled)
+    }
+
+    func testMarkupWithNoRootTagIsLeftAlone() {
+        XCTAssertEqual(SVGRasterizer.scalable("not markup"), "not markup")
+    }
+
+    /// The whole point: what reaches the web view scales.
+    func testTheDocumentCarriesTheSynthesisedViewBox() {
+        let html = SVGRasterizer.htmlDocument(forSVG: "<svg width=\"64\" height=\"64\"></svg>",
+                                              background: .white)
+        XCTAssertTrue(html.contains("viewBox=\"0 0 64 64\""), html)
+    }
+
     /// The backdrop is opaque and it is the one asked for. Transparency is not
     /// requested from WebKit any more — it composites onto white whichever way the
     /// page is captured — so each pass paints its own background and the alpha

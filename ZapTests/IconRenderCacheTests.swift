@@ -47,6 +47,25 @@ final class IconRenderCacheTests: XCTestCase {
                           IconRenderCache.key(for: markup(), side: 1024))
     }
 
+    /// The renderer is part of the key too, and this is the half content-addressing
+    /// can't see: when what the renderer *does* with the bytes changes, every stored
+    /// entry answers a question nobody is asking any more, and the digest can't tell
+    /// because the input really is identical.
+    func testARenderFromAnEarlierRendererIsNotReused() throws {
+        let source = markup()
+        let current = IconRenderCache.key(for: source, side: 128)
+        let earlier = current.replacingOccurrences(
+            of: "-v\(IconRenderCache.renderVersion).png", with: "-v0.png")
+        XCTAssertNotEqual(earlier, current, "the key has to carry the renderer's version")
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        IconTestSupport.writePNG(width: 128, height: 128,
+                                 to: directory.appendingPathComponent(earlier))
+
+        XCTAssertNil(cache.image(for: source, side: 128),
+                     "a render from an earlier renderer must not be served")
+    }
+
     /// The name is generated, so it can never escape the cache directory whatever
     /// the markup contains.
     func testKeysAreAlwaysSafeFileNames() {
