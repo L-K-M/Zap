@@ -24,6 +24,10 @@ to, switch **directly to individual windows**, and **customize the appearance** 
 - Optional live preview of each window, laid out as a thumbnail grid (needs Screen Recording permission; off by default).
 - **Hold** <kbd>⌘</kbd>+<kbd>Q</kbd> to quit and <kbd>⌘</kbd>+<kbd>H</kbd> to hide the highlighted app without leaving the switcher — a quick tap types into the search instead, so apps like QuickTime stay reachable by name. With a window focused, <kbd>⌘</kbd>+<kbd>W</kbd> closes it.
 - Rich appearance: colors, gradients, opacity, icon size, corner radii, retro corner decorations (ZX Spectrum, Apple rainbow, the Amiga boing ball, …), an optional CRT scanline mode, and shareable theme presets — all with a live preview.
+- Custom, unjailed icons:
+
+![Unjailed icons in the app switcher](screenshot-unjailed.png)
+
 - Menu-bar agent (no Dock icon); never appears in its own switcher. The menu-bar icon dims while paused.
 - Launch at login via `SMAppService`.
 - Fallback to <kbd>⌥</kbd>+<kbd>Tab</kbd> when Accessibility access isn't granted; the Permissions tab reports the trigger that's actually active.
