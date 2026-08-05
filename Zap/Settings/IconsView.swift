@@ -25,6 +25,14 @@ struct IconsView: View {
     @State private var searchingApp: AppInfo?
     /// Whether the icon-set manager is open.
     @State private var managingSets = false
+    /// The set a bulk apply is running from, and how far it has got. Non-`nil`
+    /// only while one is in flight.
+    @State private var applyingSet: IconSet?
+    @State private var applyProgress = (done: 0, total: 0)
+    /// What the last bulk apply did. A footer caption rather than an alert: it
+    /// reports on something that went *right*, and interrupting for that is the
+    /// habit `IconProblem` exists to avoid teaching.
+    @State private var applySummary: String?
 
     /// The installed icon themes (`UNJAILED.md §5.6`).
     @ObservedObject private var iconSets = IconSetLibrary.shared
@@ -92,6 +100,136 @@ struct IconsView: View {
                 refreshProviders()
             })
         }
+    }
+
+    // MARK: Applying a whole set
+
+    /// The sets currently installed, in catalogue order.
+    private var installedSets: [IconSet] {
+        IconSetCatalogue.all.filter { iconSets.records[$0.id] != nil }
+    }
+
+    /// Applies a whole set in one go, from the button beside Reset All Icons.
+    ///
+    /// A menu when more than one set is installed, because *which* set is the whole
+    /// question: mixing two themes across the row defeats the point of a theme, so
+    /// a run draws from exactly one.
+    @ViewBuilder
+    private var applyMatchingButton: some View {
+        let sets = installedSets
+        if let applyingSet {
+            Button("Applying \(applyingSet.name)… \(applyProgress.done) of \(applyProgress.total)") {}
+                .disabled(true)
+        } else if sets.isEmpty {
+            Button("Apply Matching Icons") {}
+                .disabled(true)
+                .help("Install an icon set first — see Icon Sets…")
+        } else if let only = sets.first, sets.count == 1 {
+            Button("Apply Matching \(only.name) Icons") { applyMatching(from: only) }
+        } else {
+            Menu("Apply Matching Icons") {
+                // `iconSet`, not `set`: this is a computed property, and a `set` at
+                // the head of a statement inside one is read as a setter.
+                ForEach(sets) { iconSet in
+                    Button(iconSet.name) { applyMatching(from: iconSet) }
+                }
+            }
+            .fixedSize()
+        }
+    }
+
+    /// Walks the listed apps, applying the set's icon wherever `IconSetAutoMatch`
+    /// is confident enough to act without anyone looking.
+    ///
+    /// Sequential on purpose. Every icon is an SVG that has to be rasterised, which
+    /// is the most expensive thing this feature does; running them one at a time
+    /// keeps a single `WKWebView` alive at once (`SVGRenderGate`) and makes the
+    /// count in the button label mean something. Repeat runs are much faster —
+    /// `IconImport` consults the render cache.
+    private func applyMatching(from set: IconSet) {
+        guard let provider = iconSets.provider(for: set) else {
+            problem = .setUnavailable(set)
+            return
+        }
+
+        let candidates = apps
+        applySummary = nil
+        applyingSet = set
+        applyProgress = (0, candidates.count)
+
+        Task {
+            var outcome = IconSetAutoMatch.Outcome()
+            for (index, app) in candidates.enumerated() {
+                let key = app.iconIdentity.storageKey
+                await MainActor.run { applyProgress = (index, candidates.count) }
+
+                // An app the user has already decided about is left alone —
+                // including one pinned to the system icon, which is a decision too.
+                guard store.entry(for: app.iconIdentity) == nil else {
+                    outcome.skipped += 1
+                    continue
+                }
+                guard let name = IconSetAutoMatch.confidentMatch(
+                        appName: app.name,
+                        bundleIdentifier: app.bundleIdentifier,
+                        in: provider.iconNames),
+                      let result = provider.result(forIconName: name) else {
+                    outcome.unmatched += 1
+                    continue
+                }
+
+                // Claim the row the same way a chosen file does, so a drop or a
+                // picked file landing mid-run can't race this one to the store —
+                // and so the row says what is happening to it. Claimed only once
+                // there is something to apply: matching is free, rendering isn't.
+                let claimed = await MainActor.run { () -> Bool in
+                    guard inFlight[key] == nil else { return false }
+                    inFlight[key] = "Matching…"
+                    return true
+                }
+                guard claimed else {
+                    outcome.skipped += 1
+                    continue
+                }
+
+                let rendered = await renderedIcon(for: result, from: provider)
+                await MainActor.run {
+                    inFlight[key] = nil
+                    guard let rendered else { return }
+                    // Credit carried into the manifest exactly as a hand-picked
+                    // icon's is (§5.4) — a bulk apply is not a reason to lose it.
+                    _ = store.setCustomIcon(rendered, for: app.iconIdentity,
+                                            origin: .search,
+                                            credit: result.credit,
+                                            creditURL: result.creditURL?.absoluteString,
+                                            provider: result.providerID,
+                                            license: result.license)
+                }
+                if rendered == nil { outcome.failed += 1 } else { outcome.applied += 1 }
+            }
+
+            await MainActor.run { finishApplying(outcome, from: set) }
+        }
+    }
+
+    /// One set icon, read and rasterised, or `nil` if either half fails.
+    private func renderedIcon(for result: IconSearchResult,
+                              from provider: IconSetProvider) async -> CGImage? {
+        guard case .success(let data) = await provider.fetchImageData(for: result) else { return nil }
+        guard case .success(let image) = await IconImport.image(from: data) else { return nil }
+        return image
+    }
+
+    private func finishApplying(_ outcome: IconSetAutoMatch.Outcome, from set: IconSet) {
+        applyingSet = nil
+        applyProgress = (0, 0)
+        applySummary = IconSetAutoMatch.summary(outcome, setName: set.name)
+
+        if outcome.applied > 0, !preferences.iconSourceMode.usesCustomIcons {
+            preferences.iconSourceMode = .originalPlusCustom
+        }
+        iconResolver.invalidate()
+        reloadStatuses()
     }
 
     /// Rebuilds the provider list from what is installed now, keeping the remote
@@ -186,6 +324,8 @@ struct IconsView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Button("Reset All Icons", role: .destructive, action: resetAll)
+                    .disabled(applyingSet != nil)
+                applyMatchingButton
                 Spacer()
                 Button("Icon Sets…") { managingSets = true }
             }
@@ -195,6 +335,19 @@ struct IconsView: View {
                  : "Icon sets are offered in each app's search sheet, with matches suggested for that app.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            if !iconSets.records.isEmpty {
+                Text("Applying matching icons only touches apps you haven't given an icon yourself, and only where the set's name matches the app exactly or by a known alias — near-misses are left for you to pick. Reset All Icons undoes it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let applySummary {
+                Label(applySummary, systemImage: "checkmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Text("Drag an image onto a row from Finder, or straight from a browser — searching the web for an icon is free there, and Google Images can filter to transparent backgrounds only (Tools → Color → Transparent). Nothing about your apps is ever sent anywhere.")
                 .font(.caption)

@@ -59,6 +59,14 @@ struct IconProblem: Identifiable, Error {
                     message: "\(reason) Nothing on your Mac was changed.")
     }
 
+    /// A set Zap has a record of but can no longer read — its files removed from
+    /// under it, or a directory that no longer resolves.
+    static func setUnavailable(_ set: IconSet) -> IconProblem {
+        IconProblem(title: "\(set.name) isn't available",
+                    message: "Zap has a record of \(set.name) but can't read its icons. "
+                        + "Install it again from Icon Sets… No icons were changed.")
+    }
+
     /// Results came back but not one of them would draw. Distinct from a failed
     /// search: the provider answered, so the fault is on Zap's side of the line.
     static func previewsUnavailable(provider: String) -> IconProblem {

@@ -427,6 +427,23 @@ hence `IconSet.summary`, shown in the row. A name and a licence do not distingui
 "thousands of branded logos" from "16 px grey glyphs", and finding out by
 installing 30 MB is not a choice.
 
+**Applying a whole set.** Picking icons one at a time is the point of §5.6's
+"selection stays manual", and it is also forty clicks for someone who just
+installed Papirus. *Apply Matching Icons*, beside *Reset All Icons*, walks the
+listed apps and applies the set's icon wherever the guess is strong enough to act
+on unattended. `IconSetAutoMatch` is where "strong enough" is decided, and it is
+strictly narrower than what the picker offers: only `.known` (a hand-written
+alias) and `.exact` (the normalised name *is* the icon's). `.prefix` is excluded
+even though it is right more often than not — it finds `docker` for "Docker
+Desktop", and `chrome-remote-desktop` for an app called Chrome in a theme with no
+`chrome`. Right-more-often-than-not is a good suggestion and a bad automatic
+action.
+
+Two rules keep it from being a mode rather than an action: it never touches an app
+that already carries the user's own choice (a custom icon *or* a system pin), and
+it draws from exactly one set, because mixing themes across the row defeats the
+reason to have one. *Reset All Icons* undoes it.
+
 **Credit is the theme's to specify.** Adwaita's `COPYING` ends "When attributing
 the artwork, using 'GNOME Project' is enough", which is an instruction rather than
 a preference — §5.4 makes honouring it the condition for using the work. So
