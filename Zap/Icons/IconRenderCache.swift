@@ -55,8 +55,21 @@ struct IconRenderCache {
 
     // MARK: Key
 
-    /// The cache key for some markup at a size: a digest of the bytes, and the size
-    /// they were rendered at.
+    /// How the renderer behaves, not what version Zap is.
+    ///
+    /// Content-addressing answers "same bytes in?", which is only half the question:
+    /// the answer also depends on what the renderer *does* with them. When that
+    /// changes, every stored entry is a stale answer to a question no one is asking
+    /// any more — and the digest can't tell, because the input really is identical.
+    ///
+    /// Bumped when a render of the same markup should now come out different.
+    /// Version 2: `SVGRasterizer` gives markup a `viewBox` when it hasn't got one,
+    /// so every Papirus and Adwaita icon renders at full size instead of at its
+    /// intrinsic 64 or 16 px in the corner of the canvas.
+    static let renderVersion = 2
+
+    /// The cache key for some markup at a size: a digest of the bytes, the size
+    /// they were rendered at, and the renderer that rendered them.
     ///
     /// The size is part of the key rather than something to resample from, because
     /// the two sizes in use are a 128 px preview and a 1024 px master — resampling
@@ -64,7 +77,7 @@ struct IconRenderCache {
     /// what was asked for, which is the sort of saving nobody wants.
     static func key(for data: Data, side: Int) -> String {
         let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        return "\(digest)-\(side).png"
+        return "\(digest)-\(side)-v\(renderVersion).png"
     }
 
     // MARK: Reading and writing

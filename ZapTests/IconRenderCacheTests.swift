@@ -47,6 +47,25 @@ final class IconRenderCacheTests: XCTestCase {
                           IconRenderCache.key(for: markup(), side: 1024))
     }
 
+    /// The renderer is part of the key too, and this is the half content-addressing
+    /// can't see: when what the renderer *does* with the bytes changes, every stored
+    /// entry answers a question nobody is asking any more, and the digest can't tell
+    /// because the input really is identical.
+    func testARenderFromAnEarlierRendererIsNotReused() throws {
+        let source = markup()
+        let current = IconRenderCache.key(for: source, side: 128)
+        let earlier = current.replacingOccurrences(
+            of: "-v\(IconRenderCache.renderVersion).png", with: "-v0.png")
+        XCTAssertNotEqual(earlier, current, "the key has to carry the renderer's version")
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        IconTestSupport.writePNG(width: 128, height: 128,
+                                 to: directory.appendingPathComponent(earlier))
+
+        XCTAssertNil(cache.image(for: source, side: 128),
+                     "a render from an earlier renderer must not be served")
+    }
+
     /// The name is generated, so it can never escape the cache directory whatever
     /// the markup contains.
     func testKeysAreAlwaysSafeFileNames() {
@@ -111,6 +130,30 @@ final class IconRenderCacheTests: XCTestCase {
         let entries = try FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
         XCTAssertLessThanOrEqual(entries.count, 3)
+    }
+
+    /// Bumping `renderVersion` leaves entries nothing will ever ask for again, and
+    /// they need no sweep of their own: the pruner lists the whole directory and
+    /// evicts oldest-first, which is precisely what an orphan is.
+    func testEntriesFromAnEarlierRendererArePrunedLikeAnyOther() throws {
+        let bounded = IconRenderCache(directory: directory, maximumEntries: 2)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        for index in 0..<4 {
+            IconTestSupport.writePNG(width: 32, height: 32,
+                                     to: directory.appendingPathComponent("orphan-\(index)-v0.png"))
+        }
+
+        for index in 0..<3 {
+            bounded.store(IconTestSupport.makeImage(width: 64, height: 64),
+                          for: markup("fresh-\(index)"), side: 64)
+        }
+
+        let names = try FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+            .map { $0.lastPathComponent }
+        XCTAssertLessThanOrEqual(names.count, 2)
+        XCTAssertFalse(names.contains { $0.hasSuffix("-v0.png") },
+                       "orphans are the oldest entries, so they go first: \(names)")
     }
 
     // MARK: Wiring

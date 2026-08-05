@@ -427,6 +427,23 @@ hence `IconSet.summary`, shown in the row. A name and a licence do not distingui
 "thousands of branded logos" from "16 px grey glyphs", and finding out by
 installing 30 MB is not a choice.
 
+**An SVG without a `viewBox` does not scale**, and two of the five sets ship
+without one — Papirus at `width="64" height="64"`, Adwaita at 16. `width:100vw`
+resizes the *viewport*; the `viewBox` is what maps user units onto it, so with
+none the artwork paints into the top-left 64 px of a 1024 px canvas. Nothing
+downstream can tell that from artwork genuinely 64 px across: `IconNormalizer`
+trims to the ink and scales it back up, so the icon arrives soft, *and* the trim's
+4 px mask cells become 6% of the artwork rather than 0.4% — enough that dropping
+one boundary cell flattens a rounded edge into a straight chord. Both were
+reported together and are one cause. `SVGRasterizer.scalable` synthesises the
+`viewBox` from `width`/`height` when they are pixel sizes, and leaves markup it
+can't improve exactly as it was.
+
+That change also made every cached render stale without changing a single input
+byte, which is the limit of content-addressing: the digest answers "same bytes
+in?", not "same renderer". `IconRenderCache.renderVersion` is in the key for that
+reason and is bumped when a render of the same markup should now differ.
+
 **Applying a whole set.** Picking icons one at a time is the point of §5.6's
 "selection stays manual", and it is also forty clicks for someone who just
 installed Papirus. *Apply Matching Icons*, beside *Reset All Icons*, walks the
