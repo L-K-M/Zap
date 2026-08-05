@@ -159,12 +159,12 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
     /// from digits this validated itself, so hostile markup has nothing to reach.
     static func scalable(_ svg: String) -> String {
         guard let tag = rootSVGTagRange(in: svg) else { return svg }
-        let attributes = svg[tag]
+        let attributes = self.attributes(in: svg[tag])
         // `viewBox` case-sensitively: it is the only spelling a renderer honours, so
         // a document with `viewbox` has no working one and is worth fixing.
-        guard !attributes.contains("viewBox") else { return svg }
-        guard let width = pixelAttribute("width", in: attributes),
-              let height = pixelAttribute("height", in: attributes) else { return svg }
+        guard !attributes.contains(where: { $0.name == "viewBox" }) else { return svg }
+        guard let width = pixelValue(of: attributes, named: "width"),
+              let height = pixelValue(of: attributes, named: "height") else { return svg }
 
         // After `<svg`, before whatever the tag already says. Its own attributes
         // stay in place and untouched.
@@ -194,31 +194,92 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         return nil
     }
 
-    /// The value of `name` as a plain pixel count, or `nil` when it isn't one.
+    /// One attribute of the root tag.
+    struct Attribute: Equatable {
+        var name: Substring
+        var value: Substring
+    }
+
+    /// The root tag's attributes, scanned rather than pattern-matched.
+    ///
+    /// Searching the tag's text for `viewBox` or `width` looks equivalent and isn't:
+    /// an attribute *value* is text too. `<svg data-note="set viewBox=yes" width="64"
+    /// height="64">` would read as already having a `viewBox` and silently keep the
+    /// bug this whole change exists to remove — quietly, on markup that looks fine.
+    /// A word-boundary pattern narrows that without closing it, because the string
+    /// inside the quotes has word boundaries of its own.
+    ///
+    /// So the tag is walked once, tracking whether it is inside quotes, and only
+    /// names found at the top level are attributes. The same scan then serves the
+    /// size lookup, which had the same gap for the same reason.
+    static func attributes(in tag: Substring) -> [Attribute] {
+        var found: [Attribute] = []
+        // Past `<svg` itself, which is the element name rather than an attribute.
+        var index = tag.startIndex
+        while index < tag.endIndex, !tag[index].isWhitespace {
+            index = tag.index(after: index)
+        }
+
+        while index < tag.endIndex {
+            while index < tag.endIndex, tag[index].isWhitespace || tag[index] == "/" {
+                index = tag.index(after: index)
+            }
+            guard index < tag.endIndex else { break }
+
+            let nameStart = index
+            while index < tag.endIndex, !tag[index].isWhitespace, tag[index] != "=" {
+                index = tag.index(after: index)
+            }
+            let name = tag[nameStart..<index]
+            while index < tag.endIndex, tag[index].isWhitespace {
+                index = tag.index(after: index)
+            }
+            // No `=` means a valueless attribute; the next one starts here.
+            guard index < tag.endIndex, tag[index] == "=" else {
+                if !name.isEmpty { found.append(Attribute(name: name, value: "")) }
+                continue
+            }
+            index = tag.index(after: index)
+            while index < tag.endIndex, tag[index].isWhitespace {
+                index = tag.index(after: index)
+            }
+            guard index < tag.endIndex else { break }
+
+            let value: Substring
+            if tag[index] == "\"" || tag[index] == "'" {
+                let quote = tag[index]
+                let valueStart = tag.index(after: index)
+                var end = valueStart
+                while end < tag.endIndex, tag[end] != quote {
+                    end = tag.index(after: end)
+                }
+                value = tag[valueStart..<end]
+                index = end < tag.endIndex ? tag.index(after: end) : end
+            } else {
+                // Unquoted, which XML forbids and HTML parsers accept anyway.
+                let valueStart = index
+                while index < tag.endIndex, !tag[index].isWhitespace {
+                    index = tag.index(after: index)
+                }
+                value = tag[valueStart..<index]
+            }
+            if !name.isEmpty { found.append(Attribute(name: name, value: value)) }
+        }
+        return found
+    }
+
+    /// The named attribute as a plain pixel count, or `nil` when it isn't one.
     ///
     /// Returned as the digits the document actually wrote — `16.004` stays
     /// `16.004` — so nothing depends on how a `Double` would print. Validated
     /// character by character, so what comes back is only ever digits and at most
     /// one dot.
-    static func pixelAttribute(_ name: String, in tag: Substring) -> String? {
-        // ` name=` or `\tname=`: the leading separator keeps `width` from matching
-        // inside `stroke-width`.
-        guard let equals = tag.range(of: "\\s\(name)\\s*=\\s*", options: [.regularExpression])
-        else { return nil }
-
-        var rest = tag[equals.upperBound...]
-        if let opening = rest.first, opening == "\"" || opening == "'" {
-            guard let closing = rest.dropFirst().firstIndex(of: opening) else { return nil }
-            rest = rest[rest.index(after: rest.startIndex)..<closing]
-        } else if let space = rest.firstIndex(where: { $0.isWhitespace }) {
-            // Unquoted, which XML forbids and HTML parsers accept anyway: the value
-            // ends at the next space, not at the end of the tag.
-            rest = rest[..<space]
-        }
+    static func pixelValue(of attributes: [Attribute], named name: String) -> String? {
+        guard let attribute = attributes.first(where: { $0.name == name }) else { return nil }
 
         var digits = ""
         var dots = 0
-        for character in rest {
+        for character in attribute.value {
             if character.isASCII, character.isNumber {
                 digits.append(character)
             } else if character == "." {
@@ -232,7 +293,8 @@ final class SVGRasterizer: NSObject, WKNavigationDelegate {
         // Whatever follows the number has to be nothing or `px`. A `%` is a share
         // of a viewport that doesn't imply a user-space size, and a physical unit
         // would need a DPI this has no business inventing.
-        let unit = rest.dropFirst(digits.count).trimmingCharacters(in: .whitespaces).lowercased()
+        let unit = attribute.value.dropFirst(digits.count)
+            .trimmingCharacters(in: .whitespaces).lowercased()
         guard unit.isEmpty || unit == "px" else { return nil }
         guard let value = Double(digits), value > 0, value.isFinite else { return nil }
         return digits

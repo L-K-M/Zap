@@ -132,6 +132,30 @@ final class IconRenderCacheTests: XCTestCase {
         XCTAssertLessThanOrEqual(entries.count, 3)
     }
 
+    /// Bumping `renderVersion` leaves entries nothing will ever ask for again, and
+    /// they need no sweep of their own: the pruner lists the whole directory and
+    /// evicts oldest-first, which is precisely what an orphan is.
+    func testEntriesFromAnEarlierRendererArePrunedLikeAnyOther() throws {
+        let bounded = IconRenderCache(directory: directory, maximumEntries: 2)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        for index in 0..<4 {
+            IconTestSupport.writePNG(width: 32, height: 32,
+                                     to: directory.appendingPathComponent("orphan-\(index)-v0.png"))
+        }
+
+        for index in 0..<3 {
+            bounded.store(IconTestSupport.makeImage(width: 64, height: 64),
+                          for: markup("fresh-\(index)"), side: 64)
+        }
+
+        let names = try FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+            .map { $0.lastPathComponent }
+        XCTAssertLessThanOrEqual(names.count, 2)
+        XCTAssertFalse(names.contains { $0.hasSuffix("-v0.png") },
+                       "orphans are the oldest entries, so they go first: \(names)")
+    }
+
     // MARK: Wiring
 
     /// That `IconImport` actually consults the cache, not just that the cache works.

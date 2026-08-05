@@ -97,11 +97,60 @@ final class SVGRasterizerTests: XCTestCase {
             .contains("viewBox=\"0 0 64 64\""))
     }
 
-    /// `stroke-width` is not `width`. Without the boundary the tag would be read as
+    /// `stroke-width` is not `width`. Without a real scan the tag would be read as
     /// 2 units wide and every icon would be scaled by five hundred.
     func testAHyphenatedAttributeIsNotMistakenForWidth() {
         let markup = "<svg stroke-width=\"2\" height=\"64\">"
         XCTAssertEqual(SVGRasterizer.scalable(markup), markup)
+    }
+
+    /// An attribute *value* is text too, and it has word boundaries of its own —
+    /// which is why this is a scan and not a pattern. Reading this tag as already
+    /// having a `viewBox` would keep exactly the bug the synthesis exists to remove,
+    /// silently, on markup that looks fine.
+    func testViewBoxInsideAnotherAttributesValueDoesNotCount() {
+        let scaled = SVGRasterizer.scalable(
+            "<svg data-note=\"set viewBox=yes\" width=\"64\" height=\"64\">")
+        XCTAssertTrue(scaled.contains("viewBox=\"0 0 64 64\""), scaled)
+    }
+
+    /// The same gap on the other side: a size named inside someone else's value is
+    /// not this element's size.
+    func testASizeInsideAnotherAttributesValueIsNotTheSize() {
+        let markup = "<svg data-note=\"width=64 height=64\">"
+        XCTAssertEqual(SVGRasterizer.scalable(markup), markup)
+    }
+
+    // MARK: Attribute scanning
+
+    func testAttributesAreReadAsNameAndValue() {
+        let attributes = SVGRasterizer.attributes(in: "<svg width=\"64\" height=\"16.004\"")
+        XCTAssertEqual(attributes.map { String($0.name) }, ["width", "height"])
+        XCTAssertEqual(attributes.map { String($0.value) }, ["64", "16.004"])
+    }
+
+    /// A quoted value is one token however much it looks like markup.
+    func testAQuotedValueIsNotReadAsMoreAttributes() {
+        let attributes = SVGRasterizer.attributes(in: "<svg data-note=\"a=1 b=2\" width=\"64\"")
+        XCTAssertEqual(attributes.map { String($0.name) }, ["data-note", "width"])
+        XCTAssertEqual(attributes.first?.value, "a=1 b=2")
+    }
+
+    func testSingleQuotesAndUnquotedValuesAreBothRead() {
+        let attributes = SVGRasterizer.attributes(in: "<svg width='64' height=32")
+        XCTAssertEqual(attributes.map { String($0.value) }, ["64", "32"])
+    }
+
+    /// A valueless attribute must not swallow the one after it.
+    func testAValuelessAttributeDoesNotConsumeTheNext() {
+        let attributes = SVGRasterizer.attributes(in: "<svg hidden width=\"64\"")
+        XCTAssertEqual(attributes.map { String($0.name) }, ["hidden", "width"])
+        XCTAssertEqual(attributes.last?.value, "64")
+    }
+
+    func testASelfClosingSlashIsNotAnAttribute() {
+        let attributes = SVGRasterizer.attributes(in: "<svg width=\"64\" /")
+        XCTAssertEqual(attributes.map { String($0.name) }, ["width"])
     }
 
     /// A `>` inside an attribute value must not end the tag early — the scan would
