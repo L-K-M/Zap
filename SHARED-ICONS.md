@@ -1,13 +1,21 @@
 # SHARED-ICONS — one icon change, three apps
 
-*A research study, August 2026. Nothing here is implemented. This document asks
-whether Zap, Jetty and Top Drawer can share a single way to change an app's icon,
-concludes that they can, and works out which of the five available mechanisms is
-the right one and what it would cost.*
+*A research study, August 2026, now partly built. This document asks whether Zap,
+Jetty and Top Drawer can share a single way to change an app's icon, concludes that
+they can, works out which of the five available mechanisms is the right one, and
+records what it costs.*
+
+**Where this stands.** §1–§4 are the survey and are unchanged. §5 onward is the
+decision, revised once: the shared store now lives in a fourth app,
+[**Pict**](https://github.com/L-K-M/Pict), which owns every part of *changing* an
+icon while Zap, Jetty and Top Drawer become readers. `PictKit` — the store and the
+read path — is written and pushed. Nothing else is built, and Zap is unchanged and
+still works exactly as it does today. §7 has the sequence.
 
 **Verification caveat** (inherited from `UNJAILED.md` and `ANALYSIS.md`): written
-without a macOS toolchain or a Tahoe machine. Claims about system behaviour carry
-confidence markers. The load-bearing ones are collected in §9.
+without a macOS toolchain or a Tahoe machine, so `PictKit` has never been through a
+compiler and none of its tests have run. Claims about system behaviour carry
+confidence markers; the load-bearing ones are collected in §9.
 
 ---
 
@@ -233,346 +241,310 @@ worse at icons than the third for no reason.
 
 ## 5. Recommendation
 
-**Do (1) and (2) from §3 together, as one shared Swift package plus one shared store,
-and treat (3) as a later opt-in built on top of them.**
+**A fourth app — [Pict](https://github.com/L-K-M/Pict) — owns the shared store and
+every part of changing an icon. The three existing apps become readers.**
+
+That is a stronger version of the obvious answer, and it was reached by pricing the
+objection to it rather than by assuming it away. §4.2's shared store is still the
+mechanism; the question this section answers is *where the code that fills it lives*.
 
 ```
-                     ┌───────────────────────────────────────────┐
-   Zap  ────────────►│  IconKit (SwiftPM package)                │
-   Jetty ───────────►│  resolution · ingestion · rendering ·     │
-   Top Drawer ──────►│  themes · search · the shared store API   │
-                     └────────────────────┬──────────────────────┘
-                                          │
-                     ~/Library/Application Support/<Shared>/Icons/
-                                          │
-                        (optional, opt-in) ▼
-                     Icon\r + FinderInfo → Dock, Finder, everywhere
+                     ┌──────────────────────────────────────┐
+   Zap  ────────────►│  PictKit — the read path             │
+   Jetty ───────────►│  store · artwork recovery ·          │
+   Top Drawer ──────►│  classification · normalisation      │
+        │            └──────────────────┬───────────────────┘
+        │                               │
+        │      ~/Library/Application Support/Pict/entries/
+        │                               │
+        │            ┌──────────────────┴───────────────────┐
+        └───────────►│  Pict.app — everything that WRITES   │
+        "Customise   │  ingestion · SVG · themes · search · │
+         in Pict…"   │  the editing UI                      │
+                     └──────────────────────────────────────┘
 ```
 
-Concretely:
+### 5.1 What this costs, stated first
 
-1. **Extract `Zap/Icons/` into a package** the three apps depend on. No behaviour
-   change to Zap; Jetty and Top Drawer gain un-jailing, validated ingestion, SVG,
-   themes and search by consuming it.
-2. **Move the store out of `Zap/Icons` into a shared directory**, re-keyed so it can
-   name any target the three apps draw (apps, files, folders, links), and re-shaped
-   for three concurrent writers.
-3. **Layer it, don't replace.** Jetty's and Top Drawer's per-item overrides keep
-   winning; the shared store is a new rung beneath them and above bundle-artwork
-   recovery. Nobody's existing icons change.
-4. **Two verbs in the UI**, because there are two different intents (§6.6).
-5. **Later, optionally:** an explicit "Also apply in Finder and the Dock" action that
-   pushes an entry out through the `Icon\r` route, with re-application after app
-   updates — reachable precisely because the store knows what was intended.
+**A Zap-only user cannot pick a custom icon file.** That is a real regression and
+the reason to think hard before taking this. It is also much smaller than it sounds:
+
+- **Level 2 un-jailing still works with no editor installed.** Reading the bundle,
+  classifying the alpha and substituting needs no user action and no UI. It runs for
+  every app, automatically. `UNJAILED.md §10` says it outright — *"Phase 1 stands
+  alone and is worth shipping alone… Everything after it is optional polish on a
+  problem already solved for the majority of apps."*
+- **Pin-to-system still works**, because it writes an entry with no image and touches
+  no ingestion code at all.
+- What a Zap-only user loses is *Choose File…*, drag-and-drop, search and themes —
+  which is precisely phases 2–4 of that same document.
+
+So the trade is: Zap keeps the part `UNJAILED.md` calls the whole point, and sheds
+the parts it calls optional. Plus a fourth unsigned download with its own Gatekeeper
+right-click→Open ritual for anyone who wants those back.
+
+### 5.2 What it buys
+
+**Zap loses 43% of its code and 49% of its tests.**
+
+| | lines | share |
+|---|---|---|
+| Zap app code | 13,421 | |
+| …icon subsystem | **5,718** | **43%** |
+| ZapTests | 6,340 | |
+| …icon tests | **3,090** | **49%** |
+
+Split at the read/write line, roughly **3,800 lines of app code leave Zap**, plus
+the tests that go with them. What stays is about 1,900 lines: the resolution ladder
+and the store, which is the only part the ⌘-Tab path has ever touched.
+
+**What leaves is disproportionately the dangerous part**, and this is the real
+argument:
+
+- Zap's **only** `import WebKit`. No `WKWebView` in a process holding Accessibility
+  permission.
+- **Every** icon-related network call — `IconifyClient`, `RemoteIconFetcher`,
+  `IconSetInstaller`, `CollectionCache`, `IconSetLibrary`. What remains in Zap is the
+  update checker.
+- Zap's **only** subprocess spawn (`tar`, in `IconSetInstaller`, which says so in its
+  own header).
+- **All** ingestion of untrusted images.
+
+That last one closes a gap `UNJAILED.md` left open. §6.4: *"The thorough fix is
+decoding inside a short-lived XPC service that can be sandboxed to nothing. That is
+the right answer eventually and too much for v1."* A separate editor **is** that fix,
+reached by an app boundary instead of an XPC service — and unlike Zap, an icon editor
+needs no Accessibility, no event tap and no window list, so it is the only one of the
+four that could ever be sandboxed.
+
+**It also collapses two phases of the integration.** Jetty and Top Drawer do not port
+an editor. They add one rung to their icon ladder and one menu item that opens a
+URL — on the order of 100 lines each.
+
+### 5.3 What was rejected on the way here
+
+**Shipping the editor as a shared SwiftUI view in the package**, so each app could
+edit inline and Pict was merely a convenience shell. It resolves the install-story
+objection and it is the wrong trade: it puts ingestion, SVG rasterisation and theme
+downloads back into every app that links the package, which is the entire cost §5.2
+is trying to shed. If the editor is a library, Zap carries the `WKWebView` again.
+
+**Bundling Pict inside each app** at `Contents/Library/`. Avoids the extra download
+and gives three copies that can race on version — the drift the shared package
+exists to kill.
 
 ---
 
-## 6. The design
+## 6. The design, as built
+
+`PictKit` and the store are written and pushed;
+[`L-K-M/Pict`](https://github.com/L-K-M/Pict) has the code and `PLAN.md` has the
+decisions in full. What follows is the shape and the reasoning, not a duplicate.
 
 ### 6.1 Where it lives
 
 ```
-~/Library/Application Support/<Shared>/
-  README.txt            what this is, which apps write it, how to delete it
-  Icons/
-    entries/
-      com.apple.Safari-1k2j4h.json
-      com.apple.Safari-1k2j4h.png
-      _Applications_Claude__-9zx1qp.json
-      _Applications_Claude__-9zx1qp.png
-  IconSets/
-    papirus/ …          the themes, installed once instead of three times
+~/Library/Application Support/Pict/
+  README.txt
+  entries/
+    Safari.app-1k2j4h.json
+    Safari.app-1k2j4h.png
 ```
 
-**`<Shared>` needs a name, and there is no obvious one.** The three bundle
-identifiers are `com.zapapp.Zap`, `com.jettyapp.Jetty` and `com.macdring.MacDring` —
-three unrelated reverse-DNS roots, no common prefix to inherit. A shared identifier
-has to be invented. Candidates: `Unjailed` (matches the feature's existing name in
-this repo and says what it is), `L-K-M` (matches the GitHub org), or a fourth
-reverse-DNS root. Left open in §9 — it is a product decision, and it is permanent
-once shipped.
+The name is **Pict**. There was no prefix to inherit — the three bundle identifiers
+(`com.zapapp.Zap`, `com.jettyapp.Jetty`, `com.macdring.MacDring`) share no
+reverse-DNS root — so a neutral one had to be invented rather than putting a shared
+store inside one app's folder.
 
-Sharing `IconSets/` is close to free and worth taking: Papirus alone is ~4 MB
-extracted, and three apps that each install it three times is 12 MB and three 31 MB
-downloads for one theme.
+The `README.txt` is not decoration. A shared directory outlives every app that writes
+it: delete all four and it stays. Someone will open it wondering what put PNGs in
+their Library, and a file that answers them, and says deleting it is safe, is the
+entire mitigation.
 
-### 6.2 What a key is
+### 6.2 One file per entry, not one manifest
 
-Zap keys on `IconIdentity` — the standardised bundle path, falling back to the bundle
-identifier for entries written before that change. Jetty and Top Drawer hold URLs and
-bookmarks, and their items can be files, folders and links as well as apps. So the
-key generalises to a discriminated pair rather than a bare string:
+The single most consequential change from Zap's design.
 
-| Kind | Value | Written by |
-|---|---|---|
-| `app` | the app bundle's standardised path | Zap, and any app-kind item elsewhere |
-| `bundleID` | the bundle identifier | fallback only — see below |
-| `file` | a standardised file or folder path | Jetty, Top Drawer |
-| `url` | a normalised `https://…` | Top Drawer's link items |
+`manifest.json` is single-writer. Three processes read-modify-writing it *will* lose
+entries: Zap reads it, Pict writes it, Zap writes its stale copy back.
+`NSFileCoordinator` would fix that and would add a coordination protocol to every
+read on a path that has to stay cheap.
 
-Serialised as `app:/Applications/Safari.app`. Lookup for an application tries
-`app:` then `bundleID:`, which is exactly `IconIdentity.lookupKeys` generalised — and
-it preserves the reason that ladder exists: site-specific-browser wrappers all report
-one identifier, so path-first is what keeps three Chrome wrappers from sharing one
-icon (`IconIdentity`'s header documents the case).
+Splitting it removes the problem rather than managing it:
 
-`bundleID:` stays *writable* for one thing Zap can't currently express: "this app
-wherever it lives", which is the right key for an app the user moves between
-`/Applications` and `~/Applications`. Path-first lookup means it never overrides a
-path entry, so it is a safe addition rather than a re-litigation of that decision.
+- Two apps overriding two different targets touch two different files and **cannot
+  conflict at all**.
+- Two apps overriding the same target resolve by last-writer-wins, which is the
+  correct semantics for "the user set this icon" and needs no lock to be right.
+- Every write is `Data.write(options: .atomic)` — temp file plus rename — so no
+  reader in another process ever sees a partial file.
+- **The directory listing is the index.** There is no index to keep in step.
 
-### 6.3 One file per entry, not one manifest
+A half-finished delete leaves a JSON whose PNG is gone; that fails validation and the
+resolver falls through to the next rung, which is exactly right.
 
-`manifest.json` is a single-writer design. Three processes read-modify-writing it
-will lose entries: Zap reads it, Jetty writes it, Zap writes its stale copy back.
-`NSFileCoordinator` would fix that and adds a coordination protocol to every read on
-a path that must stay cheap.
+File names are a sanitised stem plus an **unconditional** FNV-1a digest of the whole
+key. Zap appended the digest only when sanitising had changed something, which kept
+the common case readable at the cost of two naming rules; with four key kinds sharing
+one directory, uniform names are worth more. Never `hashValue`, which Swift seeds per
+process — that would name one target's files differently in each of the four apps.
 
-**Splitting the manifest into one JSON per entry removes the problem instead of
-managing it.** Two apps overriding two different apps' icons touch two different
-files and cannot conflict at all. Two apps overriding the *same* app's icon resolve
-by last-writer-wins, which is the correct semantics for "the user set this icon" and
-needs no lock to be right. Each write is `Data.write(options: .atomic)` — a temp file
-and a rename, so no reader ever sees half a file. The directory listing *is* the
-index; there is no index to keep in step.
+### 6.3 Keys
 
-The file name is `IconManifest.fileName(forBundleID:)`'s scheme applied
-unconditionally: a sanitised stem plus a short FNV-1a digest of the full key. That
-code already exists, is already tested for path-traversal, and already solves the
-"two keys sanitise to one name" collision. Making the digest unconditional (rather
-than only when sanitising changed something) keeps names uniform and inspectable.
+Zap keyed on a bundle path with an identifier fallback, which suits an app that only
+ever draws applications. The key generalises to a discriminated pair — `app`,
+`bundleID`, `file`, `url` — serialised as `app:/Applications/Safari.app`.
 
-An entry carries what the current `IconManifest.Entry` carries — `source`,
-`provider`, `credit`, `creditURL`, `licence`, `addedAt` — plus its own `key`
-verbatim, so the index can be rebuilt from the files alone, and `writtenBy` (which
-app made the change), which costs nothing and makes the directory self-explaining.
-
-Validation stays as strict as `IconManifest.validated()` is today, for the same
-reason: an entry can arrive in an imported pack or be hand-edited, so file names are
-bounds-checked against the directory and every number is clamped. A JSON whose PNG is
-missing — the state a half-finished delete leaves — simply fails validation and the
-resolver falls through to the next rung.
-
-Scale: one entry per overridden target, so tens to low hundreds. Listing a directory
-that size on load and on change is not a cost worth optimising.
+Path-before-identifier is preserved and is load-bearing: site-specific-browser
+wrappers ship one bundle per site and all report the browser's identifier, so an
+identifier-first ladder paints every wrapper with one icon. Writing the path key
+retires the identifier key, or a stale entry resurfaces the day the app moves.
 
 ### 6.4 Precedence
-
-The rule is that **a per-item choice always beats a shared one**, because a per-item
-choice is more specific and was made more deliberately.
 
 **Jetty / Top Drawer**, per item:
 
 ```
 1. the item's own override        ← existing behaviour, unchanged
-     (customIconPath / customIconBookmark / iconStyle)
 2. the shared store               ← new
-3. the target's own bundle artwork, un-jailed  ← new (Zap's Level 2)
+3. the target's own bundle artwork, un-jailed  ← new
 4. NSWorkspace.icon(forFile:)     ← today's default
 ```
 
-**Zap**, per app: rung 1 doesn't exist (there is no per-item layer in a switcher), so
-its ladder is unchanged from `UNJAILED.md §3` — the store it consults is just the
-shared one now.
+A per-item choice always beats a shared one: it is more specific, it was made more
+deliberately, and two dock tiles pointing at one app are allowed to differ. **Nobody's
+existing icons change on upgrade** — the shared store starts empty in both apps.
 
-Two consequences worth stating:
-
-- **Nobody's icons change on upgrade.** Every existing per-item override stays at the
-  top of its ladder. The shared store starts empty in Jetty and Top Drawer and only
-  fills as the user uses it.
-- **Rung 3 is a visible change** — pinned apps in Jetty's dock stop being
-  squircle-plated. That is the whole point in Zap, and a product decision in Jetty,
-  which *replaces the Dock* and may be expected to match it. See §9.
+Rung 3 *is* a visible change: pinned apps stop being squircle-plated. That is the
+point in Zap and a product decision in Jetty, which replaces the Dock and might
+reasonably be expected to match it (§9).
 
 ### 6.5 Noticing a change
 
-FSEvents on `Icons/entries/`, with `kFSEventStreamCreateFlagFileEvents` and a short
-latency. On an event each app re-lists the directory and invalidates its cache —
-`IconResolver.invalidate()` in Zap (which already exists and is already generation-
-counted for exactly this), the LRU in Jetty, nothing in Top Drawer, which resolves
-per drawer open anyway.
+FSEvents on the entries directory, with `kFSEventStreamCreateFlagWatchRoot` (the
+directory does not exist until someone sets an icon) and `IgnoreSelf` (an app should
+not invalidate its cache over its own write).
 
-FSEvents rather than `DispatchSource.makeFileSystemObjectSource` because a directory
-watch via a file descriptor needs manual re-arming across renames, and every write
-here is a rename. No permission is involved for an unsandboxed app reading its own
-Application Support.
-
-A `DistributedNotificationCenter` post on write would make the update feel instant
-rather than sub-second, and is about five lines ([Apple][dnc]). Worth having as a
-*hint*, never as the mechanism — a distributed notification is ephemeral, and an app
-that was launching when it fired never sees it. The file watch is the source of
-truth; the notification only shortens the latency.
+Not `DispatchSource.makeFileSystemObjectSource`: it watches a file descriptor, and
+every write here is a rename, so the descriptor stops being the file that matters.
+Watching the directory that way means re-arming by hand on every event and racing the
+next one.
 
 ### 6.6 Two verbs
 
-Sharing introduces an ambiguity that has to be resolved in the UI, not in the model.
-When a user right-clicks a Safari tile in Jetty and picks "change icon", they might
-mean *this tile* or *Safari*. Both are legitimate; Jetty and Top Drawer already mean
-the first, and the second is the new thing.
-
-So: two menu items, named for their scope.
+Sharing introduces an ambiguity that has to be resolved in the UI, not the model.
+Right-clicking a Safari tile in Jetty could mean *this tile* or *Safari*.
 
 ```
-Customise This Item's Icon…        → per-item, existing behaviour
-Change Safari's Icon Everywhere…   → the shared store
+Customise This Item's Icon…     → per-item, existing behaviour, stays local
+Change Safari's Icon Everywhere… → opens Pict at that app
 ```
 
-And when an icon comes from the shared store, the row says so and names the other
-apps it affects. A change with reach the user didn't ask for is the failure mode this
-whole design has to avoid, and the fix is that the reach is written on the button.
+Discovery without launching: `NSWorkspace.urlForApplication(toOpen:)` on the URL
+scheme returns nil when Pict isn't installed, so the menu shows the second item or a
+*Get Pict…* line accordingly. No callback is needed — the store change *is* the
+notification, via §6.5.
 
-Zap's Icons tab is inherently the second verb — every override it makes is an app's,
-not a row's — so its UI is unchanged except for a note that the change reaches the
-other installed apps.
+Zap's Icons tab keeps the source-mode picker, the app list and the per-row status
+caption (*"Original artwork (free-form)"*, *"Already square — nothing to fix"*), all
+of which are read-side. The `⋯` menu keeps *Use original artwork* and *Use system
+icon*; its other three items become one **Customise in Pict…** link.
 
-### 6.7 What goes in the package, and what doesn't
+### 6.7 Migration
 
-Straight across, essentially unmodified:
+`ZapManifestImport` runs once, maps each legacy key onto `app:` or `bundleID:` by its
+leading slash, copies the PNGs, and **renames** the old directory rather than deleting
+it — a user who downgrades still has their icons. Not a symlink: two writers and one
+inode is exactly the ambiguity §6.2 removes.
 
-```
-IconStore              re-shaped for §6.3's entry-per-file
-IconManifest → IconEntry + IconEntryKey (§6.2)
-IconImageValidator     the §6.4 decode bounds
-IconImport             the single ingestion door
-SVGRasterizer          offscreen WKWebView, CSP, JS off
-SVGRenderGate          concurrency ceiling on rasterisation
-IconRenderCache        content-addressed, renderVersion-keyed
-BundleArtwork          Level 2 — the un-jailing itself
-IconShapeClassifier    + AlphaMask
-IconNormalizer         trim / equal-ink scale / bleed / shadow
-IconRenderer → IconBitmap   renamed: Top Drawer already has an IconRenderer
-Sets/*                 IconSet, catalogue, installer, library, name guess, auto-match
-Search/*               provider protocol, Iconify client, collection cache
-```
-
-The module is unusually clean to extract — `import CoreGraphics` and
-`import Foundation` almost throughout, with AppKit only in `BundleArtwork`,
-`IconResolver` and `SVGRasterizer`, and exactly two ties to the rest of Zap:
-`IconResolver.init(preferences:)` and `IconNormalizer`'s reference to
-`IconRowMetrics.maximumBleed`. That is a seam, not a knot.
-
-**`IconResolver` splits.** The package ships the caching, generation counting and
-resolution ladder, parameterised by a plain value struct — source mode, target pixel
-size, bleed, trim, shadow. Each app keeps the code that maps *its* preferences onto
-that struct: Zap's Combine subscriptions and `NSScreen` backing-scale tracking stay in
-Zap, because they are about Zap's Appearance tab and Zap's icon-size slider. Jetty
-would wire far less, and Top Drawer less again.
-
-**Top Drawer's `IconStyle` and generated icons stay in Top Drawer** for now. They are
-a different feature — synthesising an icon rather than substituting one — and only
-one app has them. Promoting them later is a small move if Jetty ever wants them.
-
-### 6.8 How three Xcode projects consume it
-
-| | Pro | Con |
-|---|---|---|
-| **A new public repo + SwiftPM remote package**, tagged and pinned | Ordinary dependency resolution; each app upgrades on its own schedule; CI resolves it anonymously | A fourth repo; landing one change means a tag plus three bumps |
-| Git submodule + local package reference | No tag dance | Submodule friction in every clone and in CI (`submodules: recursive`); pinning by commit is a version scheme with no names |
-| Vendored copy, synced by a script | Cheapest to start | Three copies that drift, which is the problem restated |
-
-**Recommend the remote package.** It is the only one where "which version of the
-icon code is this build running" has an answer.
-
-Two notes on the ground here. `AGENTS.md` says "don't add heavy dependencies; prefer
-system frameworks" — a first-party package under the same org, containing code that
-is *already in this repository*, is not what that rule is about, but the rule should
-be amended to say so rather than quietly bent. And all three CI workflows pin
-`macos-14` / Xcode 16.2 and build with `CODE_SIGNING_ALLOWED=NO`; package resolution
-works there, and caching `-clonedSourcePackagesDirPath` between runs is a small,
-optional win.
-
-### 6.9 Migration
-
-Zap has shipped `~/Library/Application Support/Zap/Icons/manifest.json` since phase 1,
-so there are real user icons to carry across. A one-time importer on first launch of
-the new build: read the old manifest, write one entry per row into the shared store
-(`storageKey` maps to `app:` when it is a path and `bundleID:` when it isn't — the
-`IconIdentity.isPath(_:)` test that already exists), copy the PNGs, then rename the
-old directory to `Icons.migrated-<date>` and leave it for one release.
-
-Not a symlink: two writers and one inode is exactly the ambiguity §6.3 removes.
-
-Jetty and Top Drawer need no migration. Their overrides stay where they are, at the
+Jetty and Top Drawer need no migration; their overrides stay where they are, at the
 top of the ladder.
 
 ---
 
 ## 7. Phasing
 
-| Phase | Scope | Ships |
+| Phase | Scope | Status |
 |---|---|---|
-| **0** | Extract `Zap/Icons/` into the package; Zap builds against it. Store, keys and behaviour untouched. | Nothing user-visible. The riskiest mechanical step, taken alone and verifiable by "Zap behaves identically". |
-| **1** | Shared store: new location, `IconEntryKey`, entry-per-file, FSEvents, migration. Zap only. | Still one app, but the format and the contract are real and exercised. |
-| **2** | Jetty consumes the package: shared store as rung 2, bundle-artwork un-jailing as rung 3, validated ingestion replacing `NSImage(contentsOfFile:)`. Read-only at first. | **The first time a Zap change shows up in another app.** |
-| **3** | Top Drawer the same. | All three read one store. |
-| **4** | The write path in Jetty and Top Drawer — "Change this app's icon everywhere", the picker, the search sheet, the theme picker. | One change, made anywhere, applied everywhere. The question, answered. |
-| **5** | Interchange packs (`UNJAILED.md` phase 5), now shared-store-shaped. | Backup, transfer, sharing between people. |
-| **6** | Opt-in system-wide application via `Icon\r` + re-application after app updates. | The Dock and Finder too — for the apps SIP allows. |
+| **0** | `PictKit`: store, keys, resolver, artwork recovery, migration | **written, not compiled** |
+| **1** | Zap builds against it; editing code deleted; Icons tab reduced to read-side | not started |
+| **2** | Pict app: editor, ingestion, SVG, themes, search, URL scheme | not started |
+| **3** | Jetty: one rung, one menu item, un-jailing in the dock | not started |
+| **4** | Top Drawer, the same | not started |
+| **5** | Interchange packs — backup, transfer, sharing between people | not started |
+| **6** | Opt-in system-wide application via `Icon\r`, re-applied after app updates | not started |
 
-Phases 0–2 are the ones that carry the risk and most of the value. 4 is where it
-starts to feel like one feature. 6 is a different product decision and should not be
-bundled with the rest.
+Phases 1 and 2 are the ones that carry risk: 1 deletes a great deal of working code,
+and 2 has to receive it without losing behaviour. 3 and 4 are small by construction.
+
+**Phase 6 is what makes Pict an app rather than a view.** The system-wide route
+reverts whenever an app updates, so it needs something watching `/Applications` and
+re-applying — Pictogram ships exactly that daemon. That is real background work, none
+of the three utilities should host it, and it needs somewhere to live.
 
 ---
 
 ## 8. Costs, honestly
 
-**An on-disk format shared by independently-released apps is a compatibility
-contract.** A user can run Zap 4.0 and Jetty 1.4 against one directory. The rules
-that make that survivable: entries carry a `version`; a reader skips entries it
-doesn't understand rather than failing the load; a writer **never rewrites an entry it
-didn't fully parse** (which is how a fourth field gets silently dropped by an old
-build). This is the same discipline `DockStore` already applies to `dock.json` when
-it finds a newer version — it goes read-only for the session and says so in the log.
-That precedent should be copied, not reinvented.
+**The install regression** (§5.1) — priced and accepted.
 
-**Three release cadences.** A package fix reaches users only as fast as the slowest
-of three releases. Nothing to be done about it beyond noticing that it argues for
-keeping the package's surface small and its behaviour boring.
+**An on-disk format shared by independently released apps is a compatibility
+contract.** A user can run Zap 4.0 against Jetty 1.4 and Pict 1.0 over one directory.
+The rules that make it survivable are enforced in `IconEntry`/`IconStore`: entries
+carry a version, every field is optional, a reader skips what it cannot parse rather
+than failing the load, and **a reader never rewrites an entry it does not fully
+understand** — which is how a newer build's fields get silently dropped. Jetty's
+`DockStore` already applies this discipline to `dock.json`; it was copied, not
+reinvented.
 
-**A shared directory outlives the apps.** Delete all three and it stays. A `README.txt`
-naming it and saying it is safe to delete is the whole mitigation, and it is worth the
-five minutes.
+**Zap can no longer fix an ingestion bug in its own release.** A broken SVG render or
+a theme that changed layout needs a *Pict* release, and old-Pict-plus-new-Zap has to
+keep working. This is the same contract, but now load-bearing for a feature rather
+than a nicety — which is the argument for keeping the version discipline strict from
+the first commit rather than adding it once it hurts.
+
+**Four release cadences.** A `PictKit` fix reaches users as fast as the slowest of
+four releases. It argues for keeping the package's surface small and its behaviour
+boring, which is what `AGENTS.md` in that repo now says out loud.
 
 **Rung 3 changes how Jetty and Top Drawer look**, by design and on upgrade. It should
-be a preference in both, and `IconSourceMode.systemDefault`'s reasoning ("only on where
-it does something") transfers — but whether Jetty, a Dock *replacement*, should default
-to not matching the Dock is a genuine product call and not one this document should
-make.
+be a preference in both.
 
 **Zap's read-only property.** `UNJAILED.md §1.1` makes "Zap writes nothing into any
-bundle" a headline claim, and phase 6 would end that. It should therefore be opt-in,
-per-app, clearly labelled, and — this matters — it should stay a *separate action*
-from setting an icon in the store, not a checkbox that silently changes what "change
-this icon" does.
+bundle" a headline claim and phase 6 would end it. Opt-in, per-app, clearly labelled —
+and kept a *separate action* from setting an icon, never a checkbox that silently
+changes what "change this icon" does.
 
 ---
 
 ## 9. Open questions
 
-1. **What is `<Shared>` called?** No common prefix exists among the three bundle IDs
-   (§6.1). Permanent once shipped.
-2. **Does `NSWorkspace.icon(forFile:)` return a user-assigned custom icon *unmasked*
-   on Tahoe?** Load-bearing for Option A and for phase 6, reported consistently by
-   three independent sources, verified here by none. Ten minutes on a Tahoe machine.
-3. **Do App Store apps really refuse the `Icon\r` write?** Two tools say so
+1. ~~What is the shared directory called?~~ **Resolved: `Pict`.**
+2. ~~Is a fourth app the real answer?~~ **Resolved: yes** — see §5. The deciding
+   argument was not convenience but that it moves every untrusted-input path out of
+   the app holding Accessibility permission, and makes that code sandboxable for the
+   first time.
+3. **Does `NSWorkspace.icon(forFile:)` return a user-assigned custom icon *unmasked*
+   on Tahoe?** Load-bearing for §4.1 and phase 6; reported consistently by three
+   independent sources, verified here by none. Ten minutes on a Tahoe machine.
+4. **Do App Store apps really refuse the `Icon\r` write?** Two tools say so
    ([SquircleNoMore][sqnm], [Pictogram][picto]); the mechanism in §4.1 suggests they
-   shouldn't. Someone should try it.
-4. **Should Jetty un-jail by default?** It replaces the Dock; matching the Dock is a
+   shouldn't.
+5. **Should Jetty un-jail by default?** It replaces the Dock; matching the Dock is a
    defensible default and so is fixing it.
-5. **Should the shared store also hold the themes?** §6.1 says yes on disk-space
-   grounds. It also means one app's theme update is visible to the others mid-session,
-   which the installer's `If-None-Match` flow was not written for.
-6. **Is a fourth app the real answer?** A tiny "Icons" preference pane owning the
-   store, with the three apps as pure readers, is a cleaner separation and a much
-   worse install story for someone who only wants Zap. Recommended against, but it is
-   the road not taken and deserves recording.
-7. **Should `bundleID:` entries be user-creatable** ("this app wherever it lives",
-   §6.2), or only exist as legacy fallbacks? Adding a second way to key one app is a
-   second way to be confused about which one applied.
+6. **Should the themes move into the shared directory too?** Disk says yes — Papirus
+   is ~4 MB extracted and three copies is 12 MB and three 31 MB downloads. But with
+   Pict as the only installer there is only one copy anyway, so the question is
+   really whether the *other* apps ever read a theme directly. Currently they don't.
+7. **Should `bundleID:` entries be user-creatable** ("this app wherever it lives"), or
+   exist only as legacy fallbacks? A second way to key one app is a second way to be
+   confused about which one applied.
+8. **What happens to a Zap user who never installs Pict and had custom icons?**
+   Migration moves them into the shared store and Zap keeps *drawing* them — reading
+   is not the part that moved. But they can no longer change or add one. That is the
+   right behaviour and it needs to be said in the UI rather than discovered.
 
 ---
-
 ## Sources
 
 - [How To Bring Back Oddly Shaped App Icons in macOS 26 Tahoe — Simon B. Støvring][simonbs]
