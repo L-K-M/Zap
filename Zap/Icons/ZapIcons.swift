@@ -163,7 +163,9 @@ final class ZapIcons {
     static func migrateIfNeeded(into store: IconStore) {
         let outcome = ZapManifestImport.run(into: store)
         guard outcome.imported > 0 || outcome.skipped > 0 else { return }
-        NSLog("Zap: moved %d icon(s) into the shared Pict store (%d skipped).",
+        // `%ld`, not `%d`: Swift's `Int` is 64-bit on every Apple platform, and a
+        // variadic `%d` truncates it.
+        NSLog("Zap: moved %ld icon(s) into the shared Pict store (%ld skipped).",
               outcome.imported, outcome.skipped)
     }
 }
