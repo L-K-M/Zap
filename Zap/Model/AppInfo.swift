@@ -37,10 +37,20 @@ struct AppInfo: Identifiable, Equatable {
     /// neither a path nor an identifier) but the type admits it, so callers check.
     var storeKey: String? { IconEntryKey.storageKey(for: iconTarget)?.serialized }
 
-    /// How the MRU order knows this app: the icon store's key — bundle path when
-    /// known, identifier otherwise. Both need wrapper apps that share a bundle
+    /// How the MRU order knows this app: the icon store's key *value* — bundle path
+    /// when known, identifier otherwise. Both need wrapper apps that share a bundle
     /// identifier told apart, so they share one notion of identity.
-    var mruKey: String { storeKey ?? bundleIdentifier }
+    ///
+    /// **`value`, not `serialized`.** The serialized form carries a `kind:` prefix
+    /// the store needs to tell an app from a file, and the MRU has no use for it —
+    /// it only ever holds applications. It also cannot have it: MRU order is
+    /// persisted, every stored key predates the shared store and is bare, and
+    /// prefixing the lookup would silently stop matching all of them. The user's
+    /// switcher order would reset on upgrade, which `AGENTS.md` names as the one
+    /// feel not to break.
+    var mruKey: String {
+        IconEntryKey.storageKey(for: iconTarget)?.value ?? bundleIdentifier
+    }
 
     /// Designated initializer (also used by tests).
     init(bundleIdentifier: String, name: String, processIdentifier: pid_t,

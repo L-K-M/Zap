@@ -57,16 +57,41 @@ final class IconSubstitutionTests: XCTestCase {
         XCTAssertNotEqual(claude.mruKey, nomad.mruKey)
     }
 
-    /// `mruKey`'s fallback to the bare identifier is documented as unreachable —
+    /// MRU keys are persisted, and every one stored before the shared store existed
+    /// is bare. If `mruKey` ever gained the store's `kind:` prefix, none of them
+    /// would match on upgrade and the user's switcher order would silently reset.
+    ///
+    /// This is not hypothetical: it shipped in an earlier commit on this branch and
+    /// `SwitcherSelectionTests` caught it.
+    func testTheMRUKeyCarriesNoStorePrefix() {
+        let byPath = AppInfo(bundleIdentifier: "com.apple.Safari", name: "Safari",
+                             processIdentifier: 1,
+                             bundleURL: URL(fileURLWithPath: "/Applications/Safari.app"))
+        XCTAssertEqual(byPath.mruKey, "/Applications/Safari.app")
+
+        let byIdentifier = AppInfo(bundleIdentifier: "com.apple.Safari", name: "Safari",
+                                   processIdentifier: 1)
+        XCTAssertEqual(byIdentifier.mruKey, "com.apple.Safari")
+
+        for key in [byPath.mruKey, byIdentifier.mruKey] {
+            XCTAssertFalse(key.hasPrefix("app:"))
+            XCTAssertFalse(key.hasPrefix("bundleID:"))
+        }
+    }
+
+    /// The store key and the MRU key are the same identity in two renderings, and
+    /// the fallback to a bare identifier is documented as unreachable —
     /// `AppInfo.bundleIdentifier` is non-optional, so the lookup ladder always has
-    /// at least its identifier rung. This asserts that, because if it ever stopped
+    /// at least its identifier rung. This asserts both, because if either stopped
     /// holding, two wrappers would collapse onto one MRU entry.
-    func testTheMRUKeyIsAlwaysTheStoreKey() {
+    func testTheStoreKeyIsTheMRUKeyWithItsKindPrefix() {
         for url in [URL(fileURLWithPath: "/Applications/Safari.app"), nil] {
             let app = AppInfo(bundleIdentifier: "com.apple.Safari", name: "Safari",
                               processIdentifier: 1, bundleURL: url)
-            XCTAssertEqual(app.mruKey, app.storeKey)
+            // Same identity, two renderings: the store wants the discriminated
+            // form, the MRU wants the bare one.
             XCTAssertNotNil(app.storeKey)
+            XCTAssertTrue(app.storeKey?.hasSuffix(app.mruKey) == true)
         }
     }
 

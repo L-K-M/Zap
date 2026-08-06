@@ -116,8 +116,10 @@ final class AppListProvider {
     /// The MRU key for a live process — `AppInfo.mruKey` without the snapshot,
     /// so activations and snapshots agree on what identifies an app.
     private static func mruKey(bundleID: String, bundleURL: URL?) -> String {
+        // `value`, not `serialized` — see `AppInfo.mruKey`. Persisted MRU keys are
+        // bare, so the `kind:` prefix would stop matching every one of them.
         IconEntryKey.storageKey(for: .application(bundleURL: bundleURL,
-                                                  bundleIdentifier: bundleID))?.serialized
+                                                  bundleIdentifier: bundleID))?.value
             ?? bundleID
     }
 
