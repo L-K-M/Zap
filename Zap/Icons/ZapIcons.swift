@@ -13,9 +13,17 @@ import PictKit
 /// So this is the seam: everything that used to be inside `IconResolver` and is
 /// really *about Zap* — which preference means what, when a change is worth
 /// re-rendering for, and which apps are worth warming — lives here.
-@MainActor
 final class ZapIcons {
 
+    /// Thread-safe by construction — `IconResolver` guards its cache with a lock and
+    /// does its work on its own queue — so this type carries no actor isolation.
+    ///
+    /// It cannot have any: `AppDelegate` is not `@MainActor`, so a `@MainActor` init
+    /// here is uncallable from `private lazy var icons = ZapIcons(...)`, and
+    /// `AppListProvider` reads `resolver` from the ⌘-Tab path. Everything that really
+    /// is main-thread-only — `NSScreen.screens`, the `@Published` subscriptions — is
+    /// already delivered on the main queue by the publisher or the notification
+    /// centre, so the isolation was buying nothing and costing the call sites.
     let resolver: IconResolver
     let store: IconStore
 
@@ -118,10 +126,8 @@ final class ZapIcons {
         ) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   let bundleID = app.bundleIdentifier else { return }
-            MainActor.assumeIsolated {
-                self?.resolver.warm([.application(bundleURL: app.bundleURL,
-                                                  bundleIdentifier: bundleID)])
-            }
+            self?.resolver.warm([.application(bundleURL: app.bundleURL,
+                                              bundleIdentifier: bundleID)])
         }
 
         // Plugging in a sharper display makes every cached icon too soft for it, and
@@ -130,7 +136,7 @@ final class ZapIcons {
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.apply() }
+            self?.apply()
         }
     }
 
