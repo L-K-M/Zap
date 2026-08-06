@@ -84,14 +84,16 @@ final class IconSubstitutionTests: XCTestCase {
     /// `AppInfo.bundleIdentifier` is non-optional, so the lookup ladder always has
     /// at least its identifier rung. This asserts both, because if either stopped
     /// holding, two wrappers would collapse onto one MRU entry.
-    func testTheStoreKeyIsTheMRUKeyWithItsKindPrefix() {
+    func testTheStoreKeyIsTheMRUKeyWithItsKindPrefix() throws {
         for url in [URL(fileURLWithPath: "/Applications/Safari.app"), nil] {
             let app = AppInfo(bundleIdentifier: "com.apple.Safari", name: "Safari",
                               processIdentifier: 1, bundleURL: url)
             // Same identity, two renderings: the store wants the discriminated
-            // form, the MRU wants the bare one.
-            XCTAssertNotNil(app.storeKey)
-            XCTAssertTrue(app.storeKey?.hasSuffix(app.mruKey) == true)
+            // form, the MRU wants the bare one. `XCTUnwrap` rather than a
+            // `== true` comparison, so a nil key reports itself rather than
+            // reading as a failed suffix check.
+            let storeKey = try XCTUnwrap(app.storeKey)
+            XCTAssertTrue(storeKey.hasSuffix(app.mruKey))
         }
     }
 

@@ -25,6 +25,11 @@ struct IconsView: View {
     @State private var search = ""
     /// Where Pict is, when it's installed. `nil` turns the per-row link into a
     /// pointer at where to get it.
+    ///
+    /// Refreshed by `reload()` — on appear and on the Refresh button — so installing
+    /// Pict while this tab is already open leaves the buttons stale until you leave
+    /// and come back. Watching Launch Services for one app's arrival costs more than
+    /// the staleness does.
     @State private var pictURL: URL?
     /// How many app icons a reset would clear, while the confirmation is up.
     @State private var pendingResetCount: Int?
@@ -191,10 +196,13 @@ struct IconsView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
+                // Counted once: twice per render is wasted work, and the two calls
+                // could disagree if the store changed between them.
+                let resetCount = store.count(kinds: Self.zapKinds)
                 Button("Reset All Icons", role: .destructive) {
-                    pendingResetCount = store.count(kinds: Self.zapKinds)
+                    pendingResetCount = resetCount
                 }
-                .disabled(store.count(kinds: Self.zapKinds) == 0)
+                .disabled(resetCount == 0)
                 Spacer()
                 if pictURL != nil {
                     Button("Open Pict") { openPict(selecting: nil) }
@@ -337,6 +345,13 @@ struct IconsView: View {
         case .app:
             let url = URL(fileURLWithPath: key.value)
             let stem = url.deletingPathExtension().lastPathComponent
+            // The path goes in `bundleIdentifier` deliberately, and it is the one
+            // place in the app where that field isn't reverse-DNS. `AppInfo.id` is
+            // `bundleIdentifier` plus the pid, every offline row shares the pid -1,
+            // and three wrappers all answering `com.google.Chrome` would collide
+            // into one `List` identity — so the row you clicked would not be the
+            // row that acted. Nothing downstream reads this field expecting an
+            // identifier; `iconTarget` is what the store and resolver use.
             return AppInfo(bundleIdentifier: key.value,
                            name: stem.isEmpty ? key.value : stem,
                            processIdentifier: -1,

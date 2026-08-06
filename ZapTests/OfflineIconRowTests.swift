@@ -63,6 +63,9 @@ final class OfflineIconRowTests: XCTestCase {
     func testAnAbsentAppKnownOnlyByIdentifierStillGetsARow() {
         let rows = IconsView.offlineRows(storeKeys: [safariByID], running: [])
         XCTAssertEqual(rows.count, 1)
+        // Pin which row, not just how many: a fallback that synthesised a
+        // placeholder would otherwise satisfy the count and nothing else.
+        XCTAssertEqual(rows.first?.bundleIdentifier, "com.apple.Safari")
     }
 
     /// A different app being on screen doesn't cover for one that isn't.
