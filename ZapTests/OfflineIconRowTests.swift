@@ -73,6 +73,33 @@ final class OfflineIconRowTests: XCTestCase {
         XCTAssertEqual(rows.count, 1)
     }
 
+    // MARK: Wrappers
+
+    /// Site-specific-browser wrappers share a bundle identifier but live at
+    /// different paths, so one of them running says nothing about the others.
+    ///
+    /// This is the invariant the whole key design turns on. If `offlineRows` ever
+    /// grew identifier matching for path-keyed entries, a running wrapper would
+    /// silently suppress its sibling's row and the user would lose the only way to
+    /// undo that icon.
+    func testOneRunningWrapperDoesNotCoverItsSiblings() {
+        let rows = IconsView.offlineRows(
+            storeKeys: [.app(at: URL(fileURLWithPath: "/Applications/Claude ★.app")),
+                        .app(at: URL(fileURLWithPath: "/Applications/CodeNomad.app"))],
+            running: [app("com.google.Chrome", at: "/Applications/Claude ★.app")])
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.bundleIdentifier, "/Applications/CodeNomad.app")
+    }
+
+    /// The other half: a running wrapper *does* cover the shared identifier, because
+    /// a legacy entry filed under it is that same app from before the key change.
+    func testARunningWrapperCoversTheSharedIdentifier() {
+        let rows = IconsView.offlineRows(
+            storeKeys: [.app(bundleIdentifier: "com.google.Chrome")],
+            running: [app("com.google.Chrome", at: "/Applications/Claude ★.app")])
+        XCTAssertTrue(rows.isEmpty)
+    }
+
     // MARK: Entries Zap has nothing to say about
 
     /// Jetty and Top Drawer can key a file or a link; Zap can't draw either and has

@@ -92,18 +92,28 @@ final class ZapIcons {
         // on subscribe, and every one of these is already in the initial options.
 
         // What gets drawn — invalidates immediately.
+        //
+        // `receive(on:)` on all three: `apply()` reads `NSScreen.screens`, which is
+        // main-thread-only, and `@Published` emits on whatever thread wrote the
+        // property. Today every write comes from a SwiftUI control on the main
+        // thread, so this changes nothing — but it stops a future background write
+        // from turning into a main-thread-only call off-main, and it matches what
+        // the debounced subscriptions below already do via `RunLoop.main`.
         preferences.$iconSourceMode
             .dropFirst().removeDuplicates()
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.apply() }
             .store(in: &cancellables)
 
         preferences.$iconTrimTransparentEdges
             .dropFirst().removeDuplicates()
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.apply() }
             .store(in: &cancellables)
 
         preferences.$iconShadow
             .dropFirst().removeDuplicates()
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.apply() }
             .store(in: &cancellables)
 

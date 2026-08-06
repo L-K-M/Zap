@@ -26,6 +26,8 @@ struct IconsView: View {
     /// Where Pict is, when it's installed. `nil` turns the per-row link into a
     /// pointer at where to get it.
     @State private var pictURL: URL?
+    /// How many app icons a reset would clear, while the confirmation is up.
+    @State private var pendingResetCount: Int?
 
     private var store: IconStore { icons.store }
 
@@ -48,7 +50,32 @@ struct IconsView: View {
             footer
         }
         .onAppear(perform: reload)
+        // The store is shared, so a reset reaches past Zap. Say how far before
+        // doing it — the same rule the per-row "everywhere" verbs follow.
+        .confirmationDialog(
+            "Reset \(pendingResetCount ?? 0) app icon\(pendingResetCount == 1 ? "" : "s")?",
+            isPresented: Binding(get: { pendingResetCount != nil },
+                                 set: { if !$0 { pendingResetCount = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Reset", role: .destructive) {
+                pendingResetCount = nil
+                resetAll()
+            }
+            Button("Cancel", role: .cancel) { pendingResetCount = nil }
+        } message: {
+            Text("These icons are shared, so they will also go from Jetty and Top Drawer. "
+                 + "Icons you set for files, folders and links elsewhere are left alone.")
+        }
     }
+
+    /// The entry kinds Zap lists, and therefore the only ones it resets.
+    ///
+    /// A shared store makes an unscoped `removeAll()` reach further than the button
+    /// offering it: Zap has no row for a file or a link and cannot draw either, so
+    /// deleting Top Drawer's folder icons from here would destroy work the user
+    /// can't see from the button they pressed.
+    private static let zapKinds: Set<IconEntryKey.Kind> = [.app, .bundleID]
 
     // MARK: Header
 
@@ -142,7 +169,10 @@ struct IconsView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Button("Reset All Icons", role: .destructive, action: resetAll)
+                Button("Reset All Icons", role: .destructive) {
+                    pendingResetCount = store.count(kinds: Self.zapKinds)
+                }
+                .disabled(store.count(kinds: Self.zapKinds) == 0)
                 Spacer()
                 if pictURL != nil {
                     Button("Open Pict") { openPict(selecting: nil) }
@@ -193,7 +223,7 @@ struct IconsView: View {
     }
 
     private func resetAll() {
-        store.removeAll()
+        store.removeAll(kinds: Self.zapKinds)
         icons.resolver.invalidate()
         reloadStatuses()
     }
