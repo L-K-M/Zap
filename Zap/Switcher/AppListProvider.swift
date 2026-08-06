@@ -1,4 +1,5 @@
 import AppKit
+import PictKit
 
 /// Provides the ordered, filtered list of switchable apps.
 ///
@@ -106,16 +107,18 @@ final class AppListProvider {
 
     /// Swaps in un-jailed artwork when the resolver already has it. A cache miss
     /// leaves the system icon in place and warms in the background, so this stays
-    /// a dictionary lookup on the ⌘-Tab path (`UNJAILED.md §8.2`).
+    /// a dictionary lookup on the ⌘-Tab path (`SHARED-ICONS.md §6.4`).
     private func substitutingIcon(_ info: AppInfo) -> AppInfo {
-        guard let icon = iconResolver?.icon(for: info.iconIdentity) else { return info }
+        guard let icon = iconResolver?.icon(for: info.iconTarget) else { return info }
         return info.replacingIcon(icon)
     }
 
     /// The MRU key for a live process — `AppInfo.mruKey` without the snapshot,
     /// so activations and snapshots agree on what identifies an app.
     private static func mruKey(bundleID: String, bundleURL: URL?) -> String {
-        IconIdentity(bundleIdentifier: bundleID, bundleURL: bundleURL).storageKey
+        IconEntryKey.storageKey(for: .application(bundleURL: bundleURL,
+                                                  bundleIdentifier: bundleID))?.serialized
+            ?? bundleID
     }
 
     private func seedMRU() {

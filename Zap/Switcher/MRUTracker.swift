@@ -2,7 +2,7 @@ import Foundation
 
 /// Tracks most-recently-used (MRU) ordering of applications.
 ///
-/// Entries are keyed the way the icon store keys overrides (`IconIdentity`):
+/// Entries are keyed the way the shared icon store keys overrides (`IconEntryKey`):
 /// by bundle path when known, bundle identifier otherwise — `AppInfo.mruKey`.
 /// The identifier alone is not enough. Site-specific-browser wrappers all
 /// report the browser's identifier, so keying on it gave every Chrome wrapper
@@ -14,7 +14,7 @@ final class MRUTracker {
 
     /// MRU keys, most-recently-used first. An order persisted before keys were
     /// path-first holds bare identifiers; `ordered(_:)` still honours those as
-    /// fallbacks, so nothing needed migrating (the same trick `IconIdentity`
+    /// fallbacks, so nothing needed migrating (the same trick `IconEntryKey`
     /// plays with `legacyKey`).
     private(set) var order: [String]
 

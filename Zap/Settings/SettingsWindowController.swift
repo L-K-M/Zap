@@ -10,16 +10,16 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let preferences: Preferences
     private let inputMode: InputModeReporter
     private let updateChecker: UpdateChecker
-    private let iconResolver: IconResolver
+    private let icons: ZapIcons
 
     private var activationHandoff: ActivationHandoff?
 
     init(preferences: Preferences, inputMode: InputModeReporter,
-         updateChecker: UpdateChecker, iconResolver: IconResolver) {
+         updateChecker: UpdateChecker, icons: ZapIcons) {
         self.preferences = preferences
         self.inputMode = inputMode
         self.updateChecker = updateChecker
-        self.iconResolver = iconResolver
+        self.icons = icons
     }
 
     func show() {
@@ -30,7 +30,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         if window == nil {
             let hosting = NSHostingController(rootView: SettingsView(
                 preferences: preferences, inputMode: inputMode,
-                updateChecker: updateChecker, iconResolver: iconResolver))
+                updateChecker: updateChecker, icons: icons))
             // Only let the SwiftUI content drive the window's *minimum* size; the
             // user is free to make it larger. Without this the hosting controller
             // pins min == max, which both blocks resizing and leaves the fixed-size

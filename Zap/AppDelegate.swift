@@ -1,15 +1,17 @@
 import AppKit
+import PictKit
 
 /// Sets up the status-bar item, the switcher, and the settings window.
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let preferences = Preferences.shared
-    private lazy var iconResolver = IconResolver(preferences: preferences)
-    private lazy var switcher = SwitcherController(preferences: preferences, iconResolver: iconResolver)
+    private lazy var icons = ZapIcons(preferences: preferences)
+    private lazy var switcher = SwitcherController(preferences: preferences,
+                                                   iconResolver: icons.resolver)
     private let updateChecker = UpdateChecker(
         configuration: .init(owner: "L-K-M", repo: "Zap", appName: "Zap")
     )
-    private lazy var settingsWindow = SettingsWindowController(preferences: preferences, inputMode: switcher.inputMode, updateChecker: updateChecker, iconResolver: iconResolver)
+    private lazy var settingsWindow = SettingsWindowController(preferences: preferences, inputMode: switcher.inputMode, updateChecker: updateChecker, icons: icons)
 
     private var statusItem: NSStatusItem?
     private var pauseMenuItem: NSMenuItem?
@@ -23,6 +25,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Before anything can put a window up: without a main menu the standard
         // editing shortcuts don't exist, because that is where they live.
+        // Before the resolver reads anything: an upgrading user must never see a
+        // switcher that briefly forgot the icons they set in an older Zap.
+        ZapIcons.migrateIfNeeded(into: icons.store)
+
         MainMenu.install(into: NSApplication.shared)
         setUpStatusItem()
         switcher.start()
@@ -134,11 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// switch. Cheap to call even when un-jailing is off — the resolver returns
     /// early for `.system`.
     private func warmIconCache() {
-        iconResolver.warm(NSWorkspace.shared.runningApplications.compactMap { app in
-            app.bundleIdentifier.map {
-                IconIdentity(bundleIdentifier: $0, bundleURL: app.bundleURL)
-            }
-        })
+        icons.warmRunningApps()
     }
 
     private func promptForAccessibilityIfNeeded() {

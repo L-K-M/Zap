@@ -24,7 +24,7 @@ to, switch **directly to individual windows**, and **customize the appearance** 
 - Optional live preview of each window, laid out as a thumbnail grid (needs Screen Recording permission; off by default).
 - **Hold** <kbd>⌘</kbd>+<kbd>Q</kbd> to quit and <kbd>⌘</kbd>+<kbd>H</kbd> to hide the highlighted app without leaving the switcher — a quick tap types into the search instead, so apps like QuickTime stay reachable by name. With a window focused, <kbd>⌘</kbd>+<kbd>W</kbd> closes it.
 - Rich appearance: colors, gradients, opacity, icon size, corner radii, retro corner decorations (ZX Spectrum, Apple rainbow, the Amiga boing ball, …), an optional CRT scanline mode, and shareable theme presets — all with a live preview.
-- Custom, unjailed icons:
+- Custom, unjailed icons — macOS 26 puts every app icon in the same rounded-rectangle mask; Zap draws its own icon row, so it shows the app's real artwork instead. To *choose* an icon (a file of your own, a search, or a whole icon theme), install **[Pict](https://github.com/L-K-M/Pict)** — icons set there are shared with [Jetty](https://github.com/L-K-M/Jetty) and [Top Drawer](https://github.com/L-K-M/TopDrawer) too:
 
 ![Unjailed icons in the app switcher](screenshot-unjailed.png)
 

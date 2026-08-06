@@ -1,4 +1,5 @@
 import AppKit
+import PictKit
 
 /// A lightweight, value-type snapshot of a switchable application.
 ///
@@ -18,7 +19,7 @@ struct AppInfo: Identifiable, Equatable {
 
     /// Where the app bundle lives. Carried because a bundle identifier does not
     /// identify an app on its own — site-specific-browser wrappers all report the
-    /// browser's — and `IconIdentity` needs the path to tell them apart.
+    /// browser's — and the icon store needs the path to tell them apart.
     let bundleURL: URL?
 
     /// Unique per running process. Two instances of the same app share a bundle
@@ -26,15 +27,20 @@ struct AppInfo: Identifiable, Equatable {
     /// and to activate the correct process.
     var id: String { "\(bundleIdentifier):\(processIdentifier)" }
 
-    /// How the icon store knows this app.
-    var iconIdentity: IconIdentity {
-        IconIdentity(bundleIdentifier: bundleIdentifier, bundleURL: bundleURL)
+    /// How the shared icon store knows this app.
+    var iconTarget: IconTarget {
+        .application(bundleURL: bundleURL, bundleIdentifier: bundleIdentifier)
     }
 
+    /// The store's key for this app, serialised — what settings rows and status
+    /// lookups are keyed by. `nil` is unreachable for a real app (it would need
+    /// neither a path nor an identifier) but the type admits it, so callers check.
+    var storeKey: String? { IconEntryKey.storageKey(for: iconTarget)?.serialized }
+
     /// How the MRU order knows this app: the icon store's key — bundle path when
-    /// known, identifier otherwise. Both stores need wrapper apps that share a
-    /// bundle identifier told apart, so they share one notion of identity.
-    var mruKey: String { iconIdentity.storageKey }
+    /// known, identifier otherwise. Both need wrapper apps that share a bundle
+    /// identifier told apart, so they share one notion of identity.
+    var mruKey: String { storeKey ?? bundleIdentifier }
 
     /// Designated initializer (also used by tests).
     init(bundleIdentifier: String, name: String, processIdentifier: pid_t,

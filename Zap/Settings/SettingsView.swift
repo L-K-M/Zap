@@ -7,7 +7,7 @@ struct SettingsView: View {
     @ObservedObject var preferences: Preferences
     @ObservedObject var inputMode: InputModeReporter
     @ObservedObject var updateChecker: UpdateChecker
-    let iconResolver: IconResolver
+    let icons: ZapIcons
 
     /// Whether more than one display is connected. The Displays tab — mirroring and
     /// per-display scoping — only applies with multiple displays, so it's shown only
@@ -30,7 +30,7 @@ struct SettingsView: View {
             AppearanceView(preferences: preferences)
                 .tabItem { Label("Appearance", systemImage: "paintpalette") }
 
-            IconsView(preferences: preferences, iconResolver: iconResolver)
+            IconsView(preferences: preferences, icons: icons)
                 .tabItem { Label("Icons", systemImage: "app.badge") }
 
             PermissionsView(inputMode: inputMode)
