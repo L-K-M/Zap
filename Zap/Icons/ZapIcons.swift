@@ -34,6 +34,13 @@ final class ZapIcons {
     private var watcher: IconStoreWatcher?
 
     init(preferences: Preferences, store: IconStore = IconStore()) {
+        // `options(from:)` reads `NSScreen.screens`, which is main-thread-only, and
+        // this type carries no actor isolation to enforce that (see `resolver`). The
+        // contract is real but implicit — `AppDelegate` first touches its lazy
+        // `icons` during launch — so assert it rather than trusting it. Off-main,
+        // `NSScreen.screens` can answer empty and every icon caches at the wrong
+        // size, with nothing to show for it.
+        dispatchPrecondition(condition: .onQueue(.main))
         self.preferences = preferences
         self.store = store
         self.resolver = IconResolver(options: Self.options(from: preferences), store: store)

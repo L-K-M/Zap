@@ -31,6 +31,11 @@ struct IconsView: View {
 
     private var store: IconStore { icons.store }
 
+    /// Whether the store holds a custom icon the current source mode won't draw.
+    private var hasIgnoredCustomIcons: Bool {
+        statuses.values.contains { $0.hasCustomIcon }
+    }
+
     private var filteredApps: [AppInfo] {
         guard !search.isEmpty else { return apps }
         return apps.filter { $0.name.localizedCaseInsensitiveContains(search) }
@@ -95,6 +100,23 @@ struct IconsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            // A custom icon the current mode ignores is a trap: the user set it in
+            // Pict, it is in the store, and Zap silently doesn't draw it. The old
+            // editor flipped the mode itself on save; nothing can do that now that
+            // the save happens in another process, and a background watcher quietly
+            // rewriting a preference would be worse. So: say it, and offer the fix.
+            if !preferences.iconSourceMode.usesCustomIcons, hasIgnoredCustomIcons {
+                HStack(spacing: 8) {
+                    Label("Some apps have custom icons that this setting ignores.",
+                          systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                    Button("Show Them") {
+                        preferences.iconSourceMode = .originalPlusCustom
+                    }
+                    .controlSize(.small)
+                }
+            }
 
             if !IconSourceMode.isSquircleJailed {
                 Text("This version of macOS doesn't mask app icons, so there's nothing to un-jail — the original artwork and the system icon are the same picture.")
@@ -298,6 +320,18 @@ struct IconsView: View {
     /// Entries for files and links — which Jetty and Top Drawer can write and Zap
     /// cannot — get no row. Zap has nothing to say about them and nowhere to show
     /// them; Pict lists them.
+    /// The name Finder would show for an installed app.
+    ///
+    /// `FileManager.displayName(atPath:)` rather than the path's last component,
+    /// because it honours the bundle's localisation — "System Settings" for a bundle
+    /// on disk called `Preferences.app`. The path-keyed case below deliberately does
+    /// *not* use this: a wrapper's whole point is that its file name is its name,
+    /// and three wrappers must not collapse onto one browser's localised title.
+    private static func displayName(forAppAt url: URL) -> String {
+        let name = FileManager.default.displayName(atPath: url.path) as NSString
+        return name.pathExtension == "app" ? name.deletingPathExtension : name as String
+    }
+
     private static func offlineApp(forKey key: IconEntryKey) -> AppInfo? {
         switch key.kind {
         case .app:
@@ -311,8 +345,7 @@ struct IconsView: View {
         case .bundleID:
             let located = NSWorkspace.shared.urlForApplication(withBundleIdentifier: key.value)
             return AppInfo(bundleIdentifier: key.value,
-                           name: located.map { $0.deletingPathExtension().lastPathComponent }
-                               ?? key.value,
+                           name: located.map(displayName(forAppAt:)) ?? key.value,
                            processIdentifier: -1,
                            icon: located.map { NSWorkspace.shared.icon(forFile: $0.path) })
         case .file, .url:
