@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import ServiceManagement
+import PictKit
 
 /// User-facing settings, backed by `UserDefaults`.
 ///
@@ -271,7 +272,7 @@ final class Preferences: ObservableObject {
 
     /// Where the switcher's icons come from: the system's (squircle-masked on
     /// macOS 26+), the app's own artwork, or the user's own files. Applies to
-    /// Zap's panel only — see `IconSourceMode` and `UNJAILED.md`.
+    /// Zap's panel only — see `IconSourceMode` and `SHARED-ICONS.md`.
     @Published var iconSourceMode: IconSourceMode {
         didSet { defaults.set(iconSourceMode.rawValue, forKey: Key.iconSourceMode) }
     }

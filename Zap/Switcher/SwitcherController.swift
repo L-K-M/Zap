@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import Combine
+import PictKit
 
 /// Coordinates hotkey input, the app list, and the overlay window.
 ///

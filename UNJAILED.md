@@ -1,5 +1,16 @@
 # UNJAILED — custom, un-squircled icons for the Zap switcher
 
+> [!NOTE]
+> **Superseded in part.** Phases 1–4 shipped in Zap and have since moved to
+> [Pict](https://github.com/L-K-M/Pict), a shared icon store all three apps read.
+> Zap keeps the resolution ladder (§3) and the recovery of an app's own artwork
+> (§4); everything that *chooses* an icon — file picking, ingestion, SVG, themes,
+> search — now lives in Pict. `SHARED-ICONS.md` records why. One factual
+> correction to §11.1 is noted there: the system-wide route does **not** break code
+> signing, and the forum thread cited here does not say that it does.
+>
+> The analysis below is kept as written.
+
 *A design study, July 2026. **Phases 1, 2 and 4 (§10) are implemented.** Phase 3
 was deliberately skipped and phase 5 is not built. Sections describing shipped
 behaviour are marked; everything else is still design.*
