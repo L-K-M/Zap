@@ -419,6 +419,21 @@ Rung 3 *is* a visible change: pinned apps stop being squircle-plated. That is th
 point in Zap and a product decision in Jetty, which replaces the Dock and might
 reasonably be expected to match it (§9).
 
+**Which rungs are live is not a shared setting.** Zap has an icon-source preference —
+a switcher row the user can put back to plain system icons — and it selects how far
+down this ladder to go. Jetty and Top Drawer have no such preference, and must not
+inherit Zap's default: on anything before macOS 26 that default is "system icons",
+which switches the ladder off entirely, and even its jailed-system value stops at rung
+3 and never reads the store. An app with no preference to consult asks for the whole
+ladder unconditionally.
+
+This is worth stating because getting it wrong is silent. Nothing errors, nothing logs;
+the store is simply never read, and the feature looks implemented from every angle
+except the screen. It shipped that way for a day (`IconRenderOptions.plain` inherited
+the default), which is why the shortcut now names the mode outright and a test pins it.
+An icon the user picked by hand is not a display flourish, and no OS version makes it
+stop being their choice.
+
 ### 6.5 Noticing a change
 
 FSEvents on the entries directory, with `kFSEventStreamCreateFlagWatchRoot` (the
@@ -429,6 +444,31 @@ Not `DispatchSource.makeFileSystemObjectSource`: it watches a file descriptor, a
 every write here is a rename, so the descriptor stops being the file that matters.
 Watching the directory that way means re-arming by hand on every event and racing the
 next one.
+
+FSEvents delivers on its own queue, so the watcher hops to main before calling back.
+Every consumer of it touches UI, and making that the watcher's job rather than each
+app's means the guarantee is stated in one place instead of assumed in three.
+
+**Noticing is not enough on its own.** Learning the store changed is the easy half; the
+hard half is that resolution is asynchronous. Dropping the cache re-renders in the
+background, so an app that redraws *at* the moment it hears the news reads a miss and
+draws the system icon — and an app that caches what it drew (Jetty's dock does, with a
+five-minute TTL) then pins the squircle-masked fallback on screen for five minutes,
+starting from the instant the user picked a new icon. The obvious fix is exactly
+backwards.
+
+So the resolver has a second signal, fired on the main queue once a re-render has
+actually landed artwork, and consumers with a downstream cache redraw on *that*. Both
+signals are needed, not either alone:
+
+| | fires | why it can't be dropped |
+|---|---|---|
+| store changed | on the write | an icon the user *removed* resolves to the system icon and lands no artwork, so the second signal never comes |
+| artwork resolved | when the bitmap exists | the first signal alone redraws into an empty cache |
+
+The same pair carries a display change: a sharper screen re-renders everything, and the
+dock is told when it can read the new bitmaps rather than when the old ones were
+dropped.
 
 ### 6.6 Two verbs
 
