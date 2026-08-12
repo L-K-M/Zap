@@ -13,8 +13,8 @@ to, switch **directly to individual windows**, and **customize the appearance** 
 
 If you like this, also look at **[Jetty](https://github.com/L-K-M/Jetty)** (a Dock
 replacement) and **[Top Drawer](https://github.com/L-K-M/TopDrawer)** (an edge-tab
-launcher). Set an app's icon once in **[Pict](https://github.com/L-K-M/Pict)** and all
-three draw it.
+launcher). Set an app's icon once in **[Pict](https://github.com/L-K-M/Pict)** and Zap,
+Jetty, and Top Drawer all draw it.
 
 ## Features
 
