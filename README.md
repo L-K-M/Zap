@@ -11,6 +11,11 @@ to, switch **directly to individual windows**, and **customize the appearance** 
 > [!IMPORTANT]
 > LLM Disclosure: Much of this code base was written by or with the help of large language models. AI coding agents worked from the [`AGENTS.md`](AGENTS.md) brief in this repo.
 
+If you like this, also look at **[Jetty](https://github.com/L-K-M/Jetty)** (a Dock
+replacement) and **[Top Drawer](https://github.com/L-K-M/TopDrawer)** (an edge-tab
+launcher). Set an app's icon once in **[Pict](https://github.com/L-K-M/Pict)** and all
+three draw it.
+
 ## Features
 
 - Intercepts the real <kbd>⌘</kbd>+<kbd>Tab</kbd> (and <kbd>⌘</kbd>+<kbd>⇧</kbd>+<kbd>Tab</kbd> / <kbd>⌘</kbd>+<kbd>`</kbd> to reverse).
