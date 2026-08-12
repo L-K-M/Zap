@@ -1,5 +1,6 @@
 import CoreGraphics
 import XCTest
+import PictKit
 @testable import Zap
 
 /// `IconRowMetrics` with a bleed, and the row geometry derived from it
