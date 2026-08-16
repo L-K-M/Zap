@@ -26,9 +26,12 @@ header and includes no system-profile fields; like any network request, GitHub
 receives ordinary connection metadata such as the source IP address. If the
 user accepts an offered update, Zap downloads the release archive from GitHub
 to `~/Downloads` and reveals it — it never installs updates itself. App icons
-are read from a local store shared with Pict, Jetty, and Top Drawer; Zap
-fetches no icon artwork from the network.
+are read from — and icon choices made in Zap's Settings (pins, clears, and
+icons migrated from older Zap versions) are written to — a local store shared
+with Pict, Jetty, and Top Drawer; Zap fetches no icon artwork from the network.
 
-Removing Zap and its application preferences removes its saved settings.
+Removing Zap and its application preferences removes its saved settings;
+icon choices written to the shared store remain there for the other apps
+that use it.
 Questions or security reports can be submitted through the project's GitHub
 repository.
