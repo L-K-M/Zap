@@ -33,5 +33,5 @@ with Pict, Jetty, and Top Drawer; Zap fetches no icon artwork from the network.
 Removing Zap and its application preferences removes its saved settings;
 icon choices written to the shared store remain there for the other apps
 that use it.
-Questions or security reports can be submitted through the project's GitHub
-repository.
+Questions can be asked through the project's GitHub repository; please report
+security vulnerabilities privately, as described in [SECURITY.md](SECURITY.md).
