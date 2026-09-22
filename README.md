@@ -1,5 +1,8 @@
 # Zap.app
 
+> [!IMPORTANT]
+> LLM disclosure: This codebase was written with substantial help from large language models: AI coding agents working from the [`AGENTS.md`](AGENTS.md) brief in this repo.
+
 A fast, customizable macOS app switcher — a drop-in replacement for the native
 <kbd>⌘</kbd>+<kbd>Tab</kbd> switcher that lets you **exclude apps** you never switch
 to, switch **directly to individual windows**, and **customize the appearance** of the switcher.
