@@ -351,10 +351,9 @@ decisions in full. What follows is the shape and the reasoning, not a duplicate.
     Safari.app-1k2j4h.png
 ```
 
-The name is **Pict**. There was no prefix to inherit — the three bundle identifiers
-(`com.zapapp.Zap`, `com.jettyapp.Jetty`, `com.macdring.MacDring`) share no
-reverse-DNS root — so a neutral one had to be invented rather than putting a shared
-store inside one app's folder.
+The name is **Pict**. The three bundle identifiers (`ch.lkmc.Zap`, `ch.lkmc.Jetty`,
+`ch.lkmc.MacDring`) now share the `ch.lkmc` root; Pict stays deliberately neutral so
+no single app owns the shared store and future renames can't strand it on disk.
 
 The `README.txt` is not decoration. A shared directory outlives every app that writes
 it: delete all four and it stays. Someone will open it wondering what put PNGs in

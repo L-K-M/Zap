@@ -107,7 +107,7 @@ returns `false`, and Zap prompts again (falling back to ⌥-Tab in the meantime)
 **Reset the permission and grant from scratch:**
 
 ```bash
-tccutil reset Accessibility com.zapapp.Zap
+tccutil reset Accessibility ch.lkmc.Zap
 ```
 
 Then open **System Settings → Privacy & Security → Accessibility**, remove any
