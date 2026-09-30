@@ -22,7 +22,7 @@ final class IconSubstitutionTests: XCTestCase {
     }
 
     func testSourceModeSurvivesAPreferencesRoundTrip() {
-        let suite = "com.zapapp.tests.\(UUID().uuidString)"
+        let suite = "ch.lkmc.Zap.tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
 
@@ -32,7 +32,7 @@ final class IconSubstitutionTests: XCTestCase {
     }
 
     func testUnknownStoredSourceModeFallsBackToTheDefault() {
-        let suite = "com.zapapp.tests.\(UUID().uuidString)"
+        let suite = "ch.lkmc.Zap.tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
 

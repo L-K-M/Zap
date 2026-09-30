@@ -352,7 +352,7 @@ decisions in full. What follows is the shape and the reasoning, not a duplicate.
 ```
 
 The name is **Pict**. There was no prefix to inherit — the three bundle identifiers
-(`com.zapapp.Zap`, `com.jettyapp.Jetty`, `com.macdring.MacDring`) share no
+(`ch.lkmc.Zap`, `ch.lkmc.Jetty`, `ch.lkmc.MacDring`) share no
 reverse-DNS root — so a neutral one had to be invented rather than putting a shared
 store inside one app's folder.
 

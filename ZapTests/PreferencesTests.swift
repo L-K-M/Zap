@@ -9,7 +9,7 @@ final class PreferencesTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        suiteName = "com.zapapp.tests.\(UUID().uuidString)"
+        suiteName = "ch.lkmc.Zap.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
     }
 
