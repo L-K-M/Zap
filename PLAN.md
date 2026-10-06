@@ -216,8 +216,10 @@ A borderless, transparent, floating window mimicking the native look.
 
 - **Window:** `NSWindow` with `styleMask = .borderless`, `isOpaque = false`,
   `backgroundColor = .clear`, `level = .popUpMenu` (above normal windows),
-  `collectionBehavior` including `.canJoinAllSpaces` and `.stationary` so it shows on
-  any Space. Ignores mouse events except when hover-selection is enabled.
+  `collectionBehavior` including `.canJoinAllSpaces`, `.canJoinAllApplications`,
+  `.fullScreenAuxiliary` and `.stationary` so it can join other applications'
+  fullscreen Spaces as well as desktop Spaces. Ignores mouse events except when
+  hover-selection is enabled.
 - **Content (SwiftUI hosted in an `NSHostingView`):**
   - Rounded-rect panel with an `NSVisualEffectView` (blur) background, tinted by the
     user's chosen background color/opacity. Optionally a gradient: the tint runs from
@@ -241,6 +243,29 @@ A borderless, transparent, floating window mimicking the native look.
 - **Show/hide:** No fade by default for speed; optional short (~80ms) fade as a setting.
   Native switcher shows after a brief hold — we can replicate the small delay so a quick
   tap-and-release doesn't flash the UI (configurable).
+- **Ordering recovery:** after an actual reveal (including deferred initial
+  layout), verify primary and mirrored windows with WindowServer after 200 ms.
+  An explicitly offscreen window gets one ordering retry, then a second check
+  after 200 ms. Continued failure recreates native windows once for that
+  presentation, reattaching the existing SwiftUI hosts so local view state,
+  model, frame, anchor and pointer gate survive. A final check records failure
+  without a rebuild loop.
+  Dismissal and later presentations invalidate pending checks. Unknown server
+  results and ordinary occlusion do not initiate repair; no screenshot or
+  Screen Recording permission is needed.
+
+### Visibility verification
+
+An intermittent failure was observed on macOS 26.7 while switching fullscreen
+apps on multiple displays: ordering requests reached AppKit, alpha was 1 and
+bounds lay on a connected display, but WindowServer omitted the overlay from
+its visible-window list. The trigger remains nondeterministic. Injected-probe
+tests cover the repair, preserved session state, cancellation and retry bounds.
+For GUI verification, switch fullscreen apps and desktop Spaces across displays,
+summon and hold the switcher, and check both primary and mirrored windows.
+Also verify rapid tap-to-toggle, releasing Command during recovery, selection
+and search while held, and a window covered by another overlay. The switcher
+must become onscreen and dismissal must not resurrect it later.
 
 ---
 

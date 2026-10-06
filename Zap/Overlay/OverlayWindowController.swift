@@ -13,6 +13,8 @@ final class OverlayWindowController {
 
     let model = OverlayModel()
     private let preferences: Preferences
+    private let isWindowOnscreen: (NSWindow) -> Bool?
+    private let scheduleVisibilityCheck: (@escaping () -> Void) -> Void
     private var window: NSWindow
     private var hostingView: OverlayHostingView
     private var windowCreatedAt = Date()
@@ -21,6 +23,15 @@ final class OverlayWindowController {
     /// compositor uptime. Recycle while hidden so the next presentation starts
     /// from a fresh WindowServer/SwiftUI host.
     private let maximumWindowAge: TimeInterval = 30 * 60
+
+    private var visibilityCheckGeneration = 0
+    private var didRecreateForPresentation = false
+
+    private enum VisibilityRecoveryStage {
+        case retryOrdering
+        case recreateWindow
+        case verifyReplacement
+    }
 
     private(set) var isVisible = false
 
@@ -111,8 +122,14 @@ final class OverlayWindowController {
         set { model.onDropFiles = newValue }
     }
 
-    init(preferences: Preferences) {
+    init(preferences: Preferences,
+         isWindowOnscreen: @escaping (NSWindow) -> Bool? = WindowServerVisibility.isOnscreen,
+         scheduleVisibilityCheck: @escaping (@escaping () -> Void) -> Void = { work in
+             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+         }) {
         self.preferences = preferences
+        self.isWindowOnscreen = isWindowOnscreen
+        self.scheduleVisibilityCheck = scheduleVisibilityCheck
         let created = Self.makeWindow(model: model, preferences: preferences)
         window = created.window
         hostingView = created.hostingView
@@ -161,8 +178,10 @@ final class OverlayWindowController {
         clickOutsideMonitors.forEach { NSEvent.removeMonitor($0) }
     }
 
-    private static func makeWindow(model: OverlayModel, preferences: Preferences) -> (window: NSWindow, hostingView: OverlayHostingView) {
-        let hostingView = OverlayHostingView(rootView: OverlayView(model: model, preferences: preferences))
+    private static func makeWindow(model: OverlayModel, preferences: Preferences,
+                                   reusing hostingView: OverlayHostingView? = nil) -> (window: NSWindow, hostingView: OverlayHostingView) {
+        let hostingView = hostingView ?? OverlayHostingView(rootView: OverlayView(model: model, preferences: preferences))
+        hostingView.removeFromSuperview()
         hostingView.translatesAutoresizingMaskIntoConstraints = true
         hostingView.autoresizingMask = [.width, .height]
 
@@ -180,7 +199,8 @@ final class OverlayWindowController {
         window.ignoresMouseEvents = false
         window.isReleasedWhenClosed = false
         window.isRestorable = false
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        window.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications,
+                                     .stationary, .fullScreenAuxiliary]
 
         // Host the SwiftUI view inside a plain container rather than using it as
         // the window's `contentView` directly. As a `contentView`, an
@@ -199,6 +219,8 @@ final class OverlayWindowController {
     // MARK: Presentation
 
     func show(apps: [AppInfo], selectedIndex: Int, on screen: NSScreen) {
+        visibilityCheckGeneration &+= 1
+        didRecreateForPresentation = false
         refreshWindowIfNeeded()
         resetWindowPresentationState()
 
@@ -228,9 +250,7 @@ final class OverlayWindowController {
         scrollToCenter(on: selectedIndex, animated: false)
         isVisible = true
         if committed {
-            window.orderFrontRegardless()
-            forceDisplay()
-            syncMirrors()
+            revealOverlay()
         }
     }
 
@@ -371,6 +391,7 @@ final class OverlayWindowController {
 
     func hide() {
         guard isVisible else { return }
+        visibilityCheckGeneration &+= 1
         cancelLayoutRetry()
         teardownMirrors()
         window.orderOut(nil)
@@ -409,7 +430,8 @@ final class OverlayWindowController {
         window.alphaValue = 1
         window.level = .popUpMenu
         window.canHide = false
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        window.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications,
+                                     .stationary, .fullScreenAuxiliary]
         window.ignoresMouseEvents = false
         window.contentView?.isHidden = false
         hostingView.isHidden = false
@@ -421,6 +443,73 @@ final class OverlayWindowController {
         hostingView.needsDisplay = true
         window.contentView?.needsDisplay = true
         window.displayIfNeeded()
+    }
+
+    /// AppKit can accept ordering while WindowServer leaves the native window
+    /// offscreen after a fullscreen/Space transition. Redrawing a host does not
+    /// repair that state. Verify the server after ordering has had time to settle.
+    private func revealOverlay(stage: VisibilityRecoveryStage = .retryOrdering) {
+        window.orderFrontRegardless()
+        forceDisplay()
+        syncMirrors()
+        scheduleVisibilityVerification(stage: stage)
+    }
+
+    private func scheduleVisibilityVerification(stage: VisibilityRecoveryStage) {
+        visibilityCheckGeneration &+= 1
+        let generation = visibilityCheckGeneration
+        let expectedWindow = window
+        scheduleVisibilityCheck { [weak self, weak expectedWindow] in
+            guard let self, let expectedWindow, self.isVisible,
+                  self.visibilityCheckGeneration == generation,
+                  self.window === expectedWindow else { return }
+
+            // Occlusion is not failure: a covered window still belongs onscreen.
+            // A nil server query is unknown and must not initiate recovery.
+            let failed = ([self.window] + self.mirrorWindows).filter {
+                self.isWindowOnscreen($0) == false
+            }
+            guard !failed.isEmpty else { return }
+            for window in failed {
+                NSLog("Zap: overlay ordering failed (window: \(window.windowNumber), visible: \(window.isVisible), activeSpace: \(window.isOnActiveSpace), alpha: \(window.alphaValue), frame: \(window.frame))")
+            }
+
+            switch stage {
+            case .retryOrdering:
+                self.revealOverlay(stage: .recreateWindow)
+            case .recreateWindow:
+                guard !self.didRecreateForPresentation else { return }
+                self.didRecreateForPresentation = true
+                self.recreatePresentedWindow()
+            case .verifyReplacement:
+                // Keep the failure diagnostic, but never loop rebuilding windows.
+                break
+            }
+        }
+    }
+
+    private func recreatePresentedWindow() {
+        let frame = window.frame
+        mirrorWindows = mirrorWindows.map { mirror in
+            let host = mirror.contentView?.subviews.first as? OverlayHostingView
+            mirror.orderOut(nil)
+            mirror.close()
+            return Self.makeWindow(model: model, preferences: preferences, reusing: host).window
+        }
+        window.orderOut(nil)
+        window.close()
+        let created = Self.makeWindow(model: model, preferences: preferences, reusing: hostingView)
+        window = created.window
+        hostingView = created.hostingView
+        windowCreatedAt = Date()
+        resetWindowPresentationState()
+        // Keep geometry, model and SwiftUI hosts, including local ScrollView
+        // state. Calling show() would discard the current selection, previews,
+        // search, scrolling and hover gate.
+        window.setFrame(frame, display: true)
+        hostingView.frame = window.contentView?.bounds ?? NSRect(origin: .zero, size: frame.size)
+        hostingView.layoutSubtreeIfNeeded()
+        revealOverlay(stage: .verifyReplacement)
     }
 
     // MARK: Scrolling
@@ -574,7 +663,10 @@ final class OverlayWindowController {
     }
 
     private func teardownMirrors() {
-        mirrorWindows.forEach { $0.orderOut(nil) }
+        mirrorWindows.forEach {
+            $0.orderOut(nil)
+            $0.close()
+        }
         mirrorWindows.removeAll()
     }
 
@@ -670,10 +762,11 @@ final class OverlayWindowController {
             self.layoutRetryWorkItem = nil
             guard self.isVisible, self.layout(keepTop: keepTop) else { return }
             if !self.window.isVisible {
-                self.window.orderFrontRegardless()
+                self.revealOverlay()
+            } else {
+                self.forceDisplay()
+                self.syncMirrors()
             }
-            self.forceDisplay()
-            self.syncMirrors()
         }
         layoutRetryWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60.0, execute: work)
