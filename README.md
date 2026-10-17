@@ -9,6 +9,13 @@ to, switch **directly to individual windows**, and **customize the appearance** 
 
 **Latest release:** v<!-- version -->3.1.0<!-- /version --> · [Download](https://github.com/L-K-M/Zap/releases/latest)
 
+The build is ad-hoc signed and not notarized. After moving **Zap** to
+Applications, run:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Zap.app"
+```
+
 ![Screencast](zap-video.gif)
 
 > [!IMPORTANT]
