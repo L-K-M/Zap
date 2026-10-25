@@ -47,6 +47,11 @@ struct PermissionsView: View {
                 Divider()
 
                 secureInputSection
+
+                if isSecureInputEnabled {
+                    Divider()
+                }
+
                 screenRecordingSection
             }
             .padding()

@@ -164,12 +164,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The menu-bar icon carries the combined "can't intercept right now" state:
-    /// paused, or the system is withholding keyboard events.
+    /// paused, or the system is withholding keyboard events. Both can hold at
+    /// once, so the tooltip names every active cause rather than picking one.
     private func updateStatusItemState() {
         statusItem?.button?.appearsDisabled = isPaused || isSecureInputActive
-        statusItem?.button?.toolTip = isSecureInputActive
-            ? "Zap: an app has Secure Keyboard Entry on, so ⌘-Tab is handled by the system switcher until it's off."
-            : (isPaused ? "Zap is paused." : nil)
+
+        var notes: [String] = []
+        if isSecureInputActive {
+            notes.append("Zap: an app has Secure Keyboard Entry on, so ⌘-Tab is handled by the system switcher until it's off.")
+        }
+        if isPaused {
+            notes.append("Zap is paused.")
+        }
+        statusItem?.button?.toolTip = notes.isEmpty ? nil : notes.joined(separator: "\n")
     }
 
     // MARK: Helpers
