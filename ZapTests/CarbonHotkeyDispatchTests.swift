@@ -41,7 +41,7 @@ final class CarbonHotkeyDispatchTests: XCTestCase {
 
     /// A hotkey event addressed to `forward` must pass through `reverse` unhandled,
     /// then fire exactly `forward`'s callback.
-    func testForwardEventRefusedByReverseThenFiresForward() {
+    func testForwardEventRefusedByReverseThenFiresForward() throws {
         let forward = CarbonHotkey(identifier: 1)
         let reverse = CarbonHotkey(identifier: 2)
         var forwardCount = 0
@@ -50,7 +50,8 @@ final class CarbonHotkeyDispatchTests: XCTestCase {
         forward.onPressed = { forwardCount += 1; forwardFired.fulfill() }
         reverse.onPressed = { reverseCount += 1 }
 
-        let event = makeHotkeyEvent(id: 1)!
+        let event = try XCTUnwrap(makeHotkeyEvent(id: 1),
+                                  "failed to create synthetic Carbon event")
         defer { ReleaseEvent(event) }
 
         XCTAssertEqual(reverse.handleHotkeyEvent(event), OSStatus(eventNotHandledErr))
@@ -62,7 +63,7 @@ final class CarbonHotkeyDispatchTests: XCTestCase {
 
     /// Symmetrically, a hotkey event addressed to `reverse` must pass through
     /// `forward` unhandled, then fire exactly `reverse`'s callback.
-    func testReverseEventRefusedByForwardThenFiresReverse() {
+    func testReverseEventRefusedByForwardThenFiresReverse() throws {
         let forward = CarbonHotkey(identifier: 1)
         let reverse = CarbonHotkey(identifier: 2)
         var forwardCount = 0
@@ -71,7 +72,8 @@ final class CarbonHotkeyDispatchTests: XCTestCase {
         forward.onPressed = { forwardCount += 1 }
         reverse.onPressed = { reverseCount += 1; reverseFired.fulfill() }
 
-        let event = makeHotkeyEvent(id: 2)!
+        let event = try XCTUnwrap(makeHotkeyEvent(id: 2),
+                                  "failed to create synthetic Carbon event")
         defer { ReleaseEvent(event) }
 
         XCTAssertEqual(forward.handleHotkeyEvent(event), OSStatus(eventNotHandledErr))
@@ -81,20 +83,21 @@ final class CarbonHotkeyDispatchTests: XCTestCase {
         XCTAssertEqual(forwardCount, 0)
     }
 
-    func testUnrelatedSignatureIsNotHandled() {
+    func testUnrelatedSignatureIsNotHandled() throws {
         let hotkey = CarbonHotkey(identifier: 1)
         let silence = expectation(description: "no hotkey callback")
         silence.isInverted = true
         hotkey.onPressed = { silence.fulfill() }
 
-        let event = makeHotkeyEvent(signature: 0x5445_5354, id: 1)! // 'TEST'
+        let event = try XCTUnwrap(makeHotkeyEvent(signature: 0x5445_5354, id: 1), // 'TEST'
+                                  "failed to create synthetic Carbon event")
         defer { ReleaseEvent(event) }
 
         XCTAssertEqual(hotkey.handleHotkeyEvent(event), OSStatus(eventNotHandledErr))
         waitForExpectations(timeout: 0.3)
     }
 
-    func testUnknownIdentifierIsNotHandled() {
+    func testUnknownIdentifierIsNotHandled() throws {
         let forward = CarbonHotkey(identifier: 1)
         let reverse = CarbonHotkey(identifier: 2)
         let silence = expectation(description: "no hotkey callback")
@@ -102,7 +105,8 @@ final class CarbonHotkeyDispatchTests: XCTestCase {
         forward.onPressed = { silence.fulfill() }
         reverse.onPressed = { silence.fulfill() }
 
-        let event = makeHotkeyEvent(id: 99)!
+        let event = try XCTUnwrap(makeHotkeyEvent(id: 99),
+                                  "failed to create synthetic Carbon event")
         defer { ReleaseEvent(event) }
 
         XCTAssertEqual(forward.handleHotkeyEvent(event), OSStatus(eventNotHandledErr))
@@ -110,13 +114,14 @@ final class CarbonHotkeyDispatchTests: XCTestCase {
         waitForExpectations(timeout: 0.3)
     }
 
-    func testMissingHotkeyParameterIsNotHandled() {
+    func testMissingHotkeyParameterIsNotHandled() throws {
         let hotkey = CarbonHotkey(identifier: 1)
         let silence = expectation(description: "no hotkey callback")
         silence.isInverted = true
         hotkey.onPressed = { silence.fulfill() }
 
-        let event = makeHotkeyEvent(id: 1, includeParameter: false)!
+        let event = try XCTUnwrap(makeHotkeyEvent(id: 1, includeParameter: false),
+                                  "failed to create synthetic Carbon event")
         defer { ReleaseEvent(event) }
 
         XCTAssertEqual(hotkey.handleHotkeyEvent(event), OSStatus(eventNotHandledErr))
@@ -126,26 +131,27 @@ final class CarbonHotkeyDispatchTests: XCTestCase {
     /// A real Carbon event whose direct object carries the wrong parameter type
     /// must be refused by `GetEventParameter` — the status check runs before any
     /// ID comparison, so malformed input can never fire a callback.
-    func testWrongParameterTypeIsNotHandled() {
+    func testWrongParameterTypeIsNotHandled() throws {
         let hotkey = CarbonHotkey(identifier: 1)
         let silence = expectation(description: "no hotkey callback")
         silence.isInverted = true
         hotkey.onPressed = { silence.fulfill() }
 
-        var event: EventRef?
+        var created: EventRef?
         XCTAssertEqual(CreateEvent(nil,
                                    OSType(kEventClassKeyboard),
                                    UInt32(kEventHotKeyPressed),
                                    0,
                                    0,
-                                   &event), noErr)
+                                   &created), noErr)
+        let event = try XCTUnwrap(created, "failed to create synthetic Carbon event")
+        defer { ReleaseEvent(event) }
         var notAHotKeyID: UInt32 = 1
-        XCTAssertEqual(SetEventParameter(event!,
+        XCTAssertEqual(SetEventParameter(event,
                                          EventParamName(kEventParamDirectObject),
                                          EventParamType(typeSInt32),
                                          MemoryLayout<UInt32>.size,
                                          &notAHotKeyID), noErr)
-        defer { ReleaseEvent(event!) }
 
         XCTAssertEqual(hotkey.handleHotkeyEvent(event), OSStatus(eventNotHandledErr))
         waitForExpectations(timeout: 0.3)
@@ -159,5 +165,44 @@ final class CarbonHotkeyDispatchTests: XCTestCase {
 
         XCTAssertEqual(hotkey.handleHotkeyEvent(nil), OSStatus(eventNotHandledErr))
         waitForExpectations(timeout: 0.3)
+    }
+
+    /// Exercise Carbon's installed handler chain rather than only the helper.
+    func testRegisteredHandlersDoNotSwallowSiblingHotkeyEvents() throws {
+        let forward = CarbonHotkey(identifier: 101)
+        let reverse = CarbonHotkey(identifier: 102)
+        defer {
+            forward.unregister()
+            reverse.unregister()
+        }
+
+        let modifiers = UInt32(cmdKey | optionKey | controlKey)
+        guard forward.register(keyCode: UInt32(kVK_F19), modifiers: modifiers) else {
+            XCTFail("forward hotkey registration failed")
+            return
+        }
+        guard reverse.register(keyCode: UInt32(kVK_F20), modifiers: modifiers) else {
+            XCTFail("reverse hotkey registration failed")
+            return
+        }
+
+        var forwardCount = 0
+        var reverseCount = 0
+        let forwardFired = expectation(description: "forward hotkey callback")
+        let reverseFired = expectation(description: "reverse hotkey callback")
+        forward.onPressed = { forwardCount += 1; forwardFired.fulfill() }
+        reverse.onPressed = { reverseCount += 1; reverseFired.fulfill() }
+
+        let identifiers: [UInt32] = [101, 102]
+        for id in identifiers {
+            let event = try XCTUnwrap(makeHotkeyEvent(id: id),
+                                      "failed to create synthetic Carbon event")
+            defer { ReleaseEvent(event) }
+            XCTAssertEqual(SendEventToEventTarget(event, GetApplicationEventTarget()), noErr)
+        }
+
+        waitForExpectations(timeout: 2)
+        XCTAssertEqual(forwardCount, 1)
+        XCTAssertEqual(reverseCount, 1)
     }
 }
