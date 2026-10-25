@@ -32,4 +32,26 @@ final class ActionKeyMatchingTests: XCTestCase {
         // Function keys and the like produce no character at all.
         XCTAssertNil(EventTapMonitor.shortcutKey(for: nil))
     }
+
+    // MARK: Key-up consumption
+
+    func testKeyUpFollowsItsConsumedKeyDown() {
+        // A recorded dual-purpose key was swallowed on the way down whatever
+        // happened since; its release must be swallowed too.
+        XCTAssertTrue(EventTapMonitor.shouldConsumeKeyUp(recordedShortcutKey: true,
+                                                         isSwitching: true))
+        XCTAssertTrue(EventTapMonitor.shouldConsumeKeyUp(recordedShortcutKey: true,
+                                                         isSwitching: false))
+    }
+
+    func testKeyUpDuringALiveSessionIsSwallowed() {
+        // While a session is up every key-down is swallowed, releases included.
+        XCTAssertTrue(EventTapMonitor.shouldConsumeKeyUp(recordedShortcutKey: false,
+                                                         isSwitching: true))
+    }
+
+    func testUnrelatedKeyUpOutsideASessionPassesThrough() {
+        XCTAssertFalse(EventTapMonitor.shouldConsumeKeyUp(recordedShortcutKey: false,
+                                                          isSwitching: false))
+    }
 }
