@@ -983,25 +983,51 @@ final class SwitcherController {
         loadThumbnails()
     }
 
+    /// How many window captures may run at once: enough to overlap the
+    /// per-capture latency, few enough not to hammer the compositor.
+    private static let thumbnailCaptureConcurrency = 3
+
     /// Kicks off asynchronous preview capture for the visible windows when the
-    /// feature is enabled and Screen Recording is granted. Each capture is applied
-    /// on the main actor and discarded if the window list changed meanwhile.
+    /// feature is enabled and Screen Recording is granted. Captures run a few at
+    /// a time, the selected window's first so the tile under the highlight fills
+    /// in first; each is applied on the main actor and discarded if the window
+    /// list changed meanwhile.
     private func loadThumbnails() {
         guard preferences.showWindowPreviews, ScreenRecordingAuthorizer.isGranted else { return }
 
         windowsGeneration &+= 1
         let generation = windowsGeneration
         // Minimized/off-screen windows have no backing store to capture.
-        let ids = windows.compactMap { $0.isMinimized ? nil : $0.cgWindowID }
+        let selectedID = windowSelectedIndex
+            .flatMap { windows.indices.contains($0) ? windows[$0].cgWindowID : nil }
+        let ids = Self.captureOrder(windows.compactMap { $0.isMinimized ? nil : $0.cgWindowID },
+                                    selectedID: selectedID)
         guard !ids.isEmpty else { return }
 
         let maxDimension = WindowPreviewMetrics.maxDimension
         Task { [weak self, thumbnails = thumbnails] in
-            for id in ids {
-                guard let image = await thumbnails.thumbnail(for: id, maxDimension: maxDimension) else { continue }
-                await self?.applyWindowThumbnail(image, for: id, generation: generation)
+            var start = 0
+            while start < ids.count {
+                let end = min(start + Self.thumbnailCaptureConcurrency, ids.count)
+                await withTaskGroup(of: Void.self) { group in
+                    for id in ids[start..<end] {
+                        group.addTask {
+                            guard let image = await thumbnails.thumbnail(for: id, maxDimension: maxDimension) else { return }
+                            await self?.applyWindowThumbnail(image, for: id, generation: generation)
+                        }
+                    }
+                }
+                start = end
             }
         }
+    }
+
+    /// Pure capture order for a preview batch: the selected window first (the
+    /// tile the user is looking at fills in first), every other window in list
+    /// order. Extracted for unit testing.
+    static func captureOrder(_ ids: [CGWindowID], selectedID: CGWindowID?) -> [CGWindowID] {
+        guard let selectedID, ids.contains(selectedID) else { return ids }
+        return [selectedID] + ids.filter { $0 != selectedID }
     }
 
     @MainActor
