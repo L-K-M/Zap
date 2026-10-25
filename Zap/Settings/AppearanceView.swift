@@ -155,6 +155,8 @@ struct AppearanceView: View {
                 Text(format(value.wrappedValue, range: range)).foregroundStyle(.secondary)
             }
             Slider(value: value, in: range, step: step)
+                .accessibilityLabel(Text(title))
+                .accessibilityValue(Text(format(value.wrappedValue, range: range)))
         }
     }
 

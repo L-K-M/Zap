@@ -8,6 +8,24 @@ struct AngleDial: View {
     @Binding var angleDegrees: Double
     var diameter: CGFloat = 46
 
+    /// Whether the dial holds keyboard focus (drives the focus ring).
+    @FocusState private var isFocused: Bool
+
+    /// Angle step for keyboard arrows and VoiceOver increment/decrement.
+    private static let adjustmentStep: Double = 5
+
+    /// Returns `angle + delta` wrapped into `[0, 360)` — the shared adjustment
+    /// path for keyboard and accessibility input (exposed for unit testing).
+    /// Non-finite input — or a finite sum overflowing to infinity — falls back
+    /// to `0`.
+    static func adjustedAngle(_ angle: Double, by delta: Double) -> Double {
+        guard angle.isFinite, delta.isFinite else { return 0 }
+        let sum = angle + delta
+        guard sum.isFinite else { return 0 }
+        let wrapped = sum.truncatingRemainder(dividingBy: 360)
+        return wrapped < 0 ? wrapped + 360 : wrapped
+    }
+
     var body: some View {
         let radians = angleDegrees * .pi / 180
         let reach = diameter / 2 - 6
@@ -30,6 +48,15 @@ struct AngleDial: View {
                 .offset(x: knob.x, y: knob.y)
         }
         .frame(width: diameter, height: diameter)
+        .overlay(
+            // Focus ring drawn just outside the dial; hit testing stays on the
+            // dial's own contentShape so the ring can't swallow drags.
+            Circle()
+                .stroke(Color.accentColor, lineWidth: 2)
+                .padding(-3)
+                .opacity(isFocused ? 1 : 0)
+                .allowsHitTesting(false)
+        )
         .contentShape(Circle())
         .gesture(
             DragGesture(minimumDistance: 0)
@@ -42,7 +69,30 @@ struct AngleDial: View {
                     angleDegrees = degrees
                 }
         )
+        .focusable()
+        .focused($isFocused)
+        .onMoveCommand { direction in
+            switch direction {
+            case .up, .right:
+                angleDegrees = Self.adjustedAngle(angleDegrees, by: Self.adjustmentStep)
+            case .down, .left:
+                angleDegrees = Self.adjustedAngle(angleDegrees, by: -Self.adjustmentStep)
+            default:
+                break
+            }
+        }
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Gradient direction")
         .accessibilityValue("\(Int(angleDegrees.rounded())) degrees")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment:
+                angleDegrees = Self.adjustedAngle(angleDegrees, by: Self.adjustmentStep)
+            case .decrement:
+                angleDegrees = Self.adjustedAngle(angleDegrees, by: -Self.adjustmentStep)
+            default:
+                break
+            }
+        }
     }
 }
