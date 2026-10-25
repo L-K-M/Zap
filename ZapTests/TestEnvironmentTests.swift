@@ -6,6 +6,9 @@ import XCTest
 final class TestEnvironmentTests: XCTestCase {
 
     func testIsRunningTestsUnderXCTest() {
-        XCTAssertTrue(TestEnvironment.isRunningTests)
+        XCTAssertTrue(
+            TestEnvironment.isRunningTests,
+            "Global hooks (status item, event tap, update checks) would install during this test run"
+        )
     }
 }
