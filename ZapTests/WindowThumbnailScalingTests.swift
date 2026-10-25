@@ -38,13 +38,12 @@ final class WindowThumbnailScalingTests: XCTestCase {
         XCTAssertEqual(result?.height, 160)
     }
 
-    func testOddDimensionsStayBoundedAndAspectPreserving() {
+    func testOddDimensionsStayBoundedAndAspectPreserving() throws {
         let source = makeImage(width: 1023, height: 513)
-        let result = scaled(source)
-        XCTAssertNotNil(result)
-        XCTAssertLessThanOrEqual(max(result!.width, result!.height), 160)
+        let result = try XCTUnwrap(scaled(source))
+        XCTAssertLessThanOrEqual(max(result.width, result.height), 160)
         let sourceAspect = 1023.0 / 513.0
-        let resultAspect = Double(result!.width) / Double(result!.height)
+        let resultAspect = Double(result.width) / Double(result.height)
         XCTAssertEqual(resultAspect, sourceAspect, accuracy: 0.02)
     }
 
