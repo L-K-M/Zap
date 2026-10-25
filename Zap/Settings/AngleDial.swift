@@ -14,9 +14,9 @@ struct AngleDial: View {
     /// Angle step for keyboard arrows and VoiceOver increment/decrement.
     private static let adjustmentStep: Double = 5
 
-    /// Returns `angle + delta` wrapped into `[0, 360)` — the shared adjustment
+    /// Returns `angle + delta` wrapped into `[0, 360)`; the shared adjustment
     /// path for keyboard and accessibility input (exposed for unit testing).
-    /// Non-finite input — or a finite sum overflowing to infinity — falls back
+    /// Non-finite input, or a finite sum overflowing to infinity, falls back
     /// to `0`.
     static func adjustedAngle(_ angle: Double, by delta: Double) -> Double {
         guard angle.isFinite, delta.isFinite else { return 0 }
@@ -26,8 +26,15 @@ struct AngleDial: View {
         return wrapped < 0 ? wrapped + 360 : wrapped
     }
 
+    /// Whole degrees announced to VoiceOver, normalized into `0..<360` so an
+    /// arbitrary binding value cannot read out nonsense (exposed for unit
+    /// testing).
+    static func announcedDegrees(_ angle: Double) -> Int {
+        Int(adjustedAngle(angle, by: 0).rounded()) % 360
+    }
+
     var body: some View {
-        let radians = angleDegrees * .pi / 180
+        let radians = Self.adjustedAngle(angleDegrees, by: 0) * .pi / 180
         let reach = diameter / 2 - 6
         // Screen y grows downward, so (sin, cos) puts 0° at the bottom.
         let knob = CGPoint(x: sin(radians) * reach, y: cos(radians) * reach)
@@ -83,7 +90,7 @@ struct AngleDial: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Gradient direction")
-        .accessibilityValue("\(Int(angleDegrees.rounded())) degrees")
+        .accessibilityValue("\(Self.announcedDegrees(angleDegrees)) degrees")
         .accessibilityAdjustableAction { direction in
             switch direction {
             case .increment:

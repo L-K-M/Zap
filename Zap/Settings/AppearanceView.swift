@@ -150,9 +150,13 @@ struct AppearanceView: View {
     private func sliderRow(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double = 0.05) -> some View {
         VStack(alignment: .leading) {
             HStack {
+                // Title and readout are duplicates of the slider's own
+                // accessibility label/value; hide them so VoiceOver reads once.
                 Text(title)
+                    .accessibilityHidden(true)
                 Spacer()
                 Text(format(value.wrappedValue, range: range)).foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
             Slider(value: value, in: range, step: step)
                 .accessibilityLabel(Text(title))
