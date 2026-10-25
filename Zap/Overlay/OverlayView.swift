@@ -237,8 +237,6 @@ struct OverlayView: View {
                                  showsAppName: preferences.showAppName)
     }
 
-    private var vStackSpacing: CGFloat { PanelBudget.sectionSpacing }
-
     private func iconCell(_ app: AppInfo, isSelected: Bool, isQuitting: Bool, isDropTarget: Bool) -> some View {
         Image(nsImage: app.icon ?? NSImage())
             .resizable()
@@ -564,16 +562,14 @@ struct OverlayView: View {
         preferences.showWindowPreviews ? windowGridGeometry.width : windowListWidth
     }
 
-    /// Natural (unclipped) height of the window section, computed analytically from
-    /// fixed cell/row metrics so the controller's synchronous sizing pass and the
-    /// scroll decision agree without a measurement round-trip.
+    /// Natural (unclipped) height of the window section, computed analytically
+    /// from fixed cell/row metrics (shared `PanelBudget`) so the controller's
+    /// synchronous sizing pass and the scroll decision agree without a
+    /// measurement round-trip.
     private var windowSectionNaturalHeight: CGFloat {
-        if preferences.showWindowPreviews {
-            return windowGridGeometry.height
-        }
-        let n = CGFloat(model.windows.count)
-        guard n > 0 else { return 0 }
-        return n * WindowRowMetrics.height + (n - 1) * WindowRowMetrics.spacing
+        PanelBudget.windowSectionNaturalHeight(count: model.windows.count,
+                                               showsPreviews: preferences.showWindowPreviews,
+                                               availableWidth: model.maxContentWidth)
     }
 
     /// The vertical room the window section may occupy before it scrolls: the
@@ -606,7 +602,7 @@ struct OverlayView: View {
     /// two can't drift apart — the same analytic-sizing approach the window grid
     /// and list use, which is what lets the panel be sized in one synchronous
     /// pass with no SwiftUI measurement round-trip.
-    private var helpFooterReserve: CGFloat { vStackSpacing + HelpFooterMetrics.height }
+    private var helpFooterReserve: CGFloat { PanelBudget.helpFooterReserve }
 }
 
 /// Shared sizing for window previews: `maxDimension` bounds the captured image

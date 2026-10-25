@@ -62,6 +62,29 @@ final class PanelBudgetTests: XCTestCase {
                        20 * 2 + 96 + PanelBudget.nameLineHeight + PanelBudget.sectionSpacing)
     }
 
+    // MARK: Natural height
+
+    func testListNaturalHeightIsOneRowPerWindow() {
+        XCTAssertEqual(PanelBudget.windowSectionNaturalHeight(count: 3, showsPreviews: false,
+                                                              availableWidth: 600),
+                       3 * WindowRowMetrics.height + 2 * WindowRowMetrics.spacing)
+    }
+
+    func testEmptySectionHasNoNaturalHeight() {
+        XCTAssertEqual(PanelBudget.windowSectionNaturalHeight(count: 0, showsPreviews: false,
+                                                              availableWidth: 600), 0)
+    }
+
+    func testGridNaturalHeightUsesGridMetrics() {
+        let expected = WindowGridGeometry(count: 4, availableWidth: 1000,
+                                          cellWidth: WindowGridMetrics.cellWidth,
+                                          cellHeight: WindowGridMetrics.cellHeight,
+                                          spacing: WindowGridMetrics.spacing).height
+        XCTAssertEqual(PanelBudget.windowSectionNaturalHeight(count: 4, showsPreviews: true,
+                                                              availableWidth: 1000), expected)
+        XCTAssertGreaterThan(expected, 0)
+    }
+
     // MARK: Scroll gate
 
     func testSectionScrollsOnlyWhenItOutgrowsTheBudget() {

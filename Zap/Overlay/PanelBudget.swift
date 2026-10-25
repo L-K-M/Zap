@@ -45,6 +45,11 @@ enum PanelBudget {
     /// the badge plus its gap.
     static var searchBadgeReserve: CGFloat { sectionSpacing + searchBadgeHeight }
 
+    /// Room the help footer takes below the window section: the footer plus its
+    /// gap. The counterpart of `searchBadgeReserve`, so callers never recompose
+    /// it inline.
+    static var helpFooterReserve: CGFloat { sectionSpacing + HelpFooterMetrics.height }
+
     /// The window section's height budget: `maxPanelHeight` less the header,
     /// the divider gap, and whichever optional sections are showing, floored at
     /// `minimum` (one grid cell / list row) so the section is never unusable.
@@ -68,5 +73,23 @@ enum PanelBudget {
     /// row (see `OverlayWindowController.handleScroll`).
     static func scrolls(naturalHeight: CGFloat, budget: CGFloat) -> Bool {
         naturalHeight > budget
+    }
+
+    /// Natural (unclipped) height of the window section: the preview grid when
+    /// previews are on, otherwise one fixed-height row per window. The input
+    /// side of `scrolls`, shared so the view's layout and the controller's
+    /// gesture gating feed it the same number.
+    static func windowSectionNaturalHeight(count: Int, showsPreviews: Bool,
+                                           availableWidth: CGFloat) -> CGFloat {
+        if showsPreviews {
+            return WindowGridGeometry(count: count,
+                                      availableWidth: availableWidth,
+                                      cellWidth: WindowGridMetrics.cellWidth,
+                                      cellHeight: WindowGridMetrics.cellHeight,
+                                      spacing: WindowGridMetrics.spacing).height
+        }
+        let rows = CGFloat(count)
+        guard rows > 0 else { return 0 }
+        return rows * WindowRowMetrics.height + (rows - 1) * WindowRowMetrics.spacing
     }
 }

@@ -381,19 +381,12 @@ final class OverlayWindowController {
                             budget: windowSectionBudget)
     }
 
-    /// Analytic natural height of the window section (grid rows, or one row per
-    /// window in the list), mirroring `OverlayView.windowSectionNaturalHeight`.
+    /// Natural (unclipped) height of the window section, computed by the shared
+    /// `PanelBudget` so this gate and the view's layout cannot drift.
     private var windowSectionNaturalHeight: CGFloat {
-        if preferences.showWindowPreviews {
-            return WindowGridGeometry(count: model.windows.count,
-                                      availableWidth: model.maxContentWidth,
-                                      cellWidth: WindowGridMetrics.cellWidth,
-                                      cellHeight: WindowGridMetrics.cellHeight,
-                                      spacing: WindowGridMetrics.spacing).height
-        }
-        let count = CGFloat(model.windows.count)
-        guard count > 0 else { return 0 }
-        return count * WindowRowMetrics.height + (count - 1) * WindowRowMetrics.spacing
+        PanelBudget.windowSectionNaturalHeight(count: model.windows.count,
+                                               showsPreviews: preferences.showWindowPreviews,
+                                               availableWidth: model.maxContentWidth)
     }
 
     /// The window section's height budget, mirroring `OverlayView.windowListBudget`
@@ -409,7 +402,7 @@ final class OverlayWindowController {
             dividerReserve: PanelBudget.dividerReserve,
             searchBadgeReserve: PanelBudget.searchBadgeReserve,
             showsSearchBadge: !model.typeQuery.isEmpty,
-            helpFooterReserve: PanelBudget.sectionSpacing + HelpFooterMetrics.height,
+            helpFooterReserve: PanelBudget.helpFooterReserve,
             showsHelp: model.showsHelp,
             minimum: preferences.showWindowPreviews
                 ? WindowGridMetrics.cellHeight
