@@ -142,7 +142,10 @@ final class AppListProvider {
 
     /// Saves the (capped) MRU order so the next launch can seed from it.
     /// Unthrottled: only the launch seed and teardown flush come here directly.
+    /// An empty order is never written, so a half-built provider can't clobber a
+    /// previously stored order with nothing.
     private func persistMRU() {
+        guard !mru.order.isEmpty else { return }
         defaults.set(Array(mru.order.prefix(Self.mruPersistLimit)), forKey: Self.mruOrderKey)
     }
 
