@@ -481,7 +481,14 @@ final class Preferences: ObservableObject {
     /// (`switchCountDay`), so the zero-padded format is a compatibility
     /// contract, pinned by `PreferencesTests`.
     static func dayStamp(for date: Date) -> String {
-        let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        // Gregorian, local time: the stamp is persisted and compared as
+        // `yyyy-MM-dd`, so it must not follow a non-Gregorian device calendar
+        // (which is what `Calendar.current` alone would do). This is exactly the
+        // old formatter's `en_US_POSIX` + `.current` pairing, without the
+        // formatter.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04ld-%02ld-%02ld",
                       components.year ?? 0, components.month ?? 0, components.day ?? 0)
     }
