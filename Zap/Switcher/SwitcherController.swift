@@ -470,7 +470,9 @@ final class SwitcherController {
     // MARK: Type-to-search / number jump
 
     /// Handles a printable character typed mid-session. A leading digit with an
-    /// empty query is a number-key shortcut: jump straight to that app and commit.
+    /// empty query is a number-key shortcut (jump straight to that app and
+    /// commit) — unless a visible app name starts with that digit, in which case
+    /// the digit is ordinary search text (see `numberJumpIndex(for:)`).
     /// Otherwise the character extends the type-to-search query and the highlight
     /// jumps to the best match.
     private func handleTypedCharacter(_ character: Character) {
@@ -478,8 +480,9 @@ final class SwitcherController {
         // A new character resolves any armed Q/H press as a tap (key rollover).
         cancelPendingShortcut()
 
-        if typeBuffer.isEmpty, let digit = character.wholeNumberValue, (1...9).contains(digit) {
-            jumpAndCommit(toNumber: digit)
+        if let target = Self.numberJumpIndex(for: character, currentQuery: typeBuffer,
+                                             names: apps.map(\.name)) {
+            pick(target)
             return
         }
 
@@ -540,12 +543,28 @@ final class SwitcherController {
         overlay.setTypeQuery("")
     }
 
-    /// Number-key shortcut: switch straight to the `digit`-th app (1-based) and
-    /// commit, like clicking it. No-ops when there's no such app.
-    private func jumpAndCommit(toNumber digit: Int) {
+    /// Pure rule for the number-key shortcut: the (zero-based) index a leading
+    /// digit jumps to and commits — like clicking that app — or `nil` when the
+    /// digit is ordinary search text.
+    ///
+    /// Search wins over the jump. A digit is only a jump when no *visible* app
+    /// name starts with it: "1Password" (and "3CX", "4K Video Downloader", …)
+    /// must be reachable by typing its name, and a leading digit that committed a
+    /// switch to whatever app happened to sit at that index was a destructive
+    /// surprise, not a shortcut. The jump also no-ops (into search) when the
+    /// digit names no existing position, so a stray key can never select an
+    /// unintended app. Extracted for unit testing.
+    static func numberJumpIndex(for character: Character, currentQuery: String,
+                                names: [String]) -> Int? {
+        guard currentQuery.isEmpty,
+              let digit = character.wholeNumberValue, (1...9).contains(digit)
+        else { return nil }
+
+        let needle = String(digit)
+        guard !names.contains(where: { $0.lowercased().hasPrefix(needle) }) else { return nil }
+
         let index = digit - 1
-        guard apps.indices.contains(index) else { return }
-        pick(index)
+        return names.indices.contains(index) ? index : nil
     }
 
     /// Pure incremental-search rule: the index of the best app matching `query`,
