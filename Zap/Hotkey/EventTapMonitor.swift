@@ -247,11 +247,12 @@ final class EventTapMonitor {
             // tap-vs-hold resolution still needs a live session. The bookkeeping
             // is always cleared, even when the session ended first.
             let recorded = heldShortcutKeyCodes.removeValue(forKey: keyCode)
+            let switching = isSwitching()
             guard Self.shouldConsumeKeyUp(recordedShortcutKey: recorded != nil,
-                                          isSwitching: isSwitching()) else {
+                                          isSwitching: switching) else {
                 return Unmanaged.passUnretained(event)
             }
-            if let recorded, isSwitching() {
+            if let recorded, switching {
                 onShortcutKeyUp?(recorded)
             }
             return nil
