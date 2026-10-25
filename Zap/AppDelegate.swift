@@ -21,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Don't install global hooks while running under XCTest.
-        guard !Self.isRunningTests else { return }
+        guard !TestEnvironment.isRunningTests else { return }
 
         // Before the resolver reads anything: an upgrading user must never see a
         // switcher that briefly forgot the icons they set in an older Zap.
@@ -150,10 +150,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !switcher.isUsingEventTap {
             AccessibilityAuthorizer.prompt()
         }
-    }
-
-    static var isRunningTests: Bool {
-        NSClassFromString("XCTestCase") != nil ||
-        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
 }

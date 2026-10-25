@@ -89,7 +89,7 @@ final class UpdateChecker: ObservableObject {
     /// Begins automatic checking: an immediate (throttled) check plus a daily timer.
     /// Call once at launch. No-op under XCTest.
     func start() {
-        guard !Self.isRunningTests else { return }
+        guard !TestEnvironment.isRunningTests else { return }
         checkInBackground()
         let interval = configuration.minimumCheckInterval
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
@@ -237,11 +237,6 @@ final class UpdateChecker: ObservableObject {
     // MARK: Helpers
 
     private func key(_ suffix: String) -> String { "\(configuration.defaultsKeyPrefix).\(suffix)" }
-
-    private static var isRunningTests: Bool {
-        NSClassFromString("XCTestCase") != nil ||
-        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-    }
 }
 
 extension Bundle {
