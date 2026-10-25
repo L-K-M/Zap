@@ -24,6 +24,16 @@ struct SharedIconChange {
         }
     }
 
+    /// The confirmation dialog's body copy. Says "icon setting" rather than
+    /// "custom artwork" because the destination can also remove a system-icon
+    /// pin, which stores no artwork at all.
+    var confirmationMessage: String {
+        let effect = destination == .originalArtwork ? "removed" : "set to the system icon"
+        return "The icon setting for \(app.name) will be \(effect) in the local icon store "
+            + "shared by Zap, Pict, Jetty and Top Drawer, so it changes in all of them. "
+            + "This cannot be undone in Zap. The Dock and Finder are unaffected."
+    }
+
     /// Performs the store write this change represents.
     func apply(to store: IconStore) {
         switch destination {

@@ -98,7 +98,7 @@ struct IconsView: View {
             }
             Button("Cancel", role: .cancel) { pendingIconChange = nil }
         } message: { change in
-            Text(confirmationMessage(for: change))
+            Text(change.confirmationMessage)
         }
     }
 
@@ -265,16 +265,6 @@ struct IconsView: View {
     private func isPinned(_ app: AppInfo) -> Bool {
         guard let key = app.storeKey else { return false }
         return statuses[key]?.isPinnedToSystemIcon == true
-    }
-
-    /// What the per-app confirmation tells the user before a shared-store write:
-    /// which app's artwork goes or is replaced, who else sees it, and what is
-    /// unaffected.
-    private func confirmationMessage(for change: SharedIconChange) -> String {
-        let verb = change.destination == .originalArtwork ? "removed" : "replaced with the system icon"
-        return "The custom artwork for \(change.app.name) is \(verb) in the local icon store "
-            + "shared by Zap, Pict, Jetty and Top Drawer, so it changes in all of them. "
-            + "This cannot be undone in Zap. The Dock and Finder are unaffected."
     }
 
     private func resetAll() {

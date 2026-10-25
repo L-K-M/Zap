@@ -103,6 +103,32 @@ final class SharedIconChangeTests: XCTestCase {
         XCTAssertEqual(try imageData(for: second), secondImageBefore)
     }
 
+    /// The copy must say "icon setting", not "custom artwork": confirming on a
+    /// pinned app removes a pin that stores no artwork at all.
+    func testConfirmationCopyHandlesPinsAndUnsetIcons() {
+        let first = app("com.example.first")
+        let second = app("com.example.second")
+        XCTAssertTrue(store.pinToSystemIcon(for: first.iconTarget, writtenBy: "Zap"))
+
+        let originalMessage = SharedIconChange(app: first, destination: .originalArtwork).confirmationMessage
+        XCTAssertTrue(originalMessage.contains(first.name))
+        XCTAssertTrue(originalMessage.contains("icon setting"))
+        XCTAssertTrue(originalMessage.contains("will be removed"))
+        XCTAssertFalse(originalMessage.contains("custom artwork"))
+
+        let systemMessage = SharedIconChange(app: second, destination: .systemIcon).confirmationMessage
+        XCTAssertTrue(systemMessage.contains(second.name))
+        XCTAssertTrue(systemMessage.contains("will be set to the system icon"))
+
+        for message in [originalMessage, systemMessage] {
+            for name in ["Zap", "Pict", "Jetty", "Top Drawer"] {
+                XCTAssertTrue(message.contains(name))
+            }
+            XCTAssertTrue(message.contains("cannot be undone in Zap"))
+            XCTAssertTrue(message.contains("The Dock and Finder are unaffected"))
+        }
+    }
+
     func testActionTitlesDiscloseEverywhere() {
         let first = app("com.example.first")
         XCTAssertEqual(SharedIconChange(app: first, destination: .originalArtwork).actionTitle,
