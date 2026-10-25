@@ -75,6 +75,15 @@ final class PanelBudgetTests: XCTestCase {
                                                               availableWidth: 600), 0)
     }
 
+    func testEmptyGridSectionMatchesGridGeometry() {
+        XCTAssertEqual(PanelBudget.windowSectionNaturalHeight(count: 0, showsPreviews: true,
+                                                              availableWidth: 600),
+                       WindowGridGeometry(count: 0, availableWidth: 600,
+                                          cellWidth: WindowGridMetrics.cellWidth,
+                                          cellHeight: WindowGridMetrics.cellHeight,
+                                          spacing: WindowGridMetrics.spacing).height)
+    }
+
     func testGridNaturalHeightUsesGridMetrics() {
         let expected = WindowGridGeometry(count: 4, availableWidth: 1000,
                                           cellWidth: WindowGridMetrics.cellWidth,
