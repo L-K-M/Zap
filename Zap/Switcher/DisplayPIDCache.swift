@@ -43,7 +43,10 @@ struct DisplayPIDCache {
         }
 
         let pids = compute()
-        entries[displayID] = Entry(pids: pids, timestamp: now)
+        // With a zero TTL nothing can ever be served back, so don't store either.
+        if ttl > 0 {
+            entries[displayID] = Entry(pids: pids, timestamp: now)
+        }
         return pids
     }
 }

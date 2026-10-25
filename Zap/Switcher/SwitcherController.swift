@@ -1173,7 +1173,11 @@ final class SwitcherController {
     /// that ends up with no qualifying apps (e.g. a bare secondary display) falls back
     /// to the full list, so ⌘-Tab is never a dead key there.
     private func appList(for screen: NSScreen?) -> [AppInfo] {
+        dispatchPrecondition(condition: .onQueue(.main))   // `displayPIDCache` is not synchronized
         let mode = scopeMode(for: screen)
+        // A missing persistent id is not a new downgrade path: `scopeMode(for:)`
+        // already answers `.off` in that case, so the full list below was the
+        // behavior before the cache existed too (and ⌘-Tab is never a dead key).
         guard mode.isScoped, let screen,
               let displayID = ScreenIdentity.persistentID(for: screen) else {
             return provider.currentApps(mode: .off, pidsOnScreen: [])
