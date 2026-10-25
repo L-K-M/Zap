@@ -233,13 +233,11 @@ struct OverlayView: View {
     /// Height of the panel's always-visible header (outer padding + optional app
     /// name + icon row), the vertical span the gradient line is pinned to.
     private var headerHeight: CGFloat {
-        let iconCell = cellWidth   // square: the cell's extent is its width
-        let nameBlock: CGFloat = preferences.showAppName ? (nameLineHeight + vStackSpacing) : 0
-        return outerPadding * 2 + iconCell + nameBlock
+        PanelBudget.headerHeight(contentPadding: outerPadding, cellWidth: cellWidth,
+                                 showsAppName: preferences.showAppName)
     }
 
-    private var nameLineHeight: CGFloat { 20 }
-    private var vStackSpacing: CGFloat { 10 }
+    private var vStackSpacing: CGFloat { PanelBudget.sectionSpacing }
 
     private func iconCell(_ app: AppInfo, isSelected: Bool, isQuitting: Bool, isDropTarget: Bool) -> some View {
         Image(nsImage: app.icon ?? NSImage())
@@ -579,20 +577,28 @@ struct OverlayView: View {
     }
 
     /// The vertical room the window section may occupy before it scrolls: the
-    /// panel's screen-derived height budget minus everything above it (header, the
-    /// inter-section gaps, and the divider).
+    /// panel's screen-derived height budget minus everything above it (header,
+    /// the inter-section gaps, and the divider) and whichever optional sections
+    /// are below it (search badge, help footer). The shared `PanelBudget` formula
+    /// is what the controller's scroll gating derives from too.
     private var windowListBudget: CGFloat {
-        let reserved = headerHeight + dividerReserve + (model.showsHelp ? helpFooterReserve : 0)
-        let minimum = preferences.showWindowPreviews
-            ? WindowGridMetrics.cellHeight
-            : WindowRowMetrics.height
-        return max(minimum, model.maxPanelHeight - reserved)
+        PanelBudget.windowSectionBudget(
+            maxPanelHeight: model.maxPanelHeight,
+            headerHeight: headerHeight,
+            dividerReserve: dividerReserve,
+            searchBadgeReserve: PanelBudget.searchBadgeReserve,
+            showsSearchBadge: !model.typeQuery.isEmpty,
+            helpFooterReserve: helpFooterReserve,
+            showsHelp: model.showsHelp,
+            minimum: preferences.showWindowPreviews
+                ? WindowGridMetrics.cellHeight
+                : WindowRowMetrics.height)
     }
 
     /// Space between the icon row and the window section: the two `VStack` gaps
     /// (icon row↔divider, divider↔section) plus the divider line, rounded up a touch
     /// so the estimate never under-reserves and lets the panel overflow.
-    private var dividerReserve: CGFloat { vStackSpacing * 2 + 10 }
+    private var dividerReserve: CGFloat { PanelBudget.dividerReserve }
 
     /// Room the key-hints footer takes below the window section, so a long window
     /// list scrolls instead of pushing the footer off the bottom of the screen.
