@@ -989,9 +989,9 @@ final class SwitcherController {
 
     /// Kicks off asynchronous preview capture for the visible windows when the
     /// feature is enabled and Screen Recording is granted. Captures run a few at
-    /// a time, the selected window's first so the tile under the highlight fills
-    /// in first; each is applied on the main actor and discarded if the window
-    /// list changed meanwhile.
+    /// a time, the selected window's capture starting first (so the tile under
+    /// the highlight usually fills in first); each is applied on the main actor
+    /// and discarded if the window list changed meanwhile.
     private func loadThumbnails() {
         guard preferences.showWindowPreviews, ScreenRecordingAuthorizer.isGranted else { return }
 
@@ -1006,18 +1006,26 @@ final class SwitcherController {
 
         let maxDimension = WindowPreviewMetrics.maxDimension
         Task { [weak self, thumbnails = thumbnails] in
-            var start = 0
-            while start < ids.count {
-                let end = min(start + Self.thumbnailCaptureConcurrency, ids.count)
-                await withTaskGroup(of: Void.self) { group in
-                    for id in ids[start..<end] {
-                        group.addTask {
-                            guard let image = await thumbnails.thumbnail(for: id, maxDimension: maxDimension) else { return }
-                            await self?.applyWindowThumbnail(image, for: id, generation: generation)
-                        }
+            await withTaskGroup(of: Void.self) { group in
+                // Keep at most `thumbnailCaptureConcurrency` captures in flight:
+                // start a new one as each finishes, so one slow window can't
+                // stall the ones behind it (a fixed batch would wait for its
+                // slowest member before starting the next).
+                var next = ids.startIndex
+                func spawnNext() {
+                    guard next < ids.endIndex else { return }
+                    let id = ids[next]
+                    next += 1
+                    group.addTask {
+                        guard let image = await thumbnails.thumbnail(for: id, maxDimension: maxDimension) else { return }
+                        await self?.applyWindowThumbnail(image, for: id, generation: generation)
                     }
                 }
-                start = end
+                for _ in 0..<Self.thumbnailCaptureConcurrency { spawnNext() }
+                while !group.isEmpty {
+                    _ = await group.next()
+                    spawnNext()
+                }
             }
         }
     }
