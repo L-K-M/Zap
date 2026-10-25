@@ -561,7 +561,7 @@ final class SwitcherController {
         else { return nil }
 
         let needle = String(digit)
-        guard !names.contains(where: { $0.lowercased().hasPrefix(needle) }) else { return nil }
+        guard !names.contains(where: { $0.hasPrefix(needle) }) else { return nil }
 
         let index = digit - 1
         return names.indices.contains(index) ? index : nil

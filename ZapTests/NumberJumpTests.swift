@@ -29,10 +29,18 @@ final class NumberJumpTests: XCTestCase {
         XCTAssertNil(SwitcherController.numberJumpIndex(for: "1", currentQuery: "", names: names))
     }
 
-    func testDigitStillJumpsWhenADifferentDigitNamedAppIsAbsent() {
+    func testDigitJumpsWhenNoVisibleAppNameStartsWithIt() {
         // The name check is over the visible list only: with "1Password"
         // excluded (not visible), digit 1 jumps again.
         XCTAssertEqual(SwitcherController.numberJumpIndex(for: "1", currentQuery: "", names: ["Safari", "Mail"]), 0)
+    }
+
+    func testDigitMidNameDoesNotBlockTheJump() {
+        // Prefix, not containment: "Photos 3" and "Deckset" must not suppress
+        // the jumps for 3 and 1. Swapping hasPrefix for contains would pass
+        // every other test in this file and break this one.
+        XCTAssertEqual(SwitcherController.numberJumpIndex(for: "3", currentQuery: "", names: ["Safari", "Mail", "Photos 3"]), 2)
+        XCTAssertEqual(SwitcherController.numberJumpIndex(for: "1", currentQuery: "", names: ["Deckset", "Mail"]), 0)
     }
 
     // MARK: Not jumps
