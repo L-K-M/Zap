@@ -66,13 +66,46 @@ final class AppListProvider {
                            excluding: preferences.excludedBundleIDs)
     }
 
-    /// Resolves the live running application for an `AppInfo`.
+    /// Resolves the live running application for an `AppInfo`, or `nil` when no
+    /// running process still matches the snapshot's identity.
+    ///
+    /// Looks up only the snapshot's pid, then verifies the candidate against
+    /// `matchesSnapshot`. There is deliberately no bundle-identifier fallback:
+    /// resolving to a *different* process of the same app — or to an arbitrary
+    /// browser process sharing a site-specific-browser wrapper's bundle ID —
+    /// would activate, hide, or terminate the wrong app.
     func runningApplication(for info: AppInfo) -> NSRunningApplication? {
-        let byBundle = NSRunningApplication
-            .runningApplications(withBundleIdentifier: info.bundleIdentifier)
-        return byBundle.first { $0.processIdentifier == info.processIdentifier }
-            ?? byBundle.first
-            ?? NSRunningApplication(processIdentifier: info.processIdentifier)
+        guard let candidate = NSRunningApplication(processIdentifier: info.processIdentifier),
+              Self.matchesSnapshot(info,
+                                   processIdentifier: candidate.processIdentifier,
+                                   bundleIdentifier: candidate.bundleIdentifier,
+                                   bundleURL: candidate.bundleURL,
+                                   isTerminated: candidate.isTerminated) else {
+            return nil
+        }
+        return candidate
+    }
+
+    /// Whether a live process still matches an `AppInfo` snapshot — exposed for
+    /// unit testing. Requires a positive pid equal to the snapshot's, a
+    /// nonterminated process, and the exact bundle identifier. When the snapshot
+    /// carries a `bundleURL`, the live candidate must report the same
+    /// standardized file URL, telling wrapper apps that share a bundle
+    /// identifier apart by path. A snapshot without a `bundleURL` is satisfied
+    /// by pid + bundle identifier alone.
+    ///
+    /// This does not guard against pid reuse by a later process with the same
+    /// bundle identifier *and* path: `AppInfo` captures no launch date to tell
+    /// that case apart.
+    static func matchesSnapshot(_ info: AppInfo, processIdentifier: pid_t,
+                                bundleIdentifier: String?, bundleURL: URL?,
+                                isTerminated: Bool) -> Bool {
+        guard processIdentifier > 0,
+              processIdentifier == info.processIdentifier,
+              !isTerminated,
+              bundleIdentifier == info.bundleIdentifier else { return false }
+        guard let snapshotURL = info.bundleURL else { return true }
+        return bundleURL?.standardizedFileURL == snapshotURL.standardizedFileURL
     }
 
     /// The MRU key of the currently frontmost application, if any.
