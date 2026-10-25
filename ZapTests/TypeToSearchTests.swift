@@ -7,6 +7,37 @@ final class TypeToSearchTests: XCTestCase {
         XCTAssertNil(SwitcherController.bestMatchIndex(query: "", names: ["Safari", "Mail"]))
     }
 
+    // MARK: selectableMatch
+
+    private func app(_ id: String, pid: pid_t) -> AppInfo {
+        AppInfo(bundleIdentifier: id, name: id, processIdentifier: pid)
+    }
+
+    func testMatchSkipsAppsPendingQuit() {
+        // "quick" names QuickTime, but while it is dimmed and unselectable the
+        // query must report a miss rather than claim a match the highlight
+        // cannot take.
+        let apps = [app("QuickTime", pid: 1), app("Safari", pid: 2)]
+        XCTAssertNil(SwitcherController.selectableMatch(query: "quick", apps: apps,
+                                                        quittingPIDs: [1]))
+        XCTAssertEqual(SwitcherController.selectableMatch(query: "saf", apps: apps,
+                                                          quittingPIDs: [1]), 1)
+    }
+
+    func testMatchFallsThroughToTheNextSelectableCandidate() {
+        // "m" prefix-matches Mail (index 0, quitting); the best *selectable*
+        // match is Music, and the returned index is the one the highlight uses.
+        let apps = [app("Mail", pid: 1), app("Music", pid: 2)]
+        XCTAssertEqual(SwitcherController.selectableMatch(query: "m", apps: apps,
+                                                          quittingPIDs: [1]), 1)
+    }
+
+    func testMatchPreservesOriginalIndices() {
+        let apps = [app("a", pid: 1), app("Terminal", pid: 2), app("c", pid: 3)]
+        XCTAssertEqual(SwitcherController.selectableMatch(query: "term", apps: apps,
+                                                          quittingPIDs: [1]), 1)
+    }
+
     func testPrefixMatchIsPreferred() {
         let names = ["Finder", "Safari", "System Settings"]
         XCTAssertEqual(SwitcherController.bestMatchIndex(query: "saf", names: names), 1)

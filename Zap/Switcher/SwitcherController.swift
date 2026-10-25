@@ -503,8 +503,9 @@ final class SwitcherController {
     /// query badge. The badge is pushed *last* — after any `presentOverlay()`, whose
     /// `show()` resets the model — so a query typed during the show-delay survives.
     private func applyTypeQuery() {
-        let match = Self.bestMatchIndex(query: typeBuffer, names: apps.map(\.name))
-        if let index = match, !quittingPIDs.contains(apps[index].processIdentifier) {
+        let match = Self.selectableMatch(query: typeBuffer, apps: apps,
+                                         quittingPIDs: quittingPIDs)
+        if let index = match {
             selectedIndex = index
             windowSelectedIndex = nil
             if overlay.isVisible {
@@ -546,6 +547,20 @@ final class SwitcherController {
         let index = digit - 1
         guard apps.indices.contains(index) else { return }
         pick(index)
+    }
+
+    /// The app the query should jump to: the best match among apps that can
+    /// actually be chosen — a dimmed pending-quit app is skipped (the highlight
+    /// may not land on it) — or `nil` when nothing selectable matches, which is
+    /// what makes the query badge report the miss. Returned index refers to
+    /// `apps`. Pure, extracted for unit testing.
+    static func selectableMatch(query: String, apps: [AppInfo],
+                                quittingPIDs: Set<pid_t>) -> Int? {
+        let candidates = apps.enumerated()
+            .filter { !quittingPIDs.contains($0.element.processIdentifier) }
+        guard let match = bestMatchIndex(query: query, names: candidates.map(\.element.name))
+        else { return nil }
+        return candidates[match].offset
     }
 
     /// Pure incremental-search rule: the index of the best app matching `query`,
