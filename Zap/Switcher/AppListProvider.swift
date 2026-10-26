@@ -23,6 +23,15 @@ final class AppListProvider {
     /// How many MRU keys to persist — generous for any realistic app set
     /// while keeping the stored array bounded.
     private static let mruPersistLimit = 50
+    /// How often the persisted MRU order may be refreshed. Every system-wide
+    /// activation reorders the list; writing it out on each one turns one of the
+    /// most frequent events on the machine into a `UserDefaults` write. Losing
+    /// the last interval's activations to a crash costs at most a slightly stale
+    /// seed on the next launch, which live activations correct anyway.
+    private static let mruPersistInterval: TimeInterval = 2
+
+    /// When the MRU order was last written out. `nil` until the first write.
+    private var lastPersistAt: TimeInterval?
 
     init(preferences: Preferences, defaults: UserDefaults = .standard,
          iconResolver: IconResolver? = nil) {
@@ -37,6 +46,8 @@ final class AppListProvider {
     }
 
     deinit {
+        // Flush anything the throttle held back.
+        persistMRU()
         if let observer = activationObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
@@ -126,12 +137,34 @@ final class AppListProvider {
     private func seedMRU() {
         guard let key = frontmostAppKey() else { return }
         mru.recordActivation(key: key)
-        persistMRU()
+        persistMRUIfDue()
     }
 
     /// Saves the (capped) MRU order so the next launch can seed from it.
+    /// Unthrottled: only the launch seed and teardown flush come here directly.
+    /// An empty order is never written, so a half-built provider can't clobber a
+    /// previously stored order with nothing.
     private func persistMRU() {
+        guard !mru.order.isEmpty else { return }
         defaults.set(Array(mru.order.prefix(Self.mruPersistLimit)), forKey: Self.mruOrderKey)
+    }
+
+    /// Persists the MRU order at most once per `mruPersistInterval`.
+    private func persistMRUIfDue() {
+        let now = Date.timeIntervalSinceReferenceDate
+        guard Self.shouldPersist(now: now, lastPersistAt: lastPersistAt,
+                                 interval: Self.mruPersistInterval) else { return }
+        lastPersistAt = now
+        persistMRU()
+    }
+
+    /// Pure throttle rule: the first write always passes, then at most one per
+    /// `interval` (a zero interval disables the throttle). Extracted for unit
+    /// testing.
+    static func shouldPersist(now: TimeInterval, lastPersistAt: TimeInterval?,
+                              interval: TimeInterval) -> Bool {
+        guard let lastPersistAt else { return true }
+        return interval <= 0 || now - lastPersistAt >= interval
     }
 
     private func isOwnBundleID(_ bundleID: String) -> Bool {
@@ -152,7 +185,7 @@ final class AppListProvider {
                 !isOwnBundleID(bundleID)
             else { return }
             mru.recordActivation(key: Self.mruKey(bundleID: bundleID, bundleURL: app.bundleURL))
-            persistMRU()
+            persistMRUIfDue()
         }
     }
 }
