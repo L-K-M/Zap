@@ -338,8 +338,14 @@ final class SwitcherController {
         // most-recent apps, like the native switcher. Normally that's index 1,
         // but if the frontmost app was excluded (and thus filtered out), index 0
         // already *is* the previous visible app — selecting index 1 would skip it.
-        selectedIndex = defaultSelection(forward: forward, apps: apps,
-                                         frontmostAppKey: provider.frontmostAppKey())
+        let defaultIndex = defaultSelection(forward: forward, apps: apps,
+                                            frontmostAppKey: provider.frontmostAppKey())
+        // Pending-quit state outlives the session that requested it (the app is
+        // still dimmed and unselectable), so a fresh session must not open with
+        // the highlight on an app the commit would refuse anyway.
+        selectedIndex = Self.sessionOpeningSelection(defaultIndex: defaultIndex,
+                                                     apps: apps,
+                                                     quittingPIDs: quittingPIDs)
         isSessionActive = true
         startStrandedSessionWatchdog()
 
@@ -441,7 +447,9 @@ final class SwitcherController {
     /// The next index in `direction` that isn't a dimmed pending-quit app, so the
     /// highlight skips over apps on their way out. Wraps around; returns `nil`
     /// only when there's no selectable app (empty, or every app is quitting).
-    private func nextSelectableIndex(from index: Int, forward: Bool) -> Int? {
+    /// Pure, extracted for unit testing.
+    static func nextSelectableIndex(in apps: [AppInfo], skipping quittingPIDs: Set<pid_t>,
+                                    from index: Int, forward: Bool) -> Int? {
         guard !apps.isEmpty else { return nil }
         let count = apps.count
         let step = forward ? 1 : -1
@@ -452,6 +460,25 @@ final class SwitcherController {
             }
         }
         return nil
+    }
+
+    private func nextSelectableIndex(from index: Int, forward: Bool) -> Int? {
+        Self.nextSelectableIndex(in: apps, skipping: quittingPIDs, from: index, forward: forward)
+    }
+
+    /// The index a fresh session opens on: normally the pre-selected one, but
+    /// moved forward off an app that is still pending quit (which outlives the
+    /// session that requested it) to the next choosable app. Falls back to the
+    /// default when nothing is choosable; `commit` already refuses to activate a
+    /// quitting app, so the rule stays total. Pure, extracted for unit testing.
+    static func sessionOpeningSelection(defaultIndex: Int, apps: [AppInfo],
+                                        quittingPIDs: Set<pid_t>) -> Int {
+        guard apps.indices.contains(defaultIndex),
+              quittingPIDs.contains(apps[defaultIndex].processIdentifier),
+              let next = nextSelectableIndex(in: apps, skipping: quittingPIDs,
+                                             from: defaultIndex, forward: true)
+        else { return defaultIndex }
+        return next
     }
 
     private func presentOverlay() {
@@ -790,7 +817,11 @@ final class SwitcherController {
         cancelPendingShortcut()
         isSessionActive = false
         typeBuffer = ""
-        quittingPIDs.removeAll()
+        // `quittingPIDs` and `pendingQuits` are deliberately *not* cleared here:
+        // a quit request is about the app, not the session. Its icon stays
+        // dimmed and skipped by the selection into the next session until
+        // `verifyQuit` resolves it (then drops it or restores it). Clearing them
+        // used to redraw the app undimmed and selectable mid-quit.
         windows = []
         windowSelectedIndex = nil
         windowsGeneration &+= 1
