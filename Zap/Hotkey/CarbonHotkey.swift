@@ -24,6 +24,37 @@ final class CarbonHotkey {
 
     deinit { unregister() }
 
+    /// Handles a `kEventHotKeyPressed` event delivered to the installed handler.
+    ///
+    /// Several handlers can share `GetApplicationEventTarget()`, so this must not
+    /// consume foreign events: a nil event, a missing or malformed
+    /// `kEventParamDirectObject` hotkey ID, or a signature/ID that is not this
+    /// hotkey's returns `eventNotHandledErr` so the event can reach its owner.
+    /// Only a matching `'ZAPH'` event schedules `onPressed` on the main queue
+    /// and returns `noErr`.
+    func handleHotkeyEvent(_ event: EventRef?) -> OSStatus {
+        guard let event else { return OSStatus(eventNotHandledErr) }
+
+        var pressedID = EventHotKeyID()
+        let status = GetEventParameter(
+            event,
+            EventParamName(kEventParamDirectObject),
+            EventParamType(typeEventHotKeyID),
+            nil,
+            MemoryLayout<EventHotKeyID>.size,
+            nil,
+            &pressedID
+        )
+        guard status == noErr else { return OSStatus(eventNotHandledErr) }
+
+        guard pressedID.signature == Self.signature && pressedID.id == identifier else {
+            return OSStatus(eventNotHandledErr)
+        }
+
+        DispatchQueue.main.async { [self] in onPressed?() }
+        return noErr
+    }
+
     @discardableResult
     func register(keyCode: UInt32, modifiers: UInt32) -> Bool {
         unregister()
@@ -34,24 +65,9 @@ final class CarbonHotkey {
         )
 
         let handlerCallback: EventHandlerUPP = { _, event, userData in
-            guard let userData, let event else { return noErr }
+            guard let userData else { return OSStatus(eventNotHandledErr) }
             let me = Unmanaged<CarbonHotkey>.fromOpaque(userData).takeUnretainedValue()
-
-            var pressedID = EventHotKeyID()
-            GetEventParameter(
-                event,
-                EventParamName(kEventParamDirectObject),
-                EventParamType(typeEventHotKeyID),
-                nil,
-                MemoryLayout<EventHotKeyID>.size,
-                nil,
-                &pressedID
-            )
-
-            if pressedID.signature == CarbonHotkey.signature && pressedID.id == me.identifier {
-                DispatchQueue.main.async { me.onPressed?() }
-            }
-            return noErr
+            return me.handleHotkeyEvent(event)
         }
 
         let installStatus = InstallEventHandler(
