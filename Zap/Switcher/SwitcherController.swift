@@ -78,6 +78,10 @@ final class SwitcherController {
     private let thumbnails = WindowThumbnailProvider()
     private var windowsGeneration = 0
 
+    /// Short-lived cache of the scoped-display pid sets, so a ⌘-Tab burst doesn't
+    /// re-run the system-wide window queries on every press (see `DisplayPIDCache`).
+    private var displayPIDCache = DisplayPIDCache()
+
     private var showTimer: Timer?
     private var autoCommitTimer: Timer?
     private var dwellTimer: Timer?
@@ -1237,13 +1241,25 @@ final class SwitcherController {
     /// that ends up with no qualifying apps (e.g. a bare secondary display) falls back
     /// to the full list, so ⌘-Tab is never a dead key there.
     private func appList(for screen: NSScreen?) -> [AppInfo] {
+        dispatchPrecondition(condition: .onQueue(.main))   // `displayPIDCache` is not synchronized
         let mode = scopeMode(for: screen)
-        guard mode.isScoped, let screen else {
+        // A missing persistent id is not a new downgrade path: `scopeMode(for:)`
+        // already answers `.off` in that case, so the full list below was the
+        // behavior before the cache existed too (and ⌘-Tab is never a dead key).
+        guard mode.isScoped, let screen,
+              let displayID = ScreenIdentity.persistentID(for: screen) else {
             return provider.currentApps(mode: .off, pidsOnScreen: [])
         }
-        let pids = ScreenWindowScoper.pidsOwningWindows(
-            onDisplay: screen,
-            includingFullScreenFromOtherSpaces: preferences.scopeIncludesFullScreenAppsFromOtherSpaces)
+        // The scoped list's pid set is the expensive part of building the list
+        // (a system-wide Quartz window-list copy plus two SkyLight Space queries,
+        // synchronous on the main thread). A ⌘-Tab burst lands here every press,
+        // so the last answer is reused while it is younger than the cache TTL.
+        let pids = displayPIDCache.pids(for: displayID,
+                                        now: Date.timeIntervalSinceReferenceDate) {
+            ScreenWindowScoper.pidsOwningWindows(
+                onDisplay: screen,
+                includingFullScreenFromOtherSpaces: preferences.scopeIncludesFullScreenAppsFromOtherSpaces)
+        }
         let scoped = provider.currentApps(mode: mode, pidsOnScreen: pids)
         return scoped.isEmpty ? provider.currentApps(mode: .off, pidsOnScreen: []) : scoped
     }
