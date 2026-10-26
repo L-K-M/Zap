@@ -375,7 +375,7 @@ final class Preferences: ObservableObject {
         // possibly-stale stored value, so an external change in System Settings is
         // reflected in the UI. One status query serves both the toggle and the
         // pending-approval flag.
-        let loginItemStatus = loginItemStatus()
+        let loginItemStatus = Self.loginItemStatus(from: loginItemService)
         launchAtLoginRequiresApproval = (loginItemStatus == .requiresApproval)
         launchAtLogin = loginItemStatus.flatMap(Self.isRegisteredIntent)
             ?? (defaults.object(forKey: Key.launchAtLogin) as? Bool ?? false)
@@ -404,10 +404,11 @@ final class Preferences: ObservableObject {
         return remainder < 0 ? remainder + 360 : remainder
     }
 
-    /// The current login-item status, or `nil` if unavailable.
-    private func loginItemStatus() -> SMAppService.Status? {
+    /// The current login-item status, or `nil` if unavailable. Static and
+    /// service-parameterized so `init` can use it before `self` is fully formed.
+    private static func loginItemStatus(from service: LoginItemService) -> SMAppService.Status? {
         guard #available(macOS 13.0, *) else { return nil }
-        return loginItemService.status()
+        return service.status()
     }
 
     /// Maps a login-item status to the toggle's on/off state. `.requiresApproval`
@@ -557,7 +558,7 @@ final class Preferences: ObservableObject {
     /// so an external change in System Settings is reflected — including approval
     /// being granted, which only changes the flag, not the toggle.
     func refreshLaunchAtLoginStatus() {
-        guard let status = loginItemStatus() else { return }
+        guard let status = Self.loginItemStatus(from: loginItemService) else { return }
         launchAtLoginRequiresApproval = (status == .requiresApproval)
         guard let actual = Self.isRegisteredIntent(status), actual != launchAtLogin else { return }
         isSyncingLaunchAtLogin = true
