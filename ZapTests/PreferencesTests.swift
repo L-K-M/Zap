@@ -319,6 +319,14 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(prefs.switchCountTotal, 3)
     }
 
+    func testDayStampIsLocalYYYYMMDD() {
+        // The stamp buckets switches by local day and is persisted, so its shape
+        // is a compatibility contract: zero-padded, hyphenated, local time.
+        XCTAssertEqual(Preferences.dayStamp(for: makeDate(2026, 6, 10, 9)), "2026-06-10")
+        XCTAssertEqual(Preferences.dayStamp(for: makeDate(2026, 6, 10, 23)), "2026-06-10")
+        XCTAssertEqual(Preferences.dayStamp(for: makeDate(2026, 6, 11, 1)), "2026-06-11")
+    }
+
     func testIncrementedSwitchCountsPureRule() {
         // Same day: today and total both rise.
         let same = Preferences.incrementedSwitchCounts(storedDay: "2026-06-10", currentDay: "2026-06-10", today: 5, total: 100)

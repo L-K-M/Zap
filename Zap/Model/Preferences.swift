@@ -473,12 +473,24 @@ final class Preferences: ObservableObject {
     }
 
     /// Local `yyyy-MM-dd` stamp used to bucket switches by day.
+    ///
+    /// `Calendar` date components rather than a `DateFormatter`: `recordSwitch`
+    /// runs on every commit, on the main thread, right as the target app is
+    /// activated, and building a formatter there is one of Foundation's
+    /// genuinely expensive allocations. The stamp's shape is persisted
+    /// (`switchCountDay`), so the zero-padded format is a compatibility
+    /// contract, pinned by `PreferencesTests`.
     static func dayStamp(for date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+        // Gregorian, local time: the stamp is persisted and compared as
+        // `yyyy-MM-dd`, so it must not follow a non-Gregorian device calendar
+        // (which is what `Calendar.current` alone would do). This is exactly the
+        // old formatter's `en_US_POSIX` + `.current` pairing, without the
+        // formatter.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04ld-%02ld-%02ld",
+                      components.year ?? 0, components.month ?? 0, components.day ?? 0)
     }
 
     // MARK: Launch at login
