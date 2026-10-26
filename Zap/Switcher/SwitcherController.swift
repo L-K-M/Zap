@@ -472,17 +472,18 @@ final class SwitcherController {
     }
 
     /// The index a fresh session opens on: normally the pre-selected one, but
-    /// moved forward off an app that is still pending quit (which outlives the
-    /// session that requested it) to the next choosable app. Falls back to the
-    /// default when nothing is choosable; `commit` already refuses to activate a
-    /// quitting app, so the rule stays total. Pure, extracted for unit testing.
+    /// moved in the session's open direction off an app that is still pending quit
+    /// (which outlives the session that requested it) to the next choosable app.
+    /// Falls back to the default when nothing is choosable; `commit` already
+    /// refuses to activate a quitting app, so the rule stays total. Pure,
+    /// extracted for unit testing.
     static func sessionOpeningSelection(defaultIndex: Int, apps: [AppInfo],
                                         quittingPIDs: Set<pid_t>,
                                         forward: Bool) -> Int {
         guard apps.indices.contains(defaultIndex),
               quittingPIDs.contains(apps[defaultIndex].processIdentifier),
               let next = nextSelectableIndex(in: apps, skipping: quittingPIDs,
-                                             from: defaultIndex, forward: true)
+                                             from: defaultIndex, forward: forward)
         else { return defaultIndex }
         return next
     }
