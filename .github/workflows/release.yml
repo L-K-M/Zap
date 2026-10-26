@@ -61,6 +61,14 @@ jobs:
           codesign --force --deep --sign - "$APP"
           echo "APP_PATH=$APP" >> "$GITHUB_ENV"
 
+      # The shipped app states Zap's own license (Unlicense) in Finder's Get
+      # Info. It bundles only first-party PictKit (also Unlicense), so there
+      # are no third-party notice files to check.
+      - name: Verify license statement
+        run: |
+          copyright=$(plutil -extract NSHumanReadableCopyright raw -o - "$APP_PATH/Contents/Info.plist" || true)
+          [ "$copyright" = "Public domain (Unlicense)" ] || { echo "::error::NSHumanReadableCopyright is '$copyright', expected 'Public domain (Unlicense)'"; exit 1; }
+
       - name: Package zip + DMG
         run: |
           ZIP="$RUNNER_TEMP/$APP_NAME-$VERSION-macos-universal.zip"

@@ -147,3 +147,10 @@ classification", never to a crash):
 This is fine for Developer ID + notarization (notarization checks signing and
 malware, not API surface) but **would block App Store submission** — one reason
 Zap is distributed outside the App Store.
+
+## License
+
+Zap's own code is released under the [Unlicense](LICENSE). The app also
+compiles in PictKit from [Pict](https://github.com/L-K-M/Pict), a first-party
+package released under the Unlicense too. It bundles no third-party code or
+assets: it links only Apple system frameworks.

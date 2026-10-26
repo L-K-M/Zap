@@ -46,9 +46,21 @@ jobs:
             -project "$PROJECT" \
             -scheme "$SCHEME" \
             -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -resultBundlePath TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             clean test | xcbeautify
+
+      # Zap's own code is Unlicense (LICENSE). The built app states that in
+      # Finder's Get Info and the README in its License section. The app
+      # bundles no third-party code, so there are no notice files to check.
+      - name: Check license statements
+        run: |
+          app="$RUNNER_TEMP/DerivedData/Build/Products/Debug/Zap.app"
+          [ -d "$app" ] || { echo "::error::built Zap.app not found at $app"; exit 1; }
+          copyright=$(plutil -extract NSHumanReadableCopyright raw -o - "$app/Contents/Info.plist" || true)
+          [ "$copyright" = "Public domain (Unlicense)" ] || { echo "::error::NSHumanReadableCopyright is '$copyright', expected 'Public domain (Unlicense)'"; exit 1; }
+          grep -q '^## License$' README.md || { echo "::error::README.md has no '## License' section"; exit 1; }
 
       - name: Upload test results on failure
         if: failure()
