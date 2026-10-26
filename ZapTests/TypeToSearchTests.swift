@@ -40,6 +40,19 @@ final class TypeToSearchTests: XCTestCase {
                                                           quittingPIDs: [1, 2]), 2)
     }
 
+    func testMatchReturnsNilWhenEveryCandidateIsQuitting() {
+        // Nothing is choosable, so there is nothing to point at — a stale or
+        // out-of-range index here would highlight the wrong row.
+        let apps = [app("Mail", pid: 1), app("Music", pid: 2)]
+        XCTAssertNil(SwitcherController.selectableMatch(query: "m", apps: apps,
+                                                        quittingPIDs: [1, 2]))
+    }
+
+    func testMatchReturnsNilForEmptyApps() {
+        XCTAssertNil(SwitcherController.selectableMatch(query: "saf", apps: [],
+                                                        quittingPIDs: []))
+    }
+
     func testMatchFallsThroughToTheNextSelectableCandidate() {
         // "m" prefix-matches Mail (index 0, quitting); the best *selectable*
         // match is Music, and the returned index is the one the highlight uses.
