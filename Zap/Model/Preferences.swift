@@ -571,7 +571,6 @@ final class Preferences: ObservableObject {
     /// link, offered while approval is pending so the user can finish enabling
     /// launch at login in one step.
     func openLoginItemSettings() {
-        guard #available(macOS 13.0, *) else { return }
         loginItemService.openSettings()
     }
 }
