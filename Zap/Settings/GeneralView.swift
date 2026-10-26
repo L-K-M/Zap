@@ -10,6 +10,14 @@ struct GeneralView: View {
         Form {
             Section {
                 Toggle("Launch Zap at login", isOn: $preferences.launchAtLogin)
+                if preferences.launchAtLoginRequiresApproval {
+                    Button("Open Login Items Settings…") {
+                        preferences.openLoginItemSettings()
+                    }
+                    Text("Allow Zap in System Settings > General > Login Items to finish enabling launch at login.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 if let error = preferences.launchAtLoginError {
                     Text("Couldn't update login item: \(error)")
                         .font(.caption)

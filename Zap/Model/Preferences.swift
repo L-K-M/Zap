@@ -12,6 +12,7 @@ final class Preferences: ObservableObject {
     static let shared = Preferences()
 
     private let defaults: UserDefaults
+    private let loginItemService: LoginItemService
 
     // MARK: Defaults
 
@@ -314,8 +315,10 @@ final class Preferences: ObservableObject {
 
     // MARK: Init
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard,
+         loginItemService: LoginItemService = .system) {
         self.defaults = defaults
+        self.loginItemService = loginItemService
 
         let excludedArray = defaults.stringArray(forKey: Key.excluded) ?? []
         excludedBundleIDs = Set(excludedArray)
@@ -370,8 +373,11 @@ final class Preferences: ObservableObject {
 
         // Seed launch-at-login from the authoritative system state rather than a
         // possibly-stale stored value, so an external change in System Settings is
-        // reflected in the UI.
-        launchAtLogin = Self.systemLaunchAtLoginEnabled()
+        // reflected in the UI. One status query serves both the toggle and the
+        // pending-approval flag.
+        let loginItemStatus = Self.loginItemStatus(from: loginItemService)
+        launchAtLoginRequiresApproval = (loginItemStatus == .requiresApproval)
+        launchAtLogin = loginItemStatus.flatMap(Self.isRegisteredIntent)
             ?? (defaults.object(forKey: Key.launchAtLogin) as? Bool ?? false)
     }
 
@@ -398,11 +404,20 @@ final class Preferences: ObservableObject {
         return remainder < 0 ? remainder + 360 : remainder
     }
 
-    /// The current login-item state from `SMAppService`, or `nil` if unavailable.
-    private static func systemLaunchAtLoginEnabled() -> Bool? {
+    /// The current login-item status, or `nil` if unavailable. Static and
+    /// service-parameterized so `init` can use it before `self` is fully formed.
+    private static func loginItemStatus(from service: LoginItemService) -> SMAppService.Status? {
         guard #available(macOS 13.0, *) else { return nil }
-        switch SMAppService.mainApp.status {
-        case .enabled: return true
+        return service.status()
+    }
+
+    /// Maps a login-item status to the toggle's on/off state. `.requiresApproval`
+    /// counts as registered intent — the item *is* on, pending the user's approval
+    /// in System Settings — so both it and `.enabled` map to `true`. `nil` means
+    /// the status couldn't be read, so callers fall back to the stored value.
+    private static func isRegisteredIntent(_ status: SMAppService.Status) -> Bool? {
+        switch status {
+        case .enabled, .requiresApproval: return true
         case .notRegistered, .notFound: return false
         default: return nil
         }
@@ -502,38 +517,60 @@ final class Preferences: ObservableObject {
     /// The most recent launch-at-login error, surfaced to Settings.
     @Published private(set) var launchAtLoginError: String?
 
+    /// Whether the login item is registered but still awaits the user's approval
+    /// in System Settings. The toggle counts that state as on; this flag lets
+    /// Settings explain why Zap may not launch at login yet.
+    @Published private(set) var launchAtLoginRequiresApproval = false
+
     private func applyLaunchAtLogin(_ enabled: Bool) {
         guard #available(macOS 13.0, *) else { return }
         do {
             if enabled {
-                if SMAppService.mainApp.status != .enabled {
-                    try SMAppService.mainApp.register()
+                let status = loginItemService.status()
+                if status != .enabled && status != .requiresApproval {
+                    try loginItemService.register()
                 }
             } else {
-                if SMAppService.mainApp.status == .enabled {
-                    try SMAppService.mainApp.unregister()
+                // Unregister for either registered-intent state so a pending
+                // approval can be cancelled, not just an enabled item.
+                let status = loginItemService.status()
+                if status == .enabled || status == .requiresApproval {
+                    try loginItemService.unregister()
                 }
             }
             launchAtLoginError = nil
+            launchAtLoginRequiresApproval = (loginItemService.status() == .requiresApproval)
             defaults.set(enabled, forKey: Key.launchAtLogin)
         } catch {
             NSLog("Zap: failed to update launch-at-login: %@", error.localizedDescription)
             launchAtLoginError = error.localizedDescription
             // Roll the toggle back to the real system state so the UI doesn't lie.
+            let status = loginItemService.status()
+            launchAtLoginRequiresApproval = (status == .requiresApproval)
             isSyncingLaunchAtLogin = true
-            launchAtLogin = Self.systemLaunchAtLoginEnabled() ?? !enabled
+            launchAtLogin = Self.isRegisteredIntent(status) ?? !enabled
             isSyncingLaunchAtLogin = false
             defaults.set(launchAtLogin, forKey: Key.launchAtLogin)
         }
     }
 
     /// Re-reads the authoritative login-item state (e.g. when Settings appears)
-    /// so an external change in System Settings is reflected.
+    /// so an external change in System Settings is reflected — including approval
+    /// being granted, which only changes the flag, not the toggle.
     func refreshLaunchAtLoginStatus() {
-        guard let actual = Self.systemLaunchAtLoginEnabled(), actual != launchAtLogin else { return }
+        guard let status = Self.loginItemStatus(from: loginItemService) else { return }
+        launchAtLoginRequiresApproval = (status == .requiresApproval)
+        guard let actual = Self.isRegisteredIntent(status), actual != launchAtLogin else { return }
         isSyncingLaunchAtLogin = true
         launchAtLogin = actual
         isSyncingLaunchAtLogin = false
         defaults.set(actual, forKey: Key.launchAtLogin)
+    }
+
+    /// Opens System Settings at the Login Items pane — the platform's own deep
+    /// link, offered while approval is pending so the user can finish enabling
+    /// launch at login in one step.
+    func openLoginItemSettings() {
+        loginItemService.openSettings()
     }
 }
