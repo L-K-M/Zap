@@ -24,6 +24,35 @@ final class TypeToSearchTests: XCTestCase {
                                                           quittingPIDs: [1]), 1)
     }
 
+    func testEmptyQueryMatchesNothingSelectable() {
+        // No query, no jump: the badge must report the miss rather than the
+        // highlight snapping somewhere arbitrary.
+        let apps = [app("Safari", pid: 1)]
+        XCTAssertNil(SwitcherController.selectableMatch(query: "", apps: apps,
+                                                        quittingPIDs: []))
+    }
+
+    func testMatchSkipsMultiplePendingQuitApps() {
+        // The offset remap must survive skipping more than one dimmed app: the
+        // returned index refers to `apps`, not to the filtered candidate list.
+        let apps = [app("Mail", pid: 1), app("Maps", pid: 2), app("Music", pid: 3)]
+        XCTAssertEqual(SwitcherController.selectableMatch(query: "mu", apps: apps,
+                                                          quittingPIDs: [1, 2]), 2)
+    }
+
+    func testMatchReturnsNilWhenEveryCandidateIsQuitting() {
+        // Nothing is choosable, so there is nothing to point at — a stale or
+        // out-of-range index here would highlight the wrong row.
+        let apps = [app("Mail", pid: 1), app("Music", pid: 2)]
+        XCTAssertNil(SwitcherController.selectableMatch(query: "m", apps: apps,
+                                                        quittingPIDs: [1, 2]))
+    }
+
+    func testMatchReturnsNilForEmptyApps() {
+        XCTAssertNil(SwitcherController.selectableMatch(query: "saf", apps: [],
+                                                        quittingPIDs: []))
+    }
+
     func testMatchFallsThroughToTheNextSelectableCandidate() {
         // "m" prefix-matches Mail (index 0, quitting); the best *selectable*
         // match is Music, and the returned index is the one the highlight uses.
