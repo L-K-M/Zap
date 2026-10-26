@@ -240,18 +240,36 @@ final class EventTapMonitor {
 
         case .keyUp:
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-            // Releasing a dual-purpose key resolves its tap-vs-hold; consume the
-            // key-up for symmetry with its consumed key-down. Always clear the
-            // held-key bookkeeping, even when the session ended under the finger.
-            guard let key = heldShortcutKeyCodes.removeValue(forKey: keyCode), isSwitching() else {
+            // A release must never reach an app that never saw its press. While
+            // a session is up every key-down is swallowed, and a dual-purpose
+            // key's press is swallowed even when the session then ends under the
+            // finger — so the key-up follows the pairing rule below, and only the
+            // tap-vs-hold resolution still needs a live session. The bookkeeping
+            // is always cleared, even when the session ended first.
+            let recorded = heldShortcutKeyCodes.removeValue(forKey: keyCode)
+            let switching = isSwitching()
+            guard Self.shouldConsumeKeyUp(recordedShortcutKey: recorded != nil,
+                                          isSwitching: switching) else {
                 return Unmanaged.passUnretained(event)
             }
-            onShortcutKeyUp?(key)
+            if let recorded, switching {
+                onShortcutKeyUp?(recorded)
+            }
             return nil
 
         default:
             return Unmanaged.passUnretained(event)
         }
+    }
+
+    /// Whether a key-up must be consumed for symmetry with its (consumed)
+    /// key-down: either the key was recorded as a dual-purpose key (its press was
+    /// swallowed, whatever happened since) or a session is live (every key-down
+    /// is swallowed while one is up). A release reaching an app that never saw
+    /// its press is the asymmetry this prevents. Pure, so the pairing rule is
+    /// unit-testable.
+    static func shouldConsumeKeyUp(recordedShortcutKey: Bool, isSwitching: Bool) -> Bool {
+        recordedShortcutKey || isSwitching
     }
 
     /// The in-switcher action key a typed character stands for, or `nil` for an
