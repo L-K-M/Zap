@@ -558,7 +558,10 @@ final class SwitcherController {
                                 quittingPIDs: Set<pid_t>) -> Int? {
         let candidates = apps.enumerated()
             .filter { !quittingPIDs.contains($0.element.processIdentifier) }
-        guard let match = bestMatchIndex(query: query, names: candidates.map(\.element.name))
+        // A closure, not `\.element.name`: key paths through tuple elements are
+        // not accepted by every Swift toolchain, and CI must not hinge on that.
+        guard let match = bestMatchIndex(query: query,
+                                         names: candidates.map { $0.element.name })
         else { return nil }
         return candidates[match].offset
     }
