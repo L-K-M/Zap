@@ -11,6 +11,9 @@ struct GeneralView: View {
             Section {
                 Toggle("Launch Zap at login", isOn: $preferences.launchAtLogin)
                 if preferences.launchAtLoginRequiresApproval {
+                    Button("Open Login Items Settings…") {
+                        preferences.openLoginItemSettings()
+                    }
                     Text("Allow Zap in System Settings > General > Login Items to finish enabling launch at login.")
                         .font(.caption)
                         .foregroundStyle(.secondary)

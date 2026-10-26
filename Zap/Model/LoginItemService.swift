@@ -8,7 +8,9 @@ struct LoginItemService {
     let status: () -> SMAppService.Status
     let register: () throws -> Void
     let unregister: () throws -> Void
+    let openSettings: () -> Void
     static let system = LoginItemService(status: { SMAppService.mainApp.status },
         register: { try SMAppService.mainApp.register() },
-        unregister: { try SMAppService.mainApp.unregister() })
+        unregister: { try SMAppService.mainApp.unregister() },
+        openSettings: { SMAppService.openSystemSettingsLoginItems() })
 }

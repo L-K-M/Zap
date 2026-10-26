@@ -37,6 +37,7 @@ final class LoginItemApprovalTests: XCTestCase {
         var unregisterCalls = 0
         var registerError: Error?
         var unregisterError: Error?
+        var openSettingsCalls = 0
 
         init(status: SMAppService.Status) {
             self.status = status
@@ -53,7 +54,8 @@ final class LoginItemApprovalTests: XCTestCase {
                 self.unregisterCalls += 1
                 if let error = self.unregisterError { throw error }
                 self.status = .notRegistered
-            }
+            },
+            openSettings: { self.openSettingsCalls += 1 }
         )
     }
 
@@ -136,5 +138,13 @@ final class LoginItemApprovalTests: XCTestCase {
         XCTAssertFalse(preferences.launchAtLoginRequiresApproval)
         XCTAssertEqual(fake.registerCalls, 0)
         XCTAssertEqual(fake.unregisterCalls, 0)
+    }
+
+    func testOpenSettingsReachesTheService() {
+        // The pending-approval hint deep-links to System Settings via the
+        // service boundary, not by reaching for SMAppService in the UI.
+        let (preferences, fake) = makePreferences(status: .requiresApproval)
+        preferences.openLoginItemSettings()
+        XCTAssertEqual(fake.openSettingsCalls, 1)
     }
 }

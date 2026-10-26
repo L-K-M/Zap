@@ -566,4 +566,12 @@ final class Preferences: ObservableObject {
         isSyncingLaunchAtLogin = false
         defaults.set(actual, forKey: Key.launchAtLogin)
     }
+
+    /// Opens System Settings at the Login Items pane — the platform's own deep
+    /// link, offered while approval is pending so the user can finish enabling
+    /// launch at login in one step.
+    func openLoginItemSettings() {
+        guard #available(macOS 13.0, *) else { return }
+        loginItemService.openSettings()
+    }
 }
