@@ -33,6 +33,9 @@ struct IconsView: View {
     @State private var pictURL: URL?
     /// How many app icons a reset would clear, while the confirmation is up.
     @State private var pendingResetCount: Int?
+    /// The per-app store write awaiting confirmation. Preparing it performs no
+    /// I/O; the dialog's action applies the immutable command it was handed.
+    @State private var pendingIconChange: SharedIconChange?
 
     private var store: IconStore { icons.store }
 
@@ -76,6 +79,26 @@ struct IconsView: View {
         } message: {
             Text("These icons are shared, so they will also go from Jetty and Top Drawer. "
                  + "Icons you set for files, folders and links elsewhere are left alone.")
+        }
+        // Per-app writes reach the same shared store, so they confirm too. The
+        // `presenting:` overload hands the action an immutable command — the
+        // action must not re-read `pendingIconChange`, which SwiftUI may clear
+        // while dismissing.
+        .confirmationDialog(
+            "Change \(pendingIconChange?.app.name ?? "this app")'s icon?",
+            isPresented: Binding(get: { pendingIconChange != nil },
+                                 set: { if !$0 { pendingIconChange = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingIconChange
+        ) { change in
+            Button(change.actionTitle, role: .destructive) {
+                pendingIconChange = nil
+                change.apply(to: store)
+                refresh(change.app)
+            }
+            Button("Cancel", role: .cancel) { pendingIconChange = nil }
+        } message: { change in
+            Text(change.confirmationMessage)
         }
     }
 
@@ -178,10 +201,14 @@ struct IconsView: View {
                     Button("Get Pict to Customise Icons…") { openPictHomepage() }
                 }
                 Divider()
-                Button("Use Original Artwork") { useOriginalArtwork(app) }
-                    .disabled(!hasOverride(app))
-                Button("Use System Icon") { useSystemIcon(app) }
-                    .disabled(isPinned(app))
+                Button("Use Original Artwork Everywhere") {
+                    pendingIconChange = SharedIconChange(app: app, destination: .originalArtwork)
+                }
+                .disabled(!hasOverride(app))
+                Button("Use System Icon Everywhere") {
+                    pendingIconChange = SharedIconChange(app: app, destination: .systemIcon)
+                }
+                .disabled(isPinned(app))
             } label: {
                 Image(systemName: "ellipsis.circle")
             }
@@ -238,18 +265,6 @@ struct IconsView: View {
     private func isPinned(_ app: AppInfo) -> Bool {
         guard let key = app.storeKey else { return false }
         return statuses[key]?.isPinnedToSystemIcon == true
-    }
-
-    private func useOriginalArtwork(_ app: AppInfo) {
-        store.clear(for: app.iconTarget)
-        refresh(app)
-    }
-
-    /// Pinning writes an entry that names no image, so it needs none of the
-    /// ingestion that moved to Pict — which is why this verb can stay.
-    private func useSystemIcon(_ app: AppInfo) {
-        _ = store.pinToSystemIcon(for: app.iconTarget, writtenBy: "Zap")
-        refresh(app)
     }
 
     private func resetAll() {
