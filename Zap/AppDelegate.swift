@@ -16,6 +16,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var pauseMenuItem: NSMenuItem?
     private var isPaused = false
+    private var isSecureInputActive = false
+
+    /// How often to notice the system's secure-event-input state. One cheap C
+    /// call; 2 s is quick enough that the menu-bar icon never lags the condition
+    /// it explains for long.
+    private static let secureInputPollInterval: TimeInterval = 2
+    private var secureInputTimer: Timer?
 
     // MARK: NSApplicationDelegate
 
@@ -32,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainMenu.install(into: NSApplication.shared)
         setUpStatusItem()
         switcher.start()
+        startSecureInputPolling()  // dim the menu icon while ⌘-Tab can't be intercepted
         updateChecker.start()   // check GitHub for a newer release on launch + daily
         warmIconCache()         // so the first ⌘-Tab already has un-jailed artwork
         promptForAccessibilityIfNeeded()
@@ -125,12 +133,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switcher.resume()
         }
         pauseMenuItem?.title = isPaused ? "Resume Zap" : "Pause Zap"
-        // Dim the menu-bar icon while paused so the inert state is visible.
-        statusItem?.button?.appearsDisabled = isPaused
+        updateStatusItemState()
     }
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    // MARK: Secure input
+
+    /// Secure Keyboard Entry hides keyboard events from every event tap, so
+    /// ⌘-Tab silently falls through to the native switcher while any app has it
+    /// on (a focused password field, 1Password/Keychain prompts, Terminal's
+    /// "Secure Keyboard Entry"). Zap cannot intercept those keys; the least it
+    /// can do is say so, the way the paused state already dims the icon.
+    private func startSecureInputPolling() {
+        let timer = Timer(timeInterval: Self.secureInputPollInterval, repeats: true) { [weak self] _ in
+            self?.refreshSecureInputState()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        secureInputTimer = timer
+        refreshSecureInputState()
+    }
+
+    private func refreshSecureInputState() {
+        let enabled = SecureInputMonitor.isEnabled
+        guard enabled != isSecureInputActive else { return }
+        isSecureInputActive = enabled
+        updateStatusItemState()
+    }
+
+    /// The menu-bar icon carries the combined "can't intercept right now" state:
+    /// paused, or the system is withholding keyboard events. Both can hold at
+    /// once, so the tooltip names every active cause rather than picking one.
+    private func updateStatusItemState() {
+        statusItem?.button?.appearsDisabled = isPaused || isSecureInputActive
+
+        var notes: [String] = []
+        if isSecureInputActive {
+            notes.append("Zap: an app has Secure Keyboard Entry on, so ⌘-Tab is handled by the system switcher until it's off.")
+        }
+        if isPaused {
+            notes.append("Zap is paused.")
+        }
+        statusItem?.button?.toolTip = notes.isEmpty ? nil : notes.joined(separator: "\n")
     }
 
     // MARK: Helpers

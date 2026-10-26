@@ -6,6 +6,7 @@ struct PermissionsView: View {
     @ObservedObject var inputMode: InputModeReporter
     @State private var isTrusted = AccessibilityAuthorizer.isTrusted
     @State private var isScreenRecordingGranted = ScreenRecordingAuthorizer.isGranted
+    @State private var isSecureInputEnabled = SecureInputMonitor.isEnabled
     @State private var timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -45,6 +46,12 @@ struct PermissionsView: View {
 
                 Divider()
 
+                secureInputSection
+
+                if isSecureInputEnabled {
+                    Divider()
+                }
+
                 screenRecordingSection
             }
             .padding()
@@ -53,6 +60,42 @@ struct PermissionsView: View {
         .onReceive(timer) { _ in
             isTrusted = AccessibilityAuthorizer.isTrusted
             isScreenRecordingGranted = ScreenRecordingAuthorizer.isGranted
+            isSecureInputEnabled = SecureInputMonitor.isEnabled
+        }
+    }
+
+    /// Secure Keyboard Entry is a system condition, not a permission: while any
+    /// app has it on, macOS withholds keyboard events from *every* event tap and
+    /// ⌘-Tab falls through to the native switcher. Shown only while it's active
+    /// (absence of this block is the healthy state), so the interval where "Zap
+    /// looks dead" is explained where users look first.
+    @ViewBuilder
+    private var secureInputSection: some View {
+        if isSecureInputEnabled {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Image(systemName: "keyboard")
+                        .foregroundStyle(.orange)
+                        .font(.title2)
+                    VStack(alignment: .leading) {
+                        Text("Secure Keyboard Entry is on")
+                            .font(.headline)
+                        Text("⌘-Tab is temporarily handled by the system switcher.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Text("""
+                Some app (a focused password field, 1Password or Keychain prompts, or \
+                Terminal's “Secure Keyboard Entry”) has asked macOS to hide keyboard \
+                input. While it's on, no event tap sees any key press, so Zap cannot \
+                intercept ⌘-Tab. It clears on its own when that app turns it off; Zap's \
+                menu-bar icon is dimmed while it lasts.
+                """)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            }
         }
     }
 
