@@ -371,6 +371,44 @@ final class OverlayWindowController {
                            spacing: WindowGridMetrics.spacing).columns
     }
 
+    /// Whether the window section currently outgrows its budget and is therefore
+    /// a `ScrollView`, mirroring the branch in `OverlayView.windowSection` (both
+    /// sides derive from the shared `PanelBudget` and metrics enums, the same
+    /// arrangement as `windowGridColumns`). Only a scrolling section consumes
+    /// vertical scroll gestures — see `handleScroll`.
+    private var windowsSectionScrolls: Bool {
+        PanelBudget.scrolls(naturalHeight: windowSectionNaturalHeight,
+                            budget: windowSectionBudget)
+    }
+
+    /// Natural (unclipped) height of the window section, computed by the shared
+    /// `PanelBudget` so this gate and the view's layout cannot drift.
+    private var windowSectionNaturalHeight: CGFloat {
+        PanelBudget.windowSectionNaturalHeight(count: model.windows.count,
+                                               showsPreviews: preferences.showWindowPreviews,
+                                               availableWidth: model.maxContentWidth)
+    }
+
+    /// The window section's height budget, mirroring `OverlayView.windowListBudget`
+    /// through the shared `PanelBudget` formula so the two cannot drift.
+    private var windowSectionBudget: CGFloat {
+        let cellWidth = IconRowMetrics.cellWidth(iconSize: preferences.iconSize,
+                                                 bleed: preferences.iconBleed)
+        return PanelBudget.windowSectionBudget(
+            maxPanelHeight: model.maxPanelHeight,
+            headerHeight: PanelBudget.headerHeight(contentPadding: preferences.contentPadding,
+                                                   cellWidth: cellWidth,
+                                                   showsAppName: preferences.showAppName),
+            dividerReserve: PanelBudget.dividerReserve,
+            searchBadgeReserve: PanelBudget.searchBadgeReserve,
+            showsSearchBadge: !model.typeQuery.isEmpty,
+            helpFooterReserve: PanelBudget.helpFooterReserve,
+            showsHelp: model.showsHelp,
+            minimum: preferences.showWindowPreviews
+                ? WindowGridMetrics.cellHeight
+                : WindowRowMetrics.height)
+    }
+
     /// Stores a captured preview for `windowID`. Ignored if that window is no
     /// longer listed, so a late-arriving capture can't repopulate a stale row.
     func setWindowThumbnail(_ image: NSImage, for windowID: CGWindowID) {
@@ -557,12 +595,12 @@ final class OverlayWindowController {
     private func handleScroll(_ event: NSEvent) -> Bool {
         guard isVisible else { return false }
 
-        // When a window list/grid is showing it has its own (vertical) scroll view.
-        // Let vertical gestures fall through to it and keep only horizontal gestures
-        // for the icon row, so the wheel can scroll a long window list. With no
-        // window list, a vertical wheel still scrolls the icon row (as before).
+        // When a window list/grid is showing *and it actually scrolls*, vertical
+        // gestures belong to its scroll view. A short list consumes nothing, so
+        // the wheel must still scroll the (possibly overflowing) icon row.
+        // Horizontal gestures are always the icon row's.
         let horizontalDominant = abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY)
-        if !model.windows.isEmpty && !horizontalDominant { return false }
+        if !horizontalDominant, windowsSectionScrolls { return false }
 
         let geometry = iconRowGeometry()
         guard geometry.overflows else { return false }
