@@ -130,3 +130,20 @@ of ad-hoc. In the Zap target's build settings (Signing & Capabilities):
 A real Apple Development certificate produces a stable *designated requirement*, so
 the grant persists. Also launch the built `Zap.app` from a **fixed path** (not a
 copy), since TCC keys partly on location for ad-hoc-signed apps.
+
+## Private system APIs
+
+Zap uses two long-standing private APIs, both strictly best-effort with safe
+fallbacks (degrading to "no window preview" / "no full-screen Space
+classification", never to a crash):
+
+- `_AXUIElementGetWindow` (Accessibility SPI) bridges an AX window element to
+  its `CGWindowID`, so the optional window previews can capture it. There is no
+  public equivalent.
+- The SkyLight `CGS*` symbols classify Spaces (full-screen / Split View), which
+  the public window list carries no information about; only per-display
+  scoping's "include full-screen apps from other Spaces" toggle needs them.
+
+This is fine for Developer ID + notarization (notarization checks signing and
+malware, not API surface) but **would block App Store submission** — one reason
+Zap is distributed outside the App Store.
