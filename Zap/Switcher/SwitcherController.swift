@@ -349,7 +349,8 @@ final class SwitcherController {
         // the highlight on an app the commit would refuse anyway.
         selectedIndex = Self.sessionOpeningSelection(defaultIndex: defaultIndex,
                                                      apps: apps,
-                                                     quittingPIDs: quittingPIDs)
+                                                     quittingPIDs: quittingPIDs,
+                                                     forward: forward)
         isSessionActive = true
         startStrandedSessionWatchdog()
 
@@ -476,7 +477,8 @@ final class SwitcherController {
     /// default when nothing is choosable; `commit` already refuses to activate a
     /// quitting app, so the rule stays total. Pure, extracted for unit testing.
     static func sessionOpeningSelection(defaultIndex: Int, apps: [AppInfo],
-                                        quittingPIDs: Set<pid_t>) -> Int {
+                                        quittingPIDs: Set<pid_t>,
+                                        forward: Bool) -> Int {
         guard apps.indices.contains(defaultIndex),
               quittingPIDs.contains(apps[defaultIndex].processIdentifier),
               let next = nextSelectableIndex(in: apps, skipping: quittingPIDs,
