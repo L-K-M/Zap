@@ -44,13 +44,22 @@ final class PendingQuitTests: XCTestCase {
                                                             from: 0, forward: true))
     }
 
+    func testSelectionWrapsBackwardFromZero() {
+        // Negative-index wraparound: from 0 backward lands on the last app first;
+        // when that one is quitting the walk keeps going to the next candidate.
+        let apps = [a, b, c]
+        XCTAssertEqual(SwitcherController.nextSelectableIndex(in: apps, skipping: [3],
+                                                              from: 0, forward: false), 1)
+    }
+
     // MARK: sessionOpeningSelection
 
     func testOpeningSelectionKeepsANonQuittingDefault() {
         let apps = [a, b, c]
         XCTAssertEqual(SwitcherController.sessionOpeningSelection(defaultIndex: 1,
                                                                   apps: apps,
-                                                                  quittingPIDs: []), 1)
+                                                                  quittingPIDs: [],
+                                                                  forward: true), 1)
     }
 
     func testOpeningSelectionMovesOffAQuittingDefault() {
@@ -59,14 +68,38 @@ final class PendingQuitTests: XCTestCase {
         let apps = [a, b, c]
         XCTAssertEqual(SwitcherController.sessionOpeningSelection(defaultIndex: 0,
                                                                   apps: apps,
-                                                                  quittingPIDs: [1]), 1)
+                                                                  quittingPIDs: [1],
+                                                                  forward: true), 1)
+    }
+
+    func testOpeningSelectionNudgesAlongTheGesturesDirection() {
+        // A backward-opened session steps off a quitting default toward the
+        // previous app. Nudging forward there would move against the gesture,
+        // worst case wrapping onto the frontmost app being left.
+        let apps = [a, b, c]
+        XCTAssertEqual(SwitcherController.sessionOpeningSelection(defaultIndex: 0,
+                                                                  apps: apps,
+                                                                  quittingPIDs: [1],
+                                                                  forward: false), 2)
+    }
+
+    func testOpeningSelectionKeepsAnOutOfRangeDefault() {
+        // An out-of-range default passes through unchanged; `commit` refuses
+        // invalid selections downstream, so no clamp is invented here.
+        // Pinned deliberately (PR #59 review).
+        let apps = [a, b]
+        XCTAssertEqual(SwitcherController.sessionOpeningSelection(defaultIndex: 7,
+                                                                  apps: apps,
+                                                                  quittingPIDs: [],
+                                                                  forward: true), 7)
     }
 
     func testOpeningSelectionSkipsEveryQuittingApp() {
         let apps = [a, b, c]
         XCTAssertEqual(SwitcherController.sessionOpeningSelection(defaultIndex: 0,
                                                                   apps: apps,
-                                                                  quittingPIDs: [1, 2]), 2)
+                                                                  quittingPIDs: [1, 2],
+                                                                  forward: true), 2)
     }
 
     func testOpeningSelectionFallsBackToDefaultWhenAllAreQuitting() {
@@ -76,6 +109,7 @@ final class PendingQuitTests: XCTestCase {
         let apps = [a, b]
         XCTAssertEqual(SwitcherController.sessionOpeningSelection(defaultIndex: 0,
                                                                   apps: apps,
-                                                                  quittingPIDs: [1, 2]), 0)
+                                                                  quittingPIDs: [1, 2],
+                                                                  forward: true), 0)
     }
 }
