@@ -40,7 +40,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let window = NSWindow(contentViewController: hosting)
             window.title = "Zap Settings"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            window.setContentSize(NSSize(width: 520, height: 460))
+            // Programmatic sizing can bypass the window's minimum. Respect the
+            // measured tab row here as well as during interactive resizing.
+            let minimum = hosting.sizeThatFits(in: .zero)
+            window.setContentSize(NSSize(width: max(520, minimum.width),
+                                         height: max(460, minimum.height)))
             window.isReleasedWhenClosed = false
             window.delegate = self
             window.center()

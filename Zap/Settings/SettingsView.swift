@@ -18,7 +18,6 @@ struct SettingsView: View {
         TabHost(preferences: preferences, inputMode: inputMode,
                 updateChecker: updateChecker, icons: icons,
                 multipleDisplays: multipleDisplays)
-            .frame(minWidth: 520, minHeight: 460)
             .onReceive(NotificationCenter.default.publisher(
                 for: NSApplication.didChangeScreenParametersNotification)) { _ in
                 multipleDisplays = NSScreen.screens.count >= 2
@@ -40,6 +39,18 @@ struct SettingsView: View {
 
         func updateNSViewController(_ controller: SettingsTabViewController, context: Context) {
             controller.setShowsDisplays(multipleDisplays)
+        }
+
+        func sizeThatFits(_ proposal: ProposedViewSize, nsViewController controller: SettingsTabViewController,
+                          context: Context) -> CGSize? {
+            guard proposal.width?.isInfinite != true, proposal.height?.isInfinite != true else { return nil }
+            // The native selector can be wider than 520 points. Forward its
+            // minimum through SwiftUI so the window cannot clip the end tabs.
+            let fittingSize = controller.view.fittingSize
+            let minimum = CGSize(width: max(520, fittingSize.width),
+                                 height: max(460, fittingSize.height))
+            return CGSize(width: max(proposal.width ?? minimum.width, minimum.width),
+                          height: max(proposal.height ?? minimum.height, minimum.height))
         }
     }
 }

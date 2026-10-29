@@ -47,6 +47,12 @@ final class SettingsTabRenderingTests: XCTestCase {
     }
 
     @MainActor
+    private func segmentedControl(in view: NSView) -> NSSegmentedControl? {
+        if let control = view as? NSSegmentedControl { return control }
+        return view.subviews.lazy.compactMap { self.segmentedControl(in: $0) }.first
+    }
+
+    @MainActor
     func testSettingsPaneDoesNotDrawATabBezel() throws {
         try withSettings(.swiftUIRoot) { controller in
             let tabs = try XCTUnwrap(tabView(in: controller.view))
@@ -101,6 +107,33 @@ final class SettingsTabRenderingTests: XCTestCase {
             XCTAssertEqual(controller.tabStyle, .segmentedControlOnTop)
             let icons = try XCTUnwrap(controller.tabViewItems.first { $0.label == "Icons" })
             XCTAssertFalse(try XCTUnwrap(icons.viewController).isViewLoaded)
+        }
+    }
+
+    @MainActor
+    func testTabSelectorFitsTheMinimumSettingsWindow() throws {
+        try withSettings(.swiftUIRoot) { root in
+            let hosting = try XCTUnwrap(root as? NSHostingController<SettingsView>)
+            hosting.sizingOptions = [.minSize]
+            let window = NSWindow(contentViewController: hosting)
+            defer { window.close() }
+            // setContentSize can force a window below its minimum; test the
+            // minimum measured by the actual hosted settings content instead.
+            window.setContentSize(hosting.sizeThatFits(in: .zero))
+            hosting.view.layoutSubtreeIfNeeded()
+
+            let selector = try XCTUnwrap(segmentedControl(in: hosting.view))
+            let frame = selector.convert(selector.bounds, to: hosting.view)
+            XCTAssertGreaterThanOrEqual(frame.minX, hosting.view.bounds.minX - 1)
+            XCTAssertLessThanOrEqual(frame.maxX, hosting.view.bounds.maxX + 1)
+            XCTAssertGreaterThanOrEqual(frame.width, selector.intrinsicContentSize.width - 1)
+            XCTAssertGreaterThanOrEqual(hosting.sizeThatFits(in: .zero).width,
+                                        selector.intrinsicContentSize.width - 1)
+
+            window.setContentSize(NSSize(width: 960, height: 700))
+            hosting.view.layoutSubtreeIfNeeded()
+            XCTAssertGreaterThanOrEqual(hosting.view.bounds.width, 960)
+            XCTAssertGreaterThanOrEqual(hosting.view.bounds.height, 700)
         }
     }
 }
