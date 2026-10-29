@@ -59,6 +59,9 @@ final class EventTapMonitor {
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private let diagnostics = EventTapDiagnostics()
+    private var diagnosticsTimer: Timer?
+    private var intendedEnabled = false
 
     /// Action keys currently held down, keyed by the *key code* that produced them.
     ///
@@ -72,13 +75,18 @@ final class EventTapMonitor {
 
     var isRunning: Bool { eventTap != nil }
 
+    deinit { diagnosticsTimer?.invalidate() }
+
     // MARK: Lifecycle
 
     /// Installs the tap. Returns `false` if it could not be created (usually means
     /// Accessibility permission is missing).
     @discardableResult
     func start() -> Bool {
-        guard eventTap == nil else { return true }
+        guard eventTap == nil else {
+            recordTapHealth()
+            return true
+        }
 
         // Key-ups are tapped only to resolve the tap-vs-hold of the dual-purpose
         // action keys (Q/H/W); all others pass straight through.
@@ -101,6 +109,7 @@ final class EventTapMonitor {
             callback: callback,
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
+            diagnostics.lifecycle("Tap creation failed: accessibilityTrusted=\(AccessibilityAuthorizer.isTrusted)")
             return false
         }
 
@@ -110,10 +119,16 @@ final class EventTapMonitor {
 
         eventTap = tap
         runLoopSource = source
+        intendedEnabled = true
+        diagnostics.lifecycle("Tap created")
+        startDiagnostics()
         return true
     }
 
     func stop() {
+        diagnosticsTimer?.invalidate()
+        diagnosticsTimer = nil
+        intendedEnabled = false
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
         }
@@ -122,11 +137,36 @@ final class EventTapMonitor {
         }
         eventTap = nil
         runLoopSource = nil
+        diagnostics.lifecycle("Tap stopped")
     }
 
     func setEnabled(_ enabled: Bool) {
+        intendedEnabled = enabled
         guard let tap = eventTap else { return }
         CGEvent.tapEnable(tap: tap, enable: enabled)
+        recordTapHealth()
+    }
+
+    // MARK: Diagnostics
+
+    private func startDiagnostics() {
+        diagnosticsTimer?.invalidate()
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+            self?.recordTapHealth()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        diagnosticsTimer = timer
+        recordTapHealth()
+    }
+
+    private func recordTapHealth() {
+        let valid = eventTap.map { CFMachPortIsValid($0) } ?? false
+        let enabled = valid && (eventTap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false)
+        diagnostics.checkHealth(.init(valid: valid, enabled: enabled,
+                                      intendedEnabled: intendedEnabled,
+                                      accessibilityTrusted: AccessibilityAuthorizer.isTrusted,
+                                      secureInput: SecureInputMonitor.isEnabled),
+                                now: ProcessInfo.processInfo.systemUptime)
     }
 
     // MARK: Event handling
@@ -137,9 +177,9 @@ final class EventTapMonitor {
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
-            // Logged after re-enabling, so getting events flowing again is never
-            // behind a (synchronous) log write.
-            NSLog("Zap: event tap disabled by \(type == .tapDisabledByTimeout ? "timeout" : "user input"); re-enabled")
+            // Log off the callback thread and distinguish an enable request from
+            // confirmed health. The old NSLog claimed success without checking.
+            diagnostics.lifecycle("Tap disabled by \(type == .tapDisabledByTimeout ? "timeout" : "user input"); requested re-enable")
             // Anything sent while the tap was off never reached us; let the
             // controller re-sync a session that may have lost its ⌘ key-up.
             onTapReEnabled?()
@@ -167,6 +207,16 @@ final class EventTapMonitor {
 
         case .keyDown:
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+            let tabStartedAt = keyCode == KeyCode.tab ? ProcessInfo.processInfo.systemUptime : nil
+            let tabSequence = tabStartedAt.map { _ in
+                diagnostics.tabReceived(flags: flags, matchedTrigger: cleanCommand)
+            }
+            defer {
+                if let tabStartedAt, let tabSequence {
+                    diagnostics.tabCompleted(sequence: tabSequence,
+                                             elapsed: ProcessInfo.processInfo.systemUptime - tabStartedAt)
+                }
+            }
 
             // ⌘+Tab (forward) / ⌘+Shift+Tab (reverse): consume and drive switcher.
             // Require exactly Command with optional Shift — reject Control/Option/Fn
