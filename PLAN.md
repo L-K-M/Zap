@@ -303,9 +303,11 @@ gradient, decoration, CRT, sizes) can be saved and shared as an `AppearancePrese
 A standard window opened from the menu-bar item while Zap remains an
 `.accessory` app hosts the SwiftUI settings panes.
 
-The SwiftUI panes are hosted by an AppKit tab controller with a native segmented
-selector and borderless content. This avoids the default TabView bezel line
-beside the labels while retaining pane state and lazy view loading.
+The SwiftUI panes are hosted by a borderless AppKit tab controller. A custom
+rounded-top tab strip sits 16 points below the titlebar; its selected tab joins
+the pane without a bottom edge. Native radio-button interaction provides focus,
+keyboard navigation, and accessibility semantics. Pane state and lazy loading
+are retained independently of the tab drawing.
 
 Tabs:
 
