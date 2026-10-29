@@ -47,9 +47,14 @@ final class SettingsTabRenderingTests: XCTestCase {
     }
 
     @MainActor
-    private func segmentedControl(in view: NSView) -> NSSegmentedControl? {
-        if let control = view as? NSSegmentedControl { return control }
-        return view.subviews.lazy.compactMap { self.segmentedControl(in: $0) }.first
+    private func tabBar(in view: NSView) -> SettingsTabBar? {
+        if let control = view as? SettingsTabBar { return control }
+        return view.subviews.lazy.compactMap { self.tabBar(in: $0) }.first
+    }
+
+    @MainActor
+    private func nativeTabs(in controller: SettingsTabViewController) throws -> NSTabViewController {
+        try XCTUnwrap(controller.children.compactMap { $0 as? NSTabViewController }.first)
     }
 
     @MainActor
@@ -65,24 +70,25 @@ final class SettingsTabRenderingTests: XCTestCase {
     func testChangingDisplayAvailabilityPreservesSelectionAndPaneControllers() throws {
         try withSettings(.nativeTabs) { root in
             let controller = try XCTUnwrap(root as? SettingsTabViewController)
+            let tabs = try nativeTabs(in: controller)
             controller.setShowsDisplays(false)
-            let icons = try XCTUnwrap(controller.tabViewItems.first { $0.label == "Icons" })
+            let icons = try XCTUnwrap(tabs.tabViewItems.first { $0.label == "Icons" })
             let iconsController = try XCTUnwrap(icons.viewController)
-            controller.selectedTabViewItemIndex = try XCTUnwrap(controller.tabViewItems.firstIndex(of: icons))
+            tabs.selectedTabViewItemIndex = try XCTUnwrap(tabs.tabViewItems.firstIndex(of: icons))
 
             controller.setShowsDisplays(true)
-            XCTAssertEqual(controller.tabViewItems.map(\.label),
+            XCTAssertEqual(tabs.tabViewItems.map(\.label),
                            ["General", "Exclusions", "Displays", "Appearance", "Icons", "Permissions", "About"])
-            XCTAssertTrue(controller.tabView.selectedTabViewItem === icons)
-            let displays = controller.tabViewItems[2]
+            XCTAssertTrue(tabs.tabView.selectedTabViewItem === icons)
+            let displays = tabs.tabViewItems[2]
 
             controller.setShowsDisplays(false)
-            XCTAssertTrue(controller.tabView.selectedTabViewItem === icons)
+            XCTAssertTrue(tabs.tabView.selectedTabViewItem === icons)
             XCTAssertTrue(icons.viewController === iconsController)
 
             controller.setShowsDisplays(true)
-            XCTAssertTrue(controller.tabViewItems[2] === displays)
-            XCTAssertTrue(controller.tabView.selectedTabViewItem === icons)
+            XCTAssertTrue(tabs.tabViewItems[2] === displays)
+            XCTAssertTrue(tabs.tabView.selectedTabViewItem === icons)
         }
     }
 
@@ -90,13 +96,14 @@ final class SettingsTabRenderingTests: XCTestCase {
     func testRemovingSelectedDisplaysPaneSelectsAnExistingPane() throws {
         try withSettings(.nativeTabs) { root in
             let controller = try XCTUnwrap(root as? SettingsTabViewController)
+            let tabs = try nativeTabs(in: controller)
             controller.setShowsDisplays(true)
-            controller.selectedTabViewItemIndex = 2
+            tabs.selectedTabViewItemIndex = 2
             controller.setShowsDisplays(false)
 
-            let selected = try XCTUnwrap(controller.tabView.selectedTabViewItem)
+            let selected = try XCTUnwrap(tabs.tabView.selectedTabViewItem)
             XCTAssertNotEqual(selected.label, "Displays")
-            XCTAssertTrue(controller.tabViewItems.contains(selected))
+            XCTAssertTrue(tabs.tabViewItems.contains(selected))
         }
     }
 
@@ -104,8 +111,9 @@ final class SettingsTabRenderingTests: XCTestCase {
     func testInactiveSettingsPanesRemainLazy() throws {
         try withSettings(.nativeTabs) { root in
             let controller = try XCTUnwrap(root as? SettingsTabViewController)
-            XCTAssertEqual(controller.tabStyle, .segmentedControlOnTop)
-            let icons = try XCTUnwrap(controller.tabViewItems.first { $0.label == "Icons" })
+            let tabs = try nativeTabs(in: controller)
+            XCTAssertEqual(tabs.tabStyle, .unspecified)
+            let icons = try XCTUnwrap(tabs.tabViewItems.first { $0.label == "Icons" })
             XCTAssertFalse(try XCTUnwrap(icons.viewController).isViewLoaded)
         }
     }
@@ -122,7 +130,7 @@ final class SettingsTabRenderingTests: XCTestCase {
             window.setContentSize(hosting.sizeThatFits(in: .zero))
             hosting.view.layoutSubtreeIfNeeded()
 
-            let selector = try XCTUnwrap(segmentedControl(in: hosting.view))
+            let selector = try XCTUnwrap(tabBar(in: hosting.view))
             let frame = selector.convert(selector.bounds, to: hosting.view)
             XCTAssertGreaterThanOrEqual(frame.minX, hosting.view.bounds.minX - 1)
             XCTAssertLessThanOrEqual(frame.maxX, hosting.view.bounds.maxX + 1)
@@ -134,6 +142,74 @@ final class SettingsTabRenderingTests: XCTestCase {
             hosting.view.layoutSubtreeIfNeeded()
             XCTAssertGreaterThanOrEqual(hosting.view.bounds.width, 960)
             XCTAssertGreaterThanOrEqual(hosting.view.bounds.height, 700)
+        }
+    }
+
+    @MainActor
+    func testCustomTabsHaveSpaceBelowTheWindowHeader() throws {
+        try withSettings(.nativeTabs) { root in
+            let bar = try XCTUnwrap(tabBar(in: root.view))
+            let frame = bar.convert(bar.bounds, to: root.view)
+            XCTAssertGreaterThanOrEqual(root.view.bounds.maxY - frame.maxY, 16)
+        }
+    }
+
+    @MainActor
+    func testCustomTabsTrackNativeSelectionAndExposeSelectedTab() throws {
+        try withSettings(.nativeTabs) { root in
+            let controller = try XCTUnwrap(root as? SettingsTabViewController)
+            let tabs = try nativeTabs(in: controller)
+            let bar = try XCTUnwrap(tabBar(in: root.view))
+            tabs.selectedTabViewItemIndex = 3
+
+            XCTAssertEqual(bar.selectedIndex, 3)
+            let buttons = bar.arrangedSubviews.compactMap { $0 as? SettingsTabButton }
+            XCTAssertEqual(buttons.filter { $0.state == .on }.map(\.title), [tabs.tabViewItems[3].label])
+            XCTAssertEqual(bar.accessibilityRole(), .tabGroup)
+            XCTAssertTrue(bar.isAccessibilityElement())
+            XCTAssertTrue(buttons[3].isAccessibilityElement())
+            XCTAssertEqual(buttons[3].accessibilityRole(), .radioButton)
+            XCTAssertEqual(buttons[3].accessibilitySubrole(), .tabButtonSubrole)
+            XCTAssertEqual((buttons[3].accessibilityValue() as? NSNumber)?.boolValue, true)
+            XCTAssertEqual((buttons[0].accessibilityValue() as? NSNumber)?.boolValue, false)
+        }
+    }
+
+    @MainActor
+    func testClickAndArrowKeysSelectTheMatchingPane() throws {
+        try withSettings(.nativeTabs) { root in
+            let controller = try XCTUnwrap(root as? SettingsTabViewController)
+            let tabs = try nativeTabs(in: controller)
+            let bar = try XCTUnwrap(tabBar(in: root.view))
+            let buttons = bar.arrangedSubviews.compactMap { $0 as? SettingsTabButton }
+            buttons[1].performClick(nil)
+            XCTAssertEqual(tabs.selectedTabViewItemIndex, 1)
+
+            let right = try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                windowNumber: 0, context: nil, characters: "\u{F703}",
+                charactersIgnoringModifiers: "\u{F703}", isARepeat: false,
+                keyCode: UInt16(KeyCode.arrowRight)))
+            buttons[1].keyDown(with: right)
+            XCTAssertEqual(tabs.selectedTabViewItemIndex, 2)
+            XCTAssertEqual(bar.selectedIndex, 2)
+        }
+    }
+
+    @MainActor
+    func testDisplayChangesPreserveKeyboardFocusInTheTabRow() throws {
+        try withSettings(.nativeTabs) { root in
+            let controller = try XCTUnwrap(root as? SettingsTabViewController)
+            let window = NSWindow(contentViewController: root)
+            defer { window.close() }
+            let bar = try XCTUnwrap(tabBar(in: root.view))
+            let icons = try XCTUnwrap(bar.arrangedSubviews.first { ($0 as? NSButton)?.title == "Icons" })
+            XCTAssertTrue(window.makeFirstResponder(icons))
+
+            controller.setShowsDisplays(true)
+            XCTAssertTrue(window.firstResponder === icons)
+            controller.setShowsDisplays(false)
+            XCTAssertTrue(window.firstResponder === icons)
         }
     }
 }
