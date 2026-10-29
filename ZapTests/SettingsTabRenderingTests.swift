@@ -212,4 +212,36 @@ final class SettingsTabRenderingTests: XCTestCase {
             XCTAssertTrue(window.firstResponder === icons)
         }
     }
+
+    @MainActor
+    func testSelectedTabHasItsOutlineAtTheVisualTop() throws {
+        let button = SettingsTabButton(title: "General")
+        button.frame = NSRect(origin: .zero, size: button.intrinsicContentSize)
+        button.state = .on
+        button.appearance = NSAppearance(named: .aqua)
+
+        let window = NSWindow(contentRect: button.frame, styleMask: .borderless,
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = NSView(frame: button.frame)
+        window.contentView?.addSubview(button)
+        window.setFrameOrigin(NSPoint(x: -10000, y: -10000))
+        window.orderFront(nil)
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        // cacheDisplay applies the real NSButton coordinate system. Calling
+        // draw directly in an unflipped bitmap context missed this regression.
+        let bitmap = try XCTUnwrap(button.bitmapImageRepForCachingDisplay(in: button.bounds))
+        button.cacheDisplay(in: button.bounds, to: bitmap)
+        let x = bitmap.pixelsWide / 2
+        let top = try XCTUnwrap(bitmap.colorAt(x: x, y: 0)?.usingColorSpace(.deviceRGB))
+        let bottom = try XCTUnwrap(bitmap.colorAt(x: x, y: bitmap.pixelsHigh - 1)?.usingColorSpace(.deviceRGB))
+        XCTAssertGreaterThan(top.alphaComponent, 0.9)
+        XCTAssertGreaterThan(bottom.alphaComponent, 0.9)
+        let topBrightness = top.redComponent + top.greenComponent + top.blueComponent
+        let bottomBrightness = bottom.redComponent + bottom.greenComponent + bottom.blueComponent
+        XCTAssertLessThan(topBrightness, bottomBrightness - 0.05,
+                          "In light mode the top outline must be darker than the open bottom edge")
+    }
 }

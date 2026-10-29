@@ -91,17 +91,21 @@ final class SettingsTabButton: NSButton {
 
     private func tabPath(in rect: CGRect, closesBottom: Bool = true) -> NSBezierPath {
         let r = min(8, min(rect.width / 2, rect.height))
+        // NSButton uses flipped coordinates; keep these edges visually oriented.
+        let top = isFlipped ? rect.minY : rect.maxY
+        let bottom = isFlipped ? rect.maxY : rect.minY
+        let shoulder = top + (isFlipped ? r : -r)
         let path = NSBezierPath()
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        path.line(to: CGPoint(x: rect.minX, y: rect.maxY - r))
-        path.curve(to: CGPoint(x: rect.minX + r, y: rect.maxY),
-                   controlPoint1: CGPoint(x: rect.minX, y: rect.maxY),
-                   controlPoint2: CGPoint(x: rect.minX, y: rect.maxY))
-        path.line(to: CGPoint(x: rect.maxX - r, y: rect.maxY))
-        path.curve(to: CGPoint(x: rect.maxX, y: rect.maxY - r),
-                   controlPoint1: CGPoint(x: rect.maxX, y: rect.maxY),
-                   controlPoint2: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.line(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.move(to: CGPoint(x: rect.minX, y: bottom))
+        path.line(to: CGPoint(x: rect.minX, y: shoulder))
+        path.curve(to: CGPoint(x: rect.minX + r, y: top),
+                   controlPoint1: CGPoint(x: rect.minX, y: top),
+                   controlPoint2: CGPoint(x: rect.minX, y: top))
+        path.line(to: CGPoint(x: rect.maxX - r, y: top))
+        path.curve(to: CGPoint(x: rect.maxX, y: shoulder),
+                   controlPoint1: CGPoint(x: rect.maxX, y: top),
+                   controlPoint2: CGPoint(x: rect.maxX, y: top))
+        path.line(to: CGPoint(x: rect.maxX, y: bottom))
         if closesBottom { path.close() }
         return path
     }
