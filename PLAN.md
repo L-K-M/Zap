@@ -300,8 +300,14 @@ gradient, decoration, CRT, sizes) can be saved and shared as an `AppearancePrese
 
 ## 7. Settings Window
 
-A standard SwiftUI window opened from the menu-bar item while Zap remains an
-`.accessory` app, with tabs:
+A standard window opened from the menu-bar item while Zap remains an
+`.accessory` app hosts the SwiftUI settings panes.
+
+The SwiftUI panes are hosted by an AppKit tab controller with a native segmented
+selector and borderless content. This avoids the default TabView bezel line
+beside the labels while retaining pane state and lazy view loading.
+
+Tabs:
 
 1. **General** — launch at login (`SMAppService`), show-delay, window dwell +
    previews toggle, alternate hotkey.
