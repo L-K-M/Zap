@@ -94,6 +94,14 @@ must **intercept the key event and suppress the system switcher**.
 > without it. The tap must be re-enabled if the system disables it
 > (`kCGEventTapDisabledByTimeout`).
 
+Input diagnostics use the `ch.lkmc.Zap` unified-log subsystem and
+`HotkeyDiagnostics` category. Record Tab modifier flags and trigger matching,
+slow Tab callbacks, and periodic tap health independently of keyboard callbacks.
+These logs contain no typed text or other key identities. See
+[`docs/hotkey-diagnostics.md`](docs/hotkey-diagnostics.md) for reproduction,
+interpretation, and manual checks. This provides evidence for intermittent input
+loss; it does not establish or fix a particular cause.
+
 ### Key handling while overlay is visible
 | Key                        | Action                                  |
 |----------------------------|-----------------------------------------|
