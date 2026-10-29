@@ -15,34 +15,31 @@ struct SettingsView: View {
     @State private var multipleDisplays = NSScreen.screens.count >= 2
 
     var body: some View {
-        TabView {
-            GeneralView(preferences: preferences, updateChecker: updateChecker)
-                .tabItem { Label("General", systemImage: "gearshape") }
-
-            ExclusionsView(preferences: preferences)
-                .tabItem { Label("Exclusions", systemImage: "minus.circle") }
-
-            if multipleDisplays {
-                DisplaysView(preferences: preferences)
-                    .tabItem { Label("Displays", systemImage: "rectangle.on.rectangle") }
+        TabHost(preferences: preferences, inputMode: inputMode,
+                updateChecker: updateChecker, icons: icons,
+                multipleDisplays: multipleDisplays)
+            .frame(minWidth: 520, minHeight: 460)
+            .onReceive(NotificationCenter.default.publisher(
+                for: NSApplication.didChangeScreenParametersNotification)) { _ in
+                multipleDisplays = NSScreen.screens.count >= 2
             }
+    }
 
-            AppearanceView(preferences: preferences)
-                .tabItem { Label("Appearance", systemImage: "paintpalette") }
+    private struct TabHost: NSViewControllerRepresentable {
+        let preferences: Preferences
+        let inputMode: InputModeReporter
+        let updateChecker: UpdateChecker
+        let icons: ZapIcons
+        let multipleDisplays: Bool
 
-            IconsView(preferences: preferences, icons: icons)
-                .tabItem { Label("Icons", systemImage: "app.badge") }
-
-            PermissionsView(inputMode: inputMode)
-                .tabItem { Label("Permissions", systemImage: "lock.shield") }
-
-            AboutView(preferences: preferences)
-                .tabItem { Label("About", systemImage: "info.circle") }
+        func makeNSViewController(context: Context) -> SettingsTabViewController {
+            SettingsTabViewController(preferences: preferences, inputMode: inputMode,
+                                      updateChecker: updateChecker, icons: icons,
+                                      showsDisplays: multipleDisplays)
         }
-        .frame(minWidth: 520, minHeight: 460)
-        .onReceive(NotificationCenter.default.publisher(
-            for: NSApplication.didChangeScreenParametersNotification)) { _ in
-            multipleDisplays = NSScreen.screens.count >= 2
+
+        func updateNSViewController(_ controller: SettingsTabViewController, context: Context) {
+            controller.setShowsDisplays(multipleDisplays)
         }
     }
 }
