@@ -96,11 +96,17 @@ must **intercept the key event and suppress the system switcher**.
 
 Input diagnostics use the `ch.lkmc.Zap` unified-log subsystem and
 `HotkeyDiagnostics` category. Record Tab modifier flags and trigger matching,
-slow Tab callbacks, and periodic tap health independently of keyboard callbacks.
-These logs contain no typed text or other key identities. See
-[`docs/hotkey-diagnostics.md`](docs/hotkey-diagnostics.md) for reproduction,
-interpretation, and manual checks. This provides evidence for intermittent input
-loss; it does not establish or fix a particular cause.
+slow Tab callbacks, and periodic tap health, including the actual
+`registeredEvents` mask, independently of keyboard callbacks. After each
+registration, Zap verifies that keyboard event types (`keyDown`, `keyUp`,
+`flagsChanged`; mask 7168) are present; incomplete taps are disposed and
+retried every 2 seconds while the Carbon fallback remains active. Retries respect
+Pause and the alternate-hotkey preference, and defer promotion until an active
+fallback selection finishes. These logs
+contain no typed text or other key identities. See
+[`docs/hotkey-diagnostics.md`](docs/hotkey-diagnostics.md) for registration
+validity, retry behavior, a captured Oct 31 failure case, interpretation, and
+manual checks.
 
 ### Key handling while overlay is visible
 | Key                        | Action                                  |

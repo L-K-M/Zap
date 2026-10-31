@@ -5,9 +5,11 @@ import XCTest
 final class EventTapDiagnosticsTests: XCTestCase {
 
     private func health(enabled: Bool = true, intendedEnabled: Bool = true,
-                        trusted: Bool = true, secureInput: Bool = false) -> EventTapDiagnostics.Health {
+                        trusted: Bool = true, secureInput: Bool = false,
+                        registeredEvents: CGEventMask? = EventTapMonitor.requiredEvents) -> EventTapDiagnostics.Health {
         .init(valid: true, enabled: enabled, intendedEnabled: intendedEnabled,
-              accessibilityTrusted: trusted, secureInput: secureInput)
+              accessibilityTrusted: trusted, secureInput: secureInput,
+              registeredEvents: registeredEvents)
     }
 
     func testUnchangedHealthIsSummarizedOncePerMinute() {
@@ -32,6 +34,19 @@ final class EventTapDiagnosticsTests: XCTestCase {
 
         XCTAssertEqual(messages.count, 2)
         XCTAssertTrue(messages[1].contains("enabled=false intendedEnabled=true"))
+    }
+
+    func testIncompleteAndUnknownRegistrationsAreReportedEvenWhileEnabled() {
+        var messages: [String] = []
+        let diagnostics = EventTapDiagnostics(record: { messages.append($0) })
+        diagnostics.checkHealth(health(), now: 0)
+        diagnostics.checkHealth(health(registeredEvents: 4096), now: 2)
+        diagnostics.checkHealth(health(registeredEvents: nil), now: 4)
+
+        XCTAssertEqual(messages.count, 3)
+        XCTAssertTrue(messages[1].contains("enabled=true intendedEnabled=true"))
+        XCTAssertTrue(messages[1].contains("registeredEvents=4096"))
+        XCTAssertTrue(messages[2].contains("registeredEvents=unknown"))
     }
 
     func testIntentionalDisableAndSystemConditionsAreDistinguishable() {
