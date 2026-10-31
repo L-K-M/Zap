@@ -57,11 +57,20 @@ final class EventTapMonitor {
 
     // MARK: State
 
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
+    private var eventTap: (any EventTapConnection)?
+    private let makeConnection: (CGEventMask, CGEventTapCallBack, UnsafeMutableRawPointer) -> (any EventTapConnection)?
     private let diagnostics = EventTapDiagnostics()
     private var diagnosticsTimer: Timer?
     private var intendedEnabled = false
+
+    static let requiredEvents: CGEventMask =
+        CGEventMask(1 << CGEventType.keyDown.rawValue) |
+        CGEventMask(1 << CGEventType.keyUp.rawValue) |
+        CGEventMask(1 << CGEventType.flagsChanged.rawValue)
+
+    init(makeConnection: @escaping (CGEventMask, CGEventTapCallBack, UnsafeMutableRawPointer) -> (any EventTapConnection)? = SystemEventTapConnection.create) {
+        self.makeConnection = makeConnection
+    }
 
     /// Action keys currently held down, keyed by the *key code* that produced them.
     ///
@@ -73,7 +82,13 @@ final class EventTapMonitor {
     /// guaranteed to match across the pair.
     private var heldShortcutKeyCodes: [Int64: ShortcutKey] = [:]
 
-    var isRunning: Bool { eventTap != nil }
+    var isRunning: Bool {
+        guard let eventTap, eventTap.isValid,
+              let events = eventTap.registeredEvents else { return false }
+        return events & Self.requiredEvents == Self.requiredEvents
+    }
+
+    var isReady: Bool { isRunning && eventTap?.isEnabled == true }
 
     deinit { diagnosticsTimer?.invalidate() }
 
@@ -83,17 +98,11 @@ final class EventTapMonitor {
     /// Accessibility permission is missing).
     @discardableResult
     func start() -> Bool {
-        guard eventTap == nil else {
+        if isRunning {
             recordTapHealth()
             return true
         }
-
-        // Key-ups are tapped only to resolve the tap-vs-hold of the dual-purpose
-        // action keys (Q/H/W); all others pass straight through.
-        let mask: CGEventMask =
-            CGEventMask(1 << CGEventType.keyDown.rawValue) |
-            CGEventMask(1 << CGEventType.keyUp.rawValue) |
-            CGEventMask(1 << CGEventType.flagsChanged.rawValue)
+        if eventTap != nil { stop() }
 
         let callback: CGEventTapCallBack = { _, type, event, refcon in
             guard let refcon else { return Unmanaged.passUnretained(event) }
@@ -101,24 +110,30 @@ final class EventTapMonitor {
             return monitor.handle(type: type, event: event)
         }
 
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: mask,
-            callback: callback,
-            userInfo: Unmanaged.passUnretained(self).toOpaque()
-        ) else {
-            diagnostics.lifecycle("Tap creation failed: accessibilityTrusted=\(AccessibilityAuthorizer.isTrusted)")
+        guard let tap = makeConnection(Self.requiredEvents, callback,
+                                      Unmanaged.passUnretained(self).toOpaque()) else {
+            diagnostics.lifecycle("Tap creation or registration lookup failed: accessibilityTrusted=\(AccessibilityAuthorizer.isTrusted)")
             return false
         }
 
-        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-        CGEvent.tapEnable(tap: tap, enable: true)
+        // A nonnil, enabled port can still be missing keyDown/keyUp when macOS
+        // refused keyboard access during creation. Enabling it cannot add those
+        // subscriptions; discard it and let input-mode polling retry later.
+        let events = tap.registeredEvents
+        guard tap.isValid, let events,
+              events & Self.requiredEvents == Self.requiredEvents else {
+            diagnostics.lifecycle("Tap rejected: registeredEvents=\(events.map(String.init) ?? "unknown") requiredEvents=\(Self.requiredEvents)")
+            tap.invalidate()
+            return false
+        }
+        tap.setEnabled(true)
+        guard tap.isEnabled else {
+            diagnostics.lifecycle("Tap could not be enabled")
+            tap.invalidate()
+            return false
+        }
 
         eventTap = tap
-        runLoopSource = source
         intendedEnabled = true
         diagnostics.lifecycle("Tap created")
         startDiagnostics()
@@ -129,21 +144,16 @@ final class EventTapMonitor {
         diagnosticsTimer?.invalidate()
         diagnosticsTimer = nil
         intendedEnabled = false
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-        }
-        if let source = runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
-        }
+        let hadTap = eventTap != nil
+        eventTap?.invalidate()
         eventTap = nil
-        runLoopSource = nil
-        diagnostics.lifecycle("Tap stopped")
+        if hadTap { diagnostics.lifecycle("Tap stopped") }
     }
 
     func setEnabled(_ enabled: Bool) {
         intendedEnabled = enabled
         guard let tap = eventTap else { return }
-        CGEvent.tapEnable(tap: tap, enable: enabled)
+        tap.setEnabled(enabled)
         recordTapHealth()
     }
 
@@ -160,12 +170,13 @@ final class EventTapMonitor {
     }
 
     private func recordTapHealth() {
-        let valid = eventTap.map { CFMachPortIsValid($0) } ?? false
-        let enabled = valid && (eventTap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false)
+        let valid = eventTap?.isValid ?? false
+        let enabled = eventTap?.isEnabled ?? false
         diagnostics.checkHealth(.init(valid: valid, enabled: enabled,
                                       intendedEnabled: intendedEnabled,
                                       accessibilityTrusted: AccessibilityAuthorizer.isTrusted,
-                                      secureInput: SecureInputMonitor.isEnabled),
+                                      secureInput: SecureInputMonitor.isEnabled,
+                                      registeredEvents: eventTap?.registeredEvents),
                                 now: ProcessInfo.processInfo.systemUptime)
     }
 
@@ -175,7 +186,7 @@ final class EventTapMonitor {
         // Re-enable if the system disabled our tap (e.g. slow callback / user input).
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap = eventTap {
-                CGEvent.tapEnable(tap: tap, enable: true)
+                tap.setEnabled(true)
             }
             // Log off the callback thread and distinguish an enable request from
             // confirmed health. The old NSLog claimed success without checking.

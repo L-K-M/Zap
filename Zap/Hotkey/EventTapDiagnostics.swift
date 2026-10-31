@@ -13,6 +13,7 @@ final class EventTapDiagnostics {
         let intendedEnabled: Bool
         let accessibilityTrusted: Bool
         let secureInput: Bool
+        let registeredEvents: CGEventMask?
     }
 
     private static let logger = Logger(subsystem: "ch.lkmc.Zap", category: "HotkeyDiagnostics")
@@ -65,6 +66,6 @@ final class EventTapDiagnostics {
 
         lastHealth = health
         lastSummaryAt = now
-        record("Tap health: valid=\(health.valid) enabled=\(health.enabled) intendedEnabled=\(health.intendedEnabled) accessibilityTrusted=\(health.accessibilityTrusted) secureInput=\(health.secureInput) tabs=\(tabCount) matchedTabs=\(matchedTabCount) heartbeatGapMs=\(Int(gap * 1000))")
+        record("Tap health: valid=\(health.valid) enabled=\(health.enabled) intendedEnabled=\(health.intendedEnabled) accessibilityTrusted=\(health.accessibilityTrusted) secureInput=\(health.secureInput) registeredEvents=\(health.registeredEvents.map(String.init) ?? "unknown") tabs=\(tabCount) matchedTabs=\(matchedTabCount) heartbeatGapMs=\(Int(gap * 1000))")
     }
 }

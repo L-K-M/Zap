@@ -28,6 +28,8 @@ final class SwitcherController {
     private var isSessionActive = false
     private var usesEventTap = false
     private var isPaused = false
+    private var inputHealthTimer: Timer?
+    private static let inputHealthCheckInterval: TimeInterval = 2
 
     /// Reports the live trigger mode to the Settings UI.
     let inputMode = InputModeReporter()
@@ -166,6 +168,38 @@ final class SwitcherController {
     /// Starts input monitoring, choosing event-tap or fallback mode.
     func start() {
         applyInputMode()
+        inputHealthTimer?.invalidate()
+        inputHealthTimer = Self.scheduleTimer(withTimeInterval: Self.inputHealthCheckInterval,
+                                              repeats: true) { [weak self] _ in
+            self?.refreshInputModeIfNeeded()
+        }
+    }
+
+    deinit { inputHealthTimer?.invalidate() }
+
+    private func refreshInputModeIfNeeded() {
+        guard !isPaused, !preferences.useAlternateHotkey else { return }
+        guard Self.shouldRefreshInputMode(isPaused: isPaused,
+                                           useAlternateHotkey: preferences.useAlternateHotkey,
+                                           accessibilityTrusted: AccessibilityAuthorizer.isTrusted,
+                                           usesEventTap: usesEventTap,
+                                           tapReady: usesEventTap && eventTap.isReady,
+                                           isSessionActive: isSessionActive)
+        else { return }
+
+        // A missing key-up must not leave a session alive across replacement.
+        cancel()
+        applyInputMode()
+    }
+
+    /// Retry failed setup after access becomes available without overriding a
+    /// deliberate pause or alternate trigger. Healthy hooks are left untouched.
+    static func shouldRefreshInputMode(isPaused: Bool, useAlternateHotkey: Bool,
+                                       accessibilityTrusted: Bool, usesEventTap: Bool,
+                                       tapReady: Bool, isSessionActive: Bool) -> Bool {
+        guard !isPaused, !useAlternateHotkey else { return false }
+        if usesEventTap { return !accessibilityTrusted || !tapReady }
+        return accessibilityTrusted && !isSessionActive
     }
 
     /// (Re)configures the active trigger based on permission state and the
@@ -191,6 +225,7 @@ final class SwitcherController {
             }
         }
 
+        eventTap.stop()
         // Fall back to the Carbon hotkey.
         let registered = startFallback()
         inputMode.update(registered ? .fallback : .unavailable)
