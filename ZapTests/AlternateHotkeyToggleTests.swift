@@ -57,6 +57,7 @@ final class AlternateHotkeyToggleTests: XCTestCase {
         XCTAssertTrue(waitUntil { !self.switcher.isUsingEventTap },
                       "⌘-Tab is still intercepted after choosing ⌥-Tab")
         XCTAssertFalse(connection.isEnabled)
+        XCTAssertFalse(connection.isValid, "the tap should be torn down, not just disabled")
     }
 
     func testTurningTheAlternateHotkeyOffTakesCommandTabBack() {

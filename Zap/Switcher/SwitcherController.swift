@@ -155,12 +155,13 @@ final class SwitcherController {
 
         // Reconfigure live if the user toggles the alternate-hotkey preference.
         // `@Published` emits from `willSet`, while the preference still holds
-        // the old value, and `applyInputMode` reads the preference, so wait
-        // for the store to land (as `ZapIcons` does with its sinks).
+        // the old value, and `applyInputMode` reads the preference, so hop to
+        // the main queue and apply once the store has landed. The main queue,
+        // unlike `RunLoop.main`, also drains while AppKit tracks the mouse.
         preferences.$useAlternateHotkey
             .dropFirst()
             .removeDuplicates()
-            .receive(on: RunLoop.main)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.applyInputMode() }
             .store(in: &cancellables)
 
