@@ -609,9 +609,26 @@ struct OverlayView: View {
 /// (see `WindowThumbnailProvider`), while the row dimensions fix the on-screen
 /// thumbnail footprint.
 enum WindowPreviewMetrics {
+    /// Longest edge of a captured preview, in *points*. Comfortably above the
+    /// tile's 120-pt width, so a tile is always drawn from at least as many
+    /// pixels as it covers.
     static let maxDimension: CGFloat = 160
     static let rowWidth: CGFloat = 120
     static let rowHeight: CGFloat = 72
+
+    /// Highest backing scale worth capturing for. Retina Macs are 2×; anything
+    /// beyond 3× would only spend memory on pixels no display shows.
+    static let maximumBackingScale: CGFloat = 3
+
+    /// Longest edge to capture a preview at, in *pixels*, for a display with
+    /// `backingScale`. The capture APIs size their output in pixels, so passing
+    /// `maxDimension` straight through captured 160 px for a tile that is
+    /// 240 px wide on a 2× display, and every preview was upscaled about 1.5×.
+    /// A missing or nonsensical scale counts as 1×. Pure, for unit testing.
+    static func capturePixelDimension(backingScale: CGFloat) -> CGFloat {
+        let scale = backingScale.isFinite ? min(max(backingScale, 1), maximumBackingScale) : 1
+        return (maxDimension * scale).rounded(.up)
+    }
 }
 
 /// Fixed footprint of one window-preview grid cell (thumbnail above a one-line

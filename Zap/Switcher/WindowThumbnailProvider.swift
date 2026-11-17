@@ -35,7 +35,9 @@ actor WindowThumbnailProvider {
     }
 
     /// Returns a cached or freshly-captured thumbnail for `windowID`, scaled so its
-    /// longest edge is at most `maxDimension` points. `nil` when capture fails.
+    /// longest edge is at most `maxDimension` *pixels* (callers convert from the
+    /// tile's point size with `WindowPreviewMetrics.capturePixelDimension`). `nil`
+    /// when capture fails.
     func thumbnail(for windowID: CGWindowID, maxDimension: CGFloat) async -> NSImage? {
         let now = Date.timeIntervalSinceReferenceDate
         if let cached = cache.value(for: windowID, now: now) {
@@ -106,6 +108,8 @@ actor WindowThumbnailProvider {
 
     /// `CGWindowListCreateImage` is deprecated in macOS 14 but is the only
     /// screenshot path on macOS 13, where `SCScreenshotManager` is unavailable.
+    /// `.nominalResolution` keeps this capture at 1× even on Retina, which
+    /// bounds its cost; macOS 13 previews stay at that density.
     /// It cannot size its capture, so the result is downsampled before it can be
     /// wrapped in an `NSImage` and cached — otherwise every cached thumbnail
     /// holds a full-resolution bitmap.
