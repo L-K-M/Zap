@@ -21,9 +21,11 @@ final class SFSymbolNameTests: XCTestCase {
         XCTAssertNotEqual(WindowGlyph.standard, WindowGlyph.minimized)
     }
 
-    /// Every symbol name written as a literal next to `systemName:`,
-    /// `systemSymbolName:` or `systemImage:` anywhere in the app's sources,
-    /// ternaries included, must resolve on the system running the tests.
+    /// Every symbol name written as a literal on the same line as
+    /// `systemName:`, `systemSymbolName:` or `systemImage:` anywhere in the
+    /// app's sources (single-line ternaries included) must resolve on the
+    /// system running the tests. Names built elsewhere, like `WindowGlyph`'s,
+    /// need their own test.
     ///
     /// That is the runner's macOS, not the deployment target. A symbol newer
     /// than the CI runner, used behind `if #available`, needs an exception here.
