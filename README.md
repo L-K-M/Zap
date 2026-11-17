@@ -73,7 +73,8 @@ Accessibility permission prompt behave correctly.
 ## Usage
 
 1. Launch Zap — it appears as a ⌘ icon in the menu bar.
-2. Grant Accessibility access when prompted (Permissions tab), then *relaunch.*
+2. Grant Accessibility access when prompted (Permissions tab). Zap takes over
+   ⌘+Tab within a few seconds; there's no need to relaunch.
 3. Use ⌘+Tab as normal. Open **Zap Settings…** from the menu bar to exclude apps
    and adjust colors.
 

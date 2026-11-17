@@ -39,7 +39,9 @@ struct PermissionsView: View {
                 }
 
                 if !isTrusted {
-                    Text("After granting access, quit and relaunch Zap to enable ⌘-Tab.")
+                    // No relaunch: the input-health check promotes Zap to the event
+                    // tap within a couple of seconds of the grant.
+                    Text("Once access is granted, Zap takes over ⌘-Tab within a few seconds. No relaunch needed.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

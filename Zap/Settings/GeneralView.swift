@@ -88,8 +88,11 @@ struct GeneralView: View {
             }
 
             Section("Trigger") {
-                Toggle("Use ⌥-Tab fallback when ⌘-Tab is unavailable", isOn: $preferences.useAlternateHotkey)
-                Text("⌘-Tab requires Accessibility permission. Without it, Zap falls back to ⌥-Tab.")
+                // This *forces* ⌥-Tab (see `SwitcherController.applyInputMode`); the
+                // fallback without Accessibility happens on its own. Labelled as a
+                // fallback, it read as a safety net while actually turning ⌘-Tab off.
+                Toggle("Use ⌥-Tab instead of ⌘-Tab", isOn: $preferences.useAlternateHotkey)
+                Text("Leaves ⌘-Tab to the system switcher. You don't need this as a fallback: without Accessibility permission, Zap uses ⌥-Tab on its own.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
