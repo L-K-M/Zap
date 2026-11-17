@@ -811,11 +811,33 @@ final class SwitcherController {
     /// cancels the session — two-stage, like Spotlight.
     private func handleEscape() {
         cancelPendingShortcut()
-        if typeBuffer.isEmpty {
-            cancel()
-        } else {
+        switch Self.escapeStep(hasQuery: !typeBuffer.isEmpty,
+                               windowFocused: windowSelectedIndex != nil) {
+        case .clearQuery:
             clearTypeBuffer()
+        case .unfocusWindow:
+            windowSelectedIndex = nil
+            overlay.navigateWindowSelection(nil)
+        case .cancelSession:
+            cancel()
         }
+    }
+
+    /// What one Esc press undoes.
+    enum EscapeStep: Equatable {
+        case clearQuery
+        /// Back from a focused window to the app row, keeping the list open.
+        case unfocusWindow
+        case cancelSession
+    }
+
+    /// Pure rule, extracted for unit testing: Esc peels off the innermost layer
+    /// first (query, then window focus, then the session), so backing out of a
+    /// window doesn't throw the whole switch away.
+    static func escapeStep(hasQuery: Bool, windowFocused: Bool) -> EscapeStep {
+        if hasQuery { return .clearQuery }
+        if windowFocused { return .unfocusWindow }
+        return .cancelSession
     }
 
     // MARK: Commit / cancel
@@ -1167,6 +1189,10 @@ final class SwitcherController {
             advanceSelection(forward: direction == .right)
             return
         }
+        if Self.revealsWindowsImmediately(direction: direction, windowsShown: !windows.isEmpty,
+                                          windowListEnabled: preferences.showWindowList) {
+            revealWindowsNow()
+        }
         guard !windows.isEmpty else { return }
         let columns = preferences.showWindowPreviews ? max(1, overlay.windowGridColumns) : 1
         let next = Self.nextWindowSelection(from: windowSelectedIndex, direction: direction,
@@ -1174,6 +1200,25 @@ final class SwitcherController {
         guard next != windowSelectedIndex else { return }
         windowSelectedIndex = next
         overlay.navigateWindowSelection(next)
+    }
+
+    /// Pure rule, extracted for unit testing: ↓ with no list on screen opens it
+    /// at once, as the native switcher does, instead of waiting out the dwell.
+    static func revealsWindowsImmediately(direction: WindowNavDirection, windowsShown: Bool,
+                                          windowListEnabled: Bool) -> Bool {
+        direction == .down && !windowsShown && windowListEnabled
+    }
+
+    /// Shows the selected app's windows now, presenting the panel first if the
+    /// show delay is still running. The caller's ↓ then focuses the first one.
+    private func revealWindowsNow() {
+        guard AccessibilityAuthorizer.isTrusted else { return }
+        if !overlay.isVisible { presentOverlay() }
+        // `presentOverlay` starts a dwell timer, which would reveal the list
+        // again later and drop the focus this ↓ is about to set.
+        dwellTimer?.invalidate()
+        dwellTimer = nil
+        revealWindows()
     }
 
     /// Pure next-selection rule for arrow-key navigation over `count` windows laid
