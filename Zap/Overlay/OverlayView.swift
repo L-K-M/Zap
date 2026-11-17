@@ -322,7 +322,7 @@ struct OverlayView: View {
             Capsule(style: .continuous)
                 .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
         )
-        .animation(.easeOut(duration: 0.12), value: matched)
+        .animation(resolvedAnimation(.easeOut(duration: 0.12)), value: matched)
     }
 
     /// Discoverability nudge for the dual-purpose action keys: right after the
