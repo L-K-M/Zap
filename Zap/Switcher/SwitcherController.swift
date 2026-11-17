@@ -79,6 +79,7 @@ final class SwitcherController {
     /// since changed or closed.
     private let thumbnails = WindowThumbnailProvider()
     private var windowsGeneration = 0
+    private var thumbnailBatch: Task<Void, Never>?
 
     /// Short-lived cache of the scoped-display pid sets, so a ⌘-Tab burst doesn't
     /// re-run the system-wide window queries on every press (see `DisplayPIDCache`).
@@ -158,6 +159,7 @@ final class SwitcherController {
             .filter { !$0 }
             .sink { [weak self] _ in
                 guard let self else { return }
+                self.cancelThumbnailBatch()
                 Task { [thumbnails = self.thumbnails] in await thumbnails.clear() }
             }
             .store(in: &cancellables)
@@ -175,7 +177,10 @@ final class SwitcherController {
         }
     }
 
-    deinit { inputHealthTimer?.invalidate() }
+    deinit {
+        inputHealthTimer?.invalidate()
+        thumbnailBatch?.cancel()
+    }
 
     private func refreshInputModeIfNeeded() {
         guard !isPaused, !preferences.useAlternateHotkey else { return }
@@ -903,7 +908,7 @@ final class SwitcherController {
         // used to redraw the app undimmed and selectable mid-quit.
         windows = []
         windowSelectedIndex = nil
-        windowsGeneration &+= 1
+        cancelThumbnailBatch()
         sessionScreen = nil
         overlay.hide()
     }
@@ -935,7 +940,7 @@ final class SwitcherController {
         }
         windows = []
         windowSelectedIndex = nil
-        windowsGeneration &+= 1
+        cancelThumbnailBatch()
         overlay.setQuitting(quittingPIDs, selectedIndex: selectedIndex)
         overlay.clearWindows()
         restartDwell()
@@ -1025,7 +1030,7 @@ final class SwitcherController {
         }
         windows = []
         windowSelectedIndex = nil
-        windowsGeneration &+= 1
+        cancelThumbnailBatch()
         overlay.updateApps(apps, selectedIndex: selectedIndex, quitting: quittingPIDs)
         restartDwell()
     }
@@ -1072,7 +1077,7 @@ final class SwitcherController {
         guard !windows.isEmpty else { return }
         windows = []
         windowSelectedIndex = nil
-        windowsGeneration &+= 1
+        cancelThumbnailBatch()
         overlay.clearWindows()
     }
 
@@ -1103,9 +1108,9 @@ final class SwitcherController {
     /// the highlight usually fills in first); each is applied on the main actor
     /// and discarded if the window list changed meanwhile.
     private func loadThumbnails() {
+        cancelThumbnailBatch()
         guard preferences.showWindowPreviews, ScreenRecordingAuthorizer.isGranted else { return }
 
-        windowsGeneration &+= 1
         let generation = windowsGeneration
         // Minimized/off-screen windows have no backing store to capture.
         let selectedID = windowSelectedIndex
@@ -1115,7 +1120,7 @@ final class SwitcherController {
         guard !ids.isEmpty else { return }
 
         let maxDimension = WindowPreviewMetrics.maxDimension
-        Task { [weak self, thumbnails = thumbnails] in
+        thumbnailBatch = Task { [weak self, thumbnails = thumbnails] in
             await withTaskGroup(of: Void.self) { group in
                 // Keep at most `thumbnailCaptureConcurrency` captures in flight:
                 // start a new one as each finishes, so one slow window can't
@@ -1123,11 +1128,12 @@ final class SwitcherController {
                 // slowest member before starting the next).
                 var next = ids.startIndex
                 func spawnNext() {
-                    guard next < ids.endIndex else { return }
+                    guard !Task.isCancelled, next < ids.endIndex else { return }
                     let id = ids[next]
                     next += 1
-                    group.addTask {
-                        guard let image = await thumbnails.thumbnail(for: id, maxDimension: maxDimension) else { return }
+                    _ = group.addTaskUnlessCancelled {
+                        guard let image = await thumbnails.thumbnail(for: id, maxDimension: maxDimension),
+                              !Task.isCancelled else { return }
                         await self?.applyWindowThumbnail(image, for: id, generation: generation)
                     }
                 }
@@ -1138,6 +1144,12 @@ final class SwitcherController {
                 }
             }
         }
+    }
+
+    private func cancelThumbnailBatch() {
+        windowsGeneration &+= 1
+        thumbnailBatch?.cancel()
+        thumbnailBatch = nil
     }
 
     /// Pure capture order for a preview batch: the selected window first (the
@@ -1231,6 +1243,7 @@ final class SwitcherController {
         windows.remove(at: index)
 
         if windows.isEmpty {
+            cancelThumbnailBatch()
             windowSelectedIndex = nil
             overlay.clearWindows()
         } else {
