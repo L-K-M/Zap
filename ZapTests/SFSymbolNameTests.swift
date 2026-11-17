@@ -21,9 +21,12 @@ final class SFSymbolNameTests: XCTestCase {
         XCTAssertNotEqual(WindowGlyph.standard, WindowGlyph.minimized)
     }
 
-    /// Every symbol name written as a literal next to `systemName:` or
-    /// `systemSymbolName:` anywhere in the app's sources, ternaries included,
-    /// must resolve on the system running the tests.
+    /// Every symbol name written as a literal next to `systemName:`,
+    /// `systemSymbolName:` or `systemImage:` anywhere in the app's sources,
+    /// ternaries included, must resolve on the system running the tests.
+    ///
+    /// That is the runner's macOS, not the deployment target. A symbol newer
+    /// than the CI runner, used behind `if #available`, needs an exception here.
     func testEveryLiteralSymbolNameInTheAppResolves() throws {
         let names = try literalSymbolNames()
         // Guard the scan itself: a pattern that silently matched nothing would
@@ -37,23 +40,34 @@ final class SFSymbolNameTests: XCTestCase {
 
     // MARK: Source scan
 
+    private static let symbolLabels = ["systemName", "systemSymbolName", "systemImage"]
+
     private func literalSymbolNames() throws -> Set<String> {
         let sources = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()      // ZapTests
             .deletingLastPathComponent()      // repository root
             .appendingPathComponent("Zap", isDirectory: true)
+        // Fail rather than skip: a skipped scan reads as green and checks nothing.
         guard FileManager.default.fileExists(atPath: sources.path) else {
-            throw XCTSkip("App sources not found at \(sources.path)")
+            XCTFail("App sources not found at \(sources.path)")
+            return []
         }
 
-        let literal = try NSRegularExpression(pattern: #""([a-z0-9]+(?:\.[a-z0-9]+)*)""#)
+        // A literal straight after a symbol label, or a ternary branch after
+        // one (`cond ? "a" : "b"`), so another string on the same line, such
+        // as an accessibility label, isn't mistaken for a symbol name. Upper
+        // case is accepted so a mis-cased name is caught instead of skipped:
+        // real symbol names are all lower case.
+        let literal = try NSRegularExpression(
+            pattern: #"(?:(?:\#(Self.symbolLabels.joined(separator: "|"))):\s*|\s[?:]\s*)"([A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*)""#
+        )
         var names = Set<String>()
         let files = FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil)
         while let file = files?.nextObject() as? URL {
             guard file.pathExtension == "swift" else { continue }
             let text = try String(contentsOf: file, encoding: .utf8)
             for line in text.split(separator: "\n")
-            where line.contains("systemName:") || line.contains("systemSymbolName:") {
+            where Self.symbolLabels.contains(where: { line.contains("\($0):") }) {
                 let line = String(line)
                 let range = NSRange(line.startIndex..., in: line)
                 for match in literal.matches(in: line, range: range) {
