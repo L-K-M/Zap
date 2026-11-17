@@ -47,8 +47,10 @@ enum ScreenIdentity {
     ///   reading order: sorted by `midX` ascending, ties broken by `midY`
     ///   descending.
     ///
-    /// Numbering applies only within a group of identical names, so labels from
-    /// different groups never collide. Callers must pass frames in AppKit's
+    /// Labels are unique within a group of identical names. A display whose
+    /// own name already ends in such a suffix (say "DELL (left)") could match
+    /// another group's label; names come from the display's EDID, so that is
+    /// left alone rather than renumbered. Callers must pass frames in AppKit's
     /// global screen coordinate space for the position words to match the
     /// physical layout.
     static func disambiguatedNames(_ displays: [(name: String, frame: CGRect)]) -> [String] {

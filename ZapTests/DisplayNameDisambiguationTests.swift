@@ -46,6 +46,16 @@ final class DisplayNameDisambiguationTests: XCTestCase {
             ["DELL (top)", "DELL (bottom)"])
     }
 
+    func testExactDiagonalPrefersLeftAndRight() {
+        // Both gaps are equal; the documented rule picks the horizontal words.
+        let lower = rect(x: 0, y: 0)
+        let upper = rect(x: 100, y: 100)
+
+        XCTAssertEqual(
+            ScreenIdentity.disambiguatedNames([(name: "DELL", frame: lower), (name: "DELL", frame: upper)]),
+            ["DELL (left)", "DELL (right)"])
+    }
+
     func testThreeIdenticalAreNumberedInReadingOrder() {
         // Input deliberately out of position order; reading order is by midX
         // ascending: Q (midX 50), R (midX 200), P (midX 350).
