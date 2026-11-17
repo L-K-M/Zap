@@ -14,6 +14,21 @@ enum SwitcherInputMode: Equatable {
     case paused
 
     var isEventTap: Bool { self == .eventTap }
+
+    /// The status-menu line explaining why ⌘-Tab isn't intercepted, or `nil`
+    /// when there's nothing to explain: ⌘-Tab works, the user paused Zap (the
+    /// menu already says so), or the user chose ⌥-Tab on purpose
+    /// (`alternateForced`). Pure, for unit testing.
+    func statusMenuWarning(alternateForced: Bool) -> String? {
+        switch self {
+        case .eventTap, .paused:
+            return nil
+        case .fallback:
+            return alternateForced ? nil : "Using ⌥-Tab: ⌘-Tab needs Accessibility access"
+        case .unavailable:
+            return "No shortcut works: ⌘-Tab and ⌥-Tab both failed"
+        }
+    }
 }
 
 /// Observable wrapper so SwiftUI settings views can react to input-mode changes.
