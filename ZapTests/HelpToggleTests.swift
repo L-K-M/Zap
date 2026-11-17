@@ -50,6 +50,24 @@ final class HelpHintsTests: XCTestCase {
                               windowListEnabled: windowListEnabled)
     }
 
+    func testShortIconRowReservesSpaceForHelpWithPreviewsEnabled() throws {
+        let suite = "HelpHintsTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = Preferences(defaults: defaults)
+        preferences.showWindowPreviews = true
+        preferences.iconSize = 24
+        let model = OverlayModel()
+        model.apps = [AppInfo(bundleIdentifier: "test.app", name: "Test", processIdentifier: 1)]
+        model.maxContentWidth = 500
+        let overlay = OverlayView(model: model, preferences: preferences)
+
+        XCTAssertEqual(overlay.helpWidth, 360)
+
+        model.maxContentWidth = 300
+        XCTAssertEqual(overlay.helpWidth, 300)
+    }
+
     func testAppRowKeysAreAlwaysListed() {
         // Every reachable state, including a focused window — the branch that adds
         // the move/close hints must not quietly take a base key with it.
