@@ -12,12 +12,29 @@ final class OverlayRecycleTests: XCTestCase {
             clock.advance(by: 31 * 60)
             fixture.controller.hide()
 
-            let recycled = spinRunLoop(for: 0.5, until: {
+            let recycled = spinRunLoop(for: 2, until: {
                 fixture.overlayWindows.contains { $0 !== original }
             })
             XCTAssertTrue(recycled, "An aged-out window should be replaced while hidden")
             let replacement = try XCTUnwrap(fixture.overlayWindows.first { $0 !== original })
             XCTAssertFalse(replacement === original)
+        }
+    }
+
+    /// After a hidden recycle the replacement is watched too, so a long idle
+    /// spell can't age it out and put the rebuild back on the next ⌘-Tab.
+    @MainActor
+    func testARecycleWhileHiddenKeepsWatchingTheReplacement() throws {
+        let clock = FakeClock()
+        try withOverlay(clock: clock) { fixture in
+            let original = try fixture.overlayWindow()
+            clock.advance(by: 31 * 60)
+            fixture.controller.hide()
+
+            XCTAssertTrue(spinRunLoop(for: 2, until: {
+                fixture.overlayWindows.contains { $0 !== original }
+            }))
+            XCTAssertTrue(fixture.controller.hasPendingRecycle)
         }
     }
 
@@ -47,7 +64,7 @@ final class OverlayRecycleTests: XCTestCase {
             clock.advance(by: 31 * 60)
             fixture.controller.hide()
 
-            let closed = spinRunLoop(for: 0.5, until: { closeRecorder.didClose })
+            let closed = spinRunLoop(for: 2, until: { closeRecorder.didClose })
             XCTAssertTrue(closed, "The replaced window should be closed")
             XCTAssertTrue(fixture.overlayWindows.contains { $0 !== original },
                           "A replacement window should exist")

@@ -467,6 +467,10 @@ final class OverlayWindowController {
     /// Arms the one-shot timer that recycles the window once it reaches
     /// `maximumWindowAge`. Reuses `refreshWindowIfNeeded()`'s guard, so it only
     /// replaces the window while the overlay stays hidden.
+    /// Whether a hidden-window recycle is scheduled. For tests: the timer runs
+    /// on real time, so a test can't wait out `maximumWindowAge`.
+    var hasPendingRecycle: Bool { recycleTimer?.isValid == true }
+
     private func armRecycleTimer() {
         recycleTimer?.invalidate()
         let remaining = maximumWindowAge - now().timeIntervalSince(windowCreatedAt)
@@ -474,14 +478,18 @@ final class OverlayWindowController {
             guard let self else { return }
             self.recycleTimer = nil
             self.refreshWindowIfNeeded()
+            // Keep watching while hidden, so the replacement can't age out
+            // unnoticed over a long idle spell either. show() cancels it.
+            if !self.isVisible { self.armRecycleTimer() }
         }
-        timer.tolerance = 60
+        // Coalescible, but an already-due recycle still runs promptly.
+        timer.tolerance = min(60, max(0, remaining))
         RunLoop.main.add(timer, forMode: .common)
         recycleTimer = timer
     }
 
     private func refreshWindowIfNeeded() {
-        let agedOut = now().timeIntervalSince(windowCreatedAt) > maximumWindowAge
+        let agedOut = now().timeIntervalSince(windowCreatedAt) >= maximumWindowAge
         let disconnected = window.contentView == nil || hostingView.window !== window
         guard !isVisible, agedOut || disconnected else { return }
         NSLog("Zap: recycling overlay window (agedOut: \(agedOut), disconnected: \(disconnected))")
