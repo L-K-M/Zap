@@ -26,6 +26,43 @@ final class AppearancePresetTests: XCTestCase {
         XCTAssertEqual(decoded, preset)
     }
 
+    func testMidnightJSONRoundTrip() throws {
+        let preset = AppearancePreset.midnight
+        let data = try JSONEncoder().encode(preset)
+        let decoded = try JSONDecoder().decode(AppearancePreset.self, from: data)
+
+        XCTAssertEqual(decoded, preset)
+        XCTAssertEqual(decoded.name, "Midnight")
+        XCTAssertEqual(decoded.backgroundColorHex, "#111827")
+        XCTAssertTrue(decoded.useGradientBackground)
+        XCTAssertEqual(decoded.gradientColorHex, "#172554")
+        XCTAssertEqual(decoded.gradientAngle, 30)
+        XCTAssertEqual(decoded.highlightColorHex, "#60A5FA")
+        XCTAssertEqual(decoded.highlightOpacity, 0.45, accuracy: 0.0001)
+        XCTAssertEqual(decoded.labelColorHex, "#F8FAFC")
+        XCTAssertEqual(decoded.backgroundOpacity, 0.9, accuracy: 0.0001)
+        XCTAssertFalse(decoded.crtEnabled)
+        XCTAssertEqual(decoded.decorationStyle, DecorationStyle.none.rawValue)
+    }
+
+    func testMidnightApplyRoundTripPreservesFixture() {
+        let prefs = Preferences(defaults: defaults)
+        AppearancePreset.midnight.apply(to: prefs)
+        let snapshot = AppearancePreset(name: "Midnight", from: prefs)
+
+        XCTAssertEqual(snapshot, AppearancePreset.midnight)
+    }
+
+    func testMidnightUsesClassicGeometry() {
+        let preset = AppearancePreset.midnight
+
+        XCTAssertEqual(preset.iconSize, AppearancePreset.classic.iconSize)
+        XCTAssertEqual(preset.cornerRadius, AppearancePreset.classic.cornerRadius)
+        XCTAssertEqual(preset.highlightCornerRadius, AppearancePreset.classic.highlightCornerRadius)
+        XCTAssertEqual(preset.contentPadding, AppearancePreset.classic.contentPadding)
+        XCTAssertEqual(preset.showAppName, AppearancePreset.classic.showAppName)
+    }
+
     func testSnapshotCapturesCurrentSettings() {
         let prefs = Preferences(defaults: defaults)
         prefs.backgroundColorHex = "#102030"

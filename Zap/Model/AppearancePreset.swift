@@ -105,7 +105,7 @@ extension AppearancePreset {
 extension AppearancePreset {
 
     /// A few ready-made themes shown in the Appearance settings.
-    static let builtIns: [AppearancePreset] = [classic, zxNight, vaporwave, amiga]
+    static let builtIns: [AppearancePreset] = [classic, midnight, zxNight, vaporwave, amiga]
 
     /// The shipping defaults, as a named preset.
     static let classic = AppearancePreset(
@@ -124,6 +124,28 @@ extension AppearancePreset {
         labelColorHex: Preferences.Default.labelColorHex,
         backgroundOpacity: Preferences.Default.backgroundOpacity,
         highlightOpacity: Preferences.Default.highlightOpacity,
+        iconSize: Preferences.Default.iconSize,
+        cornerRadius: Preferences.Default.cornerRadius,
+        highlightCornerRadius: Preferences.Default.highlightCornerRadius,
+        contentPadding: Preferences.Default.contentPadding,
+        showAppName: true)
+
+    static let midnight = AppearancePreset(
+        name: "Midnight",
+        backgroundColorHex: "#111827",
+        useGradientBackground: true,
+        gradientColorHex: "#172554",
+        gradientAngle: 30,
+        decorationStyle: DecorationStyle.none.rawValue,
+        decorationPosition: Preferences.Default.decorationPosition.rawValue,
+        decorationOpacity: Preferences.Default.decorationOpacity,
+        decorationSize: Preferences.Default.decorationSize,
+        crtEnabled: false,
+        crtIntensity: Preferences.Default.crtIntensity,
+        highlightColorHex: "#60A5FA",
+        labelColorHex: "#F8FAFC",
+        backgroundOpacity: 0.9,
+        highlightOpacity: 0.45,
         iconSize: Preferences.Default.iconSize,
         cornerRadius: Preferences.Default.cornerRadius,
         highlightCornerRadius: Preferences.Default.highlightCornerRadius,
