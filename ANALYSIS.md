@@ -5,8 +5,8 @@ document future work starts from. Entries are removed as they ship.
 
 **Provenance.** Consolidates the July 2026 review (`claude-review.md`), the
 earlier `awesome.md` review (both merged here), and the October 2026 pass
-(`mimo.md`, a local working file since discarded). `ISSUES.md` stays as the
-archived June 2026 review-and-resolution log.
+(`mimo.md`, a local working file since discarded), and the November 2026
+review. `ISSUES.md` stays as the archived June 2026 review-and-resolution log.
 
 **Scope.** Only unimplemented findings are listed. Entries fixed in merged PRs
 (#16–#23 and earlier) are gone, as are entries with an open PR as of
@@ -15,31 +15,75 @@ P4 (#57), P5 (#56), U4 (#55), and two small input nits (#61, #63). P1 is
 *partially* addressed (#54 caches the scoped-display queries); what remains of
 it is below.
 
-**Verification caveat.** These reviews are static reads; the environment they
-were written in has no macOS/Xcode toolchain. CI (`macos-14`, Xcode 16.2)
-builds and runs the unit tests on every PR, but nothing here has been watched
-running. Anything needing a live GUI session says so.
+**Verification.** The November 2026 review checked main at `5d1039d` on
+macOS 27.0.1 and Xcode 27.2. The baseline suite passed 430 tests with one
+skipped mirror-recovery case. Each finding below that depends on live behavior
+lists what to reproduce or measure. The replacement hosted runner passed
+its PR build on macOS 15 and Xcode 16.4.
 
 ---
+
+## Submitted in November 2026
+
+These changes have open PRs. Remove this tracking entry as each one ships.
+
+- Clarify that Option-Tab can be forced and also acts as automatic fallback.
+  [PR #83](https://github.com/L-K-M/Zap/pull/83)
+- Honor Reduce Motion for the search result badge.
+  [PR #84](https://github.com/L-K-M/Zap/pull/84)
+- Cancel obsolete thumbnail batches and share overlapping capture enumeration.
+  [PR #85](https://github.com/L-K-M/Zap/pull/85)
+- Add the opt-in Midnight preset.
+  [PR #86](https://github.com/L-K-M/Zap/pull/86)
+- Report theme file errors and save exports atomically.
+  [PR #87](https://github.com/L-K-M/Zap/pull/87)
+- Move CI and release workflows off the retired macOS 14 runner.
+  [PR #88](https://github.com/L-K-M/Zap/pull/88)
+- Keep shortcut help readable with a short icon row.
+  [PR #89](https://github.com/L-K-M/Zap/pull/89)
+- Keep the sample symbols in Appearance legible across system appearances.
+  [PR #90](https://github.com/L-K-M/Zap/pull/90)
 
 ## Important
 
 ### P1 — The keystroke path still snapshots every running application
 
-performance — important
+`beginSession` asks `AppListProvider.currentApps` to snapshot each running
+app, resolve icons, apply scope/exclusions, and MRU-sort synchronously. Scoped
+window-server queries are already cached. Measure app-list and session-open
+latency at 5 and 40 apps, with cold and warm icons and with scoping. The show
+delay does not defer these operations. A system-icon probe with five apps
+measured 18.82 ms on first use, then 0.054 ms median and 0.062 ms p95 across
+60 warm calls. Measure a crowded row and Pict resolution before changing
+snapshot caching.
 
-`beginSession` → `appList(for:)` → `NSWorkspace.runningApplications` with an
-`NSImage` per app and an MRU sort, all synchronous inside the event-tap
-callback on every ⌘-Tab press. The scoped-display window-server queries (the
-worst part) are cached since PR #54; the `NSWorkspace` snapshot and icon
-resolution remain on the tap path, and a ⌘-Tab burst repeats them per press.
-Individually 1–5 ms; together on a busy machine they approach the event-tap
-deadline — the failure mode PR #17 survives rather than prevents. The 150 ms
-show-delay hides the visual cost, not the tap cost.
+First move scope and exclusion filtering ahead of icon substitution. If the
+snapshot remains significant, maintain membership and stable metadata on
+workspace changes, with an initial synchronous seed and an invalidation path.
+Evaluate MRU and hidden state at session start. Test launch, quit, hide, display
+scoping, wrapper bundles, and rapid back-and-forth switching.
 
-Suggested fix: pre-warm the app list on `didActivateApplication` instead of at
-keystroke time, and reuse the last snapshot within a short TTL (the PR #54
-cache shape).
+### Bound AX window enumeration off the UI thread
+
+`SwitcherController.revealWindows` synchronously invokes
+`WindowEnumerator.windows`. The configured timeout applies per AX call.
+A standalone probe measured 3.46 ms for a four-window app and 255.92 ms
+for an isolated suspended process (1.87 ms when responsive).
+
+Move read-only enumeration to a bounded worker. Check cancellation between
+AX calls and apply results on the main thread only for the current session
+and selected process. Keep raise and close on their current path. Verify
+Tab, Escape, and Command release during a slow dwell, and confirm no stale
+list appears after changing selection or starting a new session.
+
+### Verify window closure before dropping the row
+
+`WindowEnumerator.close` reports whether AX accepted a button press.
+`SwitcherController.closeFocusedWindow` immediately removes that row. Reproduce
+with a disposable unsaved document that prompts to save, then cancel the
+prompt. If the row disappears while the window stays open, mark the close
+pending until the AX window is gone. Allow navigation while pending and prevent
+key repeat from pressing that same close button again.
 
 ## Nice-to-have
 
@@ -47,14 +91,12 @@ cache shape).
 
 bugs — nice-to-have
 
-`UpdateChecker.performCheck` can run `NSAlert.runModal()` while a ⌘-Tab
-session is up (the launch check, plus any daily tick that coincides). The tap
-is registered in `.commonModes`, so ⌘-Tab keeps starting sessions under a
-modal run loop and keys are swallowed against a spinning alert.
-
-Suggested fix: a "defer while switching" predicate injected from
-`AppDelegate`; the reverse direction (`zapIsShowingAWindow`) already exists in
-`SwitcherController`.
+`UpdateChecker.performCheck` can present a modal alert after a background
+check while a switch is active. The tap runs in common modes, so a modal alert
+can also see new switch attempts. Inject an update result during a switch to
+reproduce. Defer the alert until commit or cancel and suspend interception
+while the alert owns input. Verify the original switch completes and the
+alert appears only once.
 
 ### Real-window thresholds disagree inside one feature area
 
@@ -65,19 +107,6 @@ bugs — nice-to-have
 display scoping but is dropped from the off-Space window list.
 
 Suggested fix: one shared constant, with a comment on why it has its value.
-
-### `runningApplication(for:)` can resolve the wrong instance
-
-bugs — nice-to-have
-
-`AppListProvider.runningApplication(for:)` falls back to `byBundle.first` when
-the pid lookup fails; with two instances of one bundle id (site-specific
-browser wrappers, a relaunched app) quit/hide/open-files can reach the wrong
-process.
-
-Suggested fix: drop the bundle-only fallback and fail explicitly; the
-`NSRunningApplication(processIdentifier:)` initializer already covers the
-legitimate case.
 
 ### P3 — The whole overlay body re-evaluates on every selection change
 
@@ -101,15 +130,15 @@ performance — nice-to-have
 property, so the live preview can hold no state and re-allocates per slider
 tick. A `@StateObject` fixes it.
 
-### P7 — PermissionsView polls two system APIs every second while open
+### P7 — Poll permission status only while the pane is visible
 
 performance — nice-to-have
 
-`AXIsProcessTrusted()` + `CGPreflightScreenCaptureAccess()` on a 1 Hz Combine
-timer that runs whenever the tab exists in the `TabView`, not only when
-visible.
-
-Suggested fix: 2–3 s interval, or start/stop on appear/disappear.
+`PermissionsView` queries Accessibility, Screen Recording, and Secure Input
+every second. The current AppKit tab host mounts panes lazily. Trace whether
+the subscription stops when a mounted pane is hidden or Settings is closed.
+If it continues, start and stop it with pane visibility and refresh
+immediately on return from System Settings.
 
 ### V1 — The panel appears instantly, with no transition
 
@@ -125,8 +154,10 @@ small-square flash the retry path prevents. Wants a live session to tune.
 
 visual and layout — nice-to-have
 
-A subtle scale (1.0 → 1.06) or soft glow would read faster at a glance,
-especially with `highlightOpacity` turned down. Pairs with V1.
+Try a crisp selection outline with Increase Contrast or when the theme uses
+a faint highlight. A subtle scale (1.0 → 1.06) or soft glow is another visual
+option. Test over bright and dark backdrops at low highlight opacity. Keep
+the outline visible under Reduce Motion and suppress animated scale there.
 
 ### V3 — Window preview tiles letterbox awkwardly
 
@@ -137,13 +168,13 @@ ultrawide window sits in a mostly-empty tile. Filling the tile (`.fill` +
 clip, top-anchored) would read better: window previews are recognised by
 their top-left chrome, not their aspect ratio.
 
-### V4 — No window title anywhere when a window is focused
+### V4 — Show the focused window title in the header
 
-visual and layout — nice-to-have
-
-The header shows the *app* name even while the selection is a window. Showing
-the focused window's title there (or "App · 3 windows") uses space that is
-already reserved.
+Window tiles and list rows show truncated titles. The header continues to show
+the app name even while a window is highlighted. Show the focused title in
+the existing header and expose the full title and minimized state through
+accessibility. Verify long and identical titles, an empty title, and return to
+the app row without resizing the panel.
 
 ### V5 — The panel's fixed two-thirds-up placement isn't configurable
 
@@ -161,15 +192,13 @@ The name is framed at `panelContentWidth`, which with 3–4 apps is narrow, so
 long names tail-truncate where the panel could simply be a little wider for
 the label.
 
-### U2 — First launch has no onboarding
+### U2 — First launch has no shortcut practice
 
-usability — nice-to-have
-
-The app installs a status item, maybe prompts for Accessibility, and that's
-it. There is no "Zap is now handling ⌘-Tab, here's what it can do" moment —
-and per the README's own troubleshooting, the Accessibility grant is the
-single most common failure mode. PR #22's `?` footer covers in-session
-discoverability; this is about the first thirty seconds.
+`AppDelegate` creates the menu bar item and may prompt for Accessibility.
+The overlay's `?` footer covers in-session help. Start with an optional
+Settings practice card for one forward and one reverse switch. Offer a
+permission action when needed and explain the actual alternate trigger mode.
+Verify a fresh install and the denied-permission path.
 
 ### U3 — The fallback mode can't be cancelled
 
@@ -180,14 +209,12 @@ arrives and the 0.8 s auto-commit timer always fires. Inherent to the
 mechanism; at minimum say so in the Settings caption, or let a second ⌥-Tab
 onto the current app act as a cancel.
 
-### U5 — Exclusions can only be set for running apps
+### U5 — Exclude an installed app that is not running
 
-usability — nice-to-have
-
-`ExclusionsView` lists running apps plus already-excluded ones, so you cannot
-pre-exclude an app that isn't running — which is exactly when you'd want to.
-An "Add App…" button with an `NSOpenPanel` scoped to `/Applications` closes
-this.
+`ExclusionsView` lists running apps and existing exclusions. Add an “Add
+App…” picker starting at Applications, validate the selected bundle ID, write
+through the existing exclusion store, and show the offline row immediately.
+Test a duplicate selection, an invalid bundle, and re-enabling an exclusion.
 
 ### U6 — No pinned / favourite apps
 
@@ -201,9 +228,10 @@ third-party switcher. Design decision first, code second.
 
 usability — nice-to-have
 
-Per-display scoping silently drops apps; a user who forgot the setting sees a
-mysteriously short switcher. A small "this display only" marker on the panel
-when a scope is in effect would explain it.
+Per-display scoping can show a surprisingly short list. Show a compact
+“This display only” marker when the scope actually filters the row. Verify
+the excluded-app override, hot-plug, differences by pointer display, and
+mirroring.
 
 ### U8 — Session app list is a snapshot
 
@@ -266,7 +294,7 @@ Transparency and Reduce Motion are honoured since PR #23).
 Suggested fix: honour increase-contrast the same way (raise background
 opacity / stroke the label), or check a minimum contrast ratio.
 
-### C1 — `SwitcherController` is ~1,200 lines doing five jobs
+### C1 — Extract the switcher session transitions
 
 code quality — nice-to-have
 
@@ -281,10 +309,10 @@ explicit transitions. That's also the unlock for C2.
 
 code quality — nice-to-have
 
-Three dozen test files, all pure logic. Nothing covers session lifecycle,
-commit/cancel, quit verification, hold-vs-tap, or dwell sequencing, because
-they're welded to AppKit and `Timer`. Extracting the session machine (C1) plus
-a fake clock would make all of it testable. Specific gaps carried forward:
+The suite covers individual input rules and some AppKit presentation paths.
+There is still no end-to-end test for session lifecycle, commit/cancel, quit
+verification, hold-vs-tap, or dwell sequencing. Extract the session
+transitions (C1) and test them with a fake clock. Specific gaps carried forward:
 reverse-cycling, commit/cancel, launch-at-login (needs an injectable
 `SMAppService` seam), the fallback-hotkey preference path, and the timer/
 callback wiring behind the stranded-session rule (the rule is tested; the
@@ -298,14 +326,6 @@ It works and reads fine, but a small `@Stored` property wrapper would remove
 ~120 lines and make it impossible to forget a key. Worth doing only when it's
 being touched anyway.
 
-### C6 — `AppInfo.id` is `bundleID:pid` while MRU keys on bundle path
-
-code quality — nice-to-have
-
-Deliberate and correct (see `ISSUES.md` High #6), but the asymmetry deserves a
-note at the `MRUTracker` type level, since it's the kind of thing a future
-change "fixes" by accident.
-
 ### C7 — Unit tests host the real app binary
 
 code quality — nice-to-have
@@ -317,6 +337,20 @@ for the guard entirely.
 ## Delight backlog
 
 Ordered by charm-per-line-of-code. D1 (the `?` hints footer) shipped in PR #22.
+
+### Hold-to-act progress
+
+`SwitcherController.handleShortcutKey` tentatively types Q or H, then rolls
+that back on a hold. Show a small progress ring on the original action target
+and a static label under Reduce Motion. Verify tap-to-search, early release,
+Tab, pointer movement, and a disappearing target.
+
+### Preset browsing
+
+`AppearanceView` applies a built-in theme immediately from a menu. Prototype
+a keyboard-accessible swatch strip with one preview and an Undo action for
+applying the preset. Check the minimum Settings size with large icon settings.
+
 
 ### D2 — Number badges on hold
 
@@ -346,7 +380,9 @@ preferences, and the one people would screenshot.
 
 delight — nice-to-have
 
-A meta-style that picks a random decoration per session. Zero drawing code.
+Start with a “Surprise me” preset in Appearance that previews a random theme
+and offers Undo after applying it. A per-session random decoration can reuse
+the same choices without adding drawing code or work to the key event path.
 
 ### D6 — Boing-ball physics on idle
 
@@ -360,8 +396,9 @@ raster machinery exists; it needs a display link and a sine.
 
 delight — nice-to-have
 
-A one-off, tasteful notification at 1,000 / 10,000 / 100,000 switches. Free,
-from data already on disk (see F4).
+Use the count already on disk (see F4) for a one-time acknowledgment at
+1,000, 10,000, and 100,000 switches. Try a brief pixel spark outside the fast
+tap path, with a static equivalent for Reduce Motion.
 
 ### D8 — A "zap" sound, off by default
 
