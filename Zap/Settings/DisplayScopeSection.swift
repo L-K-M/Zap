@@ -68,12 +68,17 @@ struct DisplayScopeSection: View {
     }
 
     /// Rebuilds the display list from the current screen configuration, dropping any
-    /// display whose stable id can't be resolved.
+    /// display whose stable id can't be resolved. Identical `localizedName`s get
+    /// position/number suffixes so each picker stays distinguishable.
     private func refresh() {
-        displays = NSScreen.screens.compactMap { screen in
+        let detected = NSScreen.screens.compactMap { screen -> (id: String, name: String, frame: CGRect)? in
             guard let id = ScreenIdentity.persistentID(for: screen) else { return nil }
-            return DisplayOption(id: id, name: ScreenIdentity.displayName(for: screen))
+            let name = ScreenIdentity.displayName(for: screen)
+            return (id: id, name: name, frame: screen.frame)
         }
+        let names = ScreenIdentity.disambiguatedNames(
+            detected.map { (name: $0.name, frame: $0.frame) })
+        displays = zip(detected, names).map { DisplayOption(id: $0.id, name: $1) }
     }
 
     private func modeBinding(forID id: String) -> Binding<ScreenScopeMode> {
