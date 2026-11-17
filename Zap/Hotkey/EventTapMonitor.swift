@@ -144,6 +144,7 @@ final class EventTapMonitor {
         diagnosticsTimer?.invalidate()
         diagnosticsTimer = nil
         intendedEnabled = false
+        heldShortcutKeyCodes.removeAll()
         let hadTap = eventTap != nil
         eventTap?.invalidate()
         eventTap = nil
@@ -152,6 +153,9 @@ final class EventTapMonitor {
 
     func setEnabled(_ enabled: Bool) {
         intendedEnabled = enabled
+        // Releases bypass a disabled tap, so a record kept now could never be
+        // cleared by its key-up and would swallow some later release instead.
+        if !enabled { heldShortcutKeyCodes.removeAll() }
         guard let tap = eventTap else { return }
         tap.setEnabled(enabled)
         recordTapHealth()
@@ -185,12 +189,18 @@ final class EventTapMonitor {
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         // Re-enable if the system disabled our tap (e.g. slow callback / user input).
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if let tap = eventTap {
-                tap.setEnabled(true)
+            // A notification queued before a deliberate disable (Pause Zap, or a
+            // trigger change) must not undo it: ⌘-Tab would be swallowed while
+            // the controller ignores it.
+            let cause = type == .tapDisabledByTimeout ? "timeout" : "user input"
+            guard intendedEnabled, let tap = eventTap else {
+                diagnostics.lifecycle("Tap disabled by \(cause) while intentionally off; left off")
+                return Unmanaged.passUnretained(event)
             }
+            tap.setEnabled(true)
             // Log off the callback thread and distinguish an enable request from
             // confirmed health. The old NSLog claimed success without checking.
-            diagnostics.lifecycle("Tap disabled by \(type == .tapDisabledByTimeout ? "timeout" : "user input"); requested re-enable")
+            diagnostics.lifecycle("Tap disabled by \(cause); requested re-enable")
             // Anything sent while the tap was off never reached us; let the
             // controller re-sync a session that may have lost its ⌘ key-up.
             onTapReEnabled?()
@@ -246,6 +256,10 @@ final class EventTapMonitor {
             }
 
             guard isSwitching() else {
+                // This press reaches the app, so its release must too. Drop any
+                // record left by an earlier swallowed press whose release never
+                // came through the tap (it was timed out or rebuilt meanwhile).
+                heldShortcutKeyCodes.removeValue(forKey: keyCode)
                 return Unmanaged.passUnretained(event)
             }
 
