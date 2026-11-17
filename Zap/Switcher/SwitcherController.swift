@@ -1114,7 +1114,7 @@ final class SwitcherController {
                                     selectedID: selectedID)
         guard !ids.isEmpty else { return }
 
-        let maxDimension = WindowPreviewMetrics.capturePixelDimension(backingScale: previewBackingScale())
+        let capturePixels = WindowPreviewMetrics.capturePixelDimension(backingScale: previewBackingScale())
         Task { [weak self, thumbnails = thumbnails] in
             await withTaskGroup(of: Void.self) { group in
                 // Keep at most `thumbnailCaptureConcurrency` captures in flight:
@@ -1127,7 +1127,7 @@ final class SwitcherController {
                     let id = ids[next]
                     next += 1
                     group.addTask {
-                        guard let image = await thumbnails.thumbnail(for: id, maxDimension: maxDimension) else { return }
+                        guard let image = await thumbnails.thumbnail(for: id, maxDimension: capturePixels) else { return }
                         await self?.applyWindowThumbnail(image, for: id, generation: generation)
                     }
                 }
