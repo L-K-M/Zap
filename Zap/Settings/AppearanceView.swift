@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 /// Color and size customization with a live preview of the overlay.
 struct AppearanceView: View {
     @ObservedObject var preferences: Preferences
+    /// Whether the reset confirmation is showing. Reset acts only after it.
+    @State private var confirmingReset = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -98,11 +100,25 @@ struct AppearanceView: View {
                 }
 
                 Section {
-                    Button("Reset to defaults", role: .destructive, action: resetDefaults)
+                    Button("Reset to defaults…", role: .destructive) {
+                        confirmingReset = true
+                    }
                 }
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
+            // Resetting is destructive, so it asks first, as the Icons tab's
+            // bulk reset does.
+            .confirmationDialog(
+                "Reset the appearance to its defaults?",
+                isPresented: $confirmingReset,
+                titleVisibility: .visible
+            ) {
+                Button("Reset", role: .destructive, action: preferences.resetAppearance)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Colors, layout, icon artwork, the decoration and the CRT effect go back to how Zap ships. Excluded apps, custom app icons and your other settings stay as they are.")
+            }
         }
     }
 
@@ -184,7 +200,16 @@ struct AppearanceView: View {
         let preset = AppearancePreset(name: "Zap Theme", from: preferences)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(preset) else { return }
+
+        let data: Data
+        do {
+            data = try encoder.encode(preset)
+        } catch {
+            NSLog("Zap: failed to encode theme: %@", error.localizedDescription)
+            showThemeAlert(messageText: "Couldn't export the theme",
+                           informativeText: error.localizedDescription)
+            return
+        }
 
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
@@ -195,6 +220,8 @@ struct AppearanceView: View {
             try data.write(to: url)
         } catch {
             NSLog("Zap: failed to export theme: %@", error.localizedDescription)
+            showThemeAlert(messageText: "Couldn't export the theme",
+                           informativeText: error.localizedDescription)
         }
     }
 
@@ -205,33 +232,37 @@ struct AppearanceView: View {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard let data = try? Data(contentsOf: url),
-              let preset = try? JSONDecoder().decode(AppearancePreset.self, from: data) else {
-            NSLog("Zap: couldn't read a theme from %@", url.lastPathComponent)
+
+        // Unreadable and unparseable are different failures: one says the file
+        // couldn't be read at all, the other that it was read but isn't a theme.
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            NSLog("Zap: couldn't read a theme from %@: %@", url.lastPathComponent, error.localizedDescription)
+            showThemeAlert(messageText: "Couldn't import the theme",
+                           informativeText: "Zap couldn't read “\(url.lastPathComponent)”: \(error.localizedDescription)")
             return
         }
-        preset.apply(to: preferences)
+
+        do {
+            let preset = try JSONDecoder().decode(AppearancePreset.self, from: data)
+            preset.apply(to: preferences)
+        } catch {
+            NSLog("Zap: couldn't read a theme from %@: %@", url.lastPathComponent, error.localizedDescription)
+            showThemeAlert(messageText: "Couldn't import the theme",
+                           informativeText: "“\(url.lastPathComponent)” isn't a Zap theme file. Themes are the .json files Zap's Export… button saves.")
+        }
     }
 
-    private func resetDefaults() {
-        preferences.backgroundColorHex = Preferences.Default.backgroundColorHex
-        preferences.useGradientBackground = Preferences.Default.useGradientBackground
-        preferences.gradientColorHex = Preferences.Default.gradientColorHex
-        preferences.gradientAngle = Preferences.Default.gradientAngle
-        preferences.decorationStyle = Preferences.Default.decorationStyle
-        preferences.decorationPosition = Preferences.Default.decorationPosition
-        preferences.decorationOpacity = Preferences.Default.decorationOpacity
-        preferences.decorationSize = Preferences.Default.decorationSize
-        preferences.crtEnabled = Preferences.Default.crtEnabled
-        preferences.crtIntensity = Preferences.Default.crtIntensity
-        preferences.highlightColorHex = Preferences.Default.highlightColorHex
-        preferences.labelColorHex = Preferences.Default.labelColorHex
-        preferences.backgroundOpacity = Preferences.Default.backgroundOpacity
-        preferences.highlightOpacity = Preferences.Default.highlightOpacity
-        preferences.iconSize = Preferences.Default.iconSize
-        preferences.cornerRadius = Preferences.Default.cornerRadius
-        preferences.highlightCornerRadius = Preferences.Default.highlightCornerRadius
-        preferences.contentPadding = Preferences.Default.contentPadding
-        preferences.showAppName = true
+    /// Reports a theme import/export failure the user can see. `NSLog` alone
+    /// leaves a failed click looking like nothing happened at all.
+    private func showThemeAlert(messageText: String, informativeText: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = messageText
+        alert.informativeText = informativeText
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 }

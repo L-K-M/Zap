@@ -424,6 +424,37 @@ final class Preferences: ObservableObject {
     }
 
 
+    // MARK: Appearance
+
+    /// Resets every setting shown on the Appearance tab to its default: colors,
+    /// layout, icon artwork, the decoration and the CRT effect. Everything else
+    /// (exclusions, timing, window list, triggers, display scoping, icon source
+    /// mode, switch counters, launch at login) is left as it is.
+    func resetAppearance() {
+        backgroundColorHex = Default.backgroundColorHex
+        useGradientBackground = Default.useGradientBackground
+        gradientColorHex = Default.gradientColorHex
+        gradientAngle = Default.gradientAngle
+        decorationStyle = Default.decorationStyle
+        decorationPosition = Default.decorationPosition
+        decorationOpacity = Default.decorationOpacity
+        decorationSize = Default.decorationSize
+        crtEnabled = Default.crtEnabled
+        crtIntensity = Default.crtIntensity
+        highlightColorHex = Default.highlightColorHex
+        labelColorHex = Default.labelColorHex
+        backgroundOpacity = Default.backgroundOpacity
+        highlightOpacity = Default.highlightOpacity
+        iconSize = Default.iconSize
+        cornerRadius = Default.cornerRadius
+        highlightCornerRadius = Default.highlightCornerRadius
+        contentPadding = Default.contentPadding
+        showAppName = true
+        iconBleed = Default.iconBleed
+        iconTrimTransparentEdges = Default.iconTrimTransparentEdges
+        iconShadow = Default.iconShadow
+    }
+
     // MARK: Exclusions
 
     func isExcluded(_ bundleID: String) -> Bool {
