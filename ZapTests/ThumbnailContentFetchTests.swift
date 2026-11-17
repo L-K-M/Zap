@@ -5,7 +5,7 @@ import XCTest
 final class ThumbnailContentFetchTests: XCTestCase {
     func testConcurrentCapturesShareAWindowListFetch() async throws {
         guard #available(macOS 14.0, *) else { throw XCTSkip("Requires ScreenCaptureKit capture") }
-        let loader = Loader()
+        let loader = Loader(delay: 1_000_000_000)
         let provider = WindowThumbnailProvider(fetchContent: { await loader.fetch() })
 
         await withTaskGroup(of: Void.self) { group in
@@ -34,8 +34,13 @@ final class ThumbnailContentFetchTests: XCTestCase {
     }
 
     private actor Loader {
+        private let delay: UInt64
         private(set) var requests = 0
         private var started: CheckedContinuation<Void, Never>?
+
+        init(delay: UInt64 = 150_000_000) {
+            self.delay = delay
+        }
 
         func waitUntilStarted() async {
             guard requests == 0 else { return }
@@ -47,7 +52,7 @@ final class ThumbnailContentFetchTests: XCTestCase {
             started?.resume()
             started = nil
             // Simulate suspended system enumeration without requesting screen access.
-            try? await Task.sleep(nanoseconds: 150_000_000)
+            try? await Task.sleep(nanoseconds: delay)
             return nil
         }
     }

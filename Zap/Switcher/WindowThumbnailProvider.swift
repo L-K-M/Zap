@@ -89,6 +89,7 @@ actor WindowThumbnailProvider {
         if let contentFetch { return await contentFetch.value }
 
         let generation = cacheGeneration
+        // The shared fetch outlives individual callers. Only clear() cancels it.
         let fetch = Task { await refreshShareableContent(generation: generation) }
         contentFetch = fetch
         return await fetch.value
@@ -97,6 +98,7 @@ actor WindowThumbnailProvider {
     private func refreshShareableContent(generation: Int) async -> SCShareableContent? {
         guard cacheGeneration == generation, !Task.isCancelled else { return nil }
         let content = await fetchContent()
+        // A clear may have made room for a newer fetch while this one was suspended.
         guard cacheGeneration == generation else { return nil }
         contentFetch = nil
         if let content {

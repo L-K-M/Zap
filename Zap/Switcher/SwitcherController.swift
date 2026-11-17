@@ -159,7 +159,7 @@ final class SwitcherController {
             .filter { !$0 }
             .sink { [weak self] _ in
                 guard let self else { return }
-                self.cancelThumbnailBatch()
+                self.invalidateThumbnailBatch()
                 Task { [thumbnails = self.thumbnails] in await thumbnails.clear() }
             }
             .store(in: &cancellables)
@@ -908,7 +908,7 @@ final class SwitcherController {
         // used to redraw the app undimmed and selectable mid-quit.
         windows = []
         windowSelectedIndex = nil
-        cancelThumbnailBatch()
+        invalidateThumbnailBatch()
         sessionScreen = nil
         overlay.hide()
     }
@@ -940,7 +940,7 @@ final class SwitcherController {
         }
         windows = []
         windowSelectedIndex = nil
-        cancelThumbnailBatch()
+        invalidateThumbnailBatch()
         overlay.setQuitting(quittingPIDs, selectedIndex: selectedIndex)
         overlay.clearWindows()
         restartDwell()
@@ -1030,7 +1030,7 @@ final class SwitcherController {
         }
         windows = []
         windowSelectedIndex = nil
-        cancelThumbnailBatch()
+        invalidateThumbnailBatch()
         overlay.updateApps(apps, selectedIndex: selectedIndex, quitting: quittingPIDs)
         restartDwell()
     }
@@ -1077,7 +1077,7 @@ final class SwitcherController {
         guard !windows.isEmpty else { return }
         windows = []
         windowSelectedIndex = nil
-        cancelThumbnailBatch()
+        invalidateThumbnailBatch()
         overlay.clearWindows()
     }
 
@@ -1108,7 +1108,7 @@ final class SwitcherController {
     /// the highlight usually fills in first); each is applied on the main actor
     /// and discarded if the window list changed meanwhile.
     private func loadThumbnails() {
-        cancelThumbnailBatch()
+        invalidateThumbnailBatch()
         guard preferences.showWindowPreviews, ScreenRecordingAuthorizer.isGranted else { return }
 
         let generation = windowsGeneration
@@ -1146,7 +1146,8 @@ final class SwitcherController {
         }
     }
 
-    private func cancelThumbnailBatch() {
+    /// Also invalidates results that were already queued for delivery.
+    private func invalidateThumbnailBatch() {
         windowsGeneration &+= 1
         thumbnailBatch?.cancel()
         thumbnailBatch = nil
@@ -1243,7 +1244,7 @@ final class SwitcherController {
         windows.remove(at: index)
 
         if windows.isEmpty {
-            cancelThumbnailBatch()
+            invalidateThumbnailBatch()
             windowSelectedIndex = nil
             overlay.clearWindows()
         } else {
