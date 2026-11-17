@@ -464,13 +464,13 @@ final class OverlayWindowController {
         pointerOriginAtShow = nil
     }
 
-    /// Arms the one-shot timer that recycles the window once it reaches
-    /// `maximumWindowAge`. Reuses `refreshWindowIfNeeded()`'s guard, so it only
-    /// replaces the window while the overlay stays hidden.
     /// Whether a hidden-window recycle is scheduled. For tests: the timer runs
     /// on real time, so a test can't wait out `maximumWindowAge`.
     var hasPendingRecycle: Bool { recycleTimer?.isValid == true }
 
+    /// Arms the one-shot timer that recycles the window once it reaches
+    /// `maximumWindowAge`. Reuses `refreshWindowIfNeeded()`'s guard, so it only
+    /// replaces the window while the overlay stays hidden.
     private func armRecycleTimer() {
         recycleTimer?.invalidate()
         let remaining = maximumWindowAge - now().timeIntervalSince(windowCreatedAt)
