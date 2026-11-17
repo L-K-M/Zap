@@ -17,7 +17,9 @@ final class OverlayWindowController {
     private let scheduleVisibilityCheck: (@escaping () -> Void) -> Void
     private var window: NSWindow
     private var hostingView: OverlayHostingView
-    private var windowCreatedAt = Date()
+    private var windowCreatedAt: Date
+    private let now: () -> Date
+    private var recycleTimer: Timer?
 
     /// Borderless transparent windows can occasionally stop drawing after long
     /// compositor uptime. Recycle while hidden so the next presentation starts
@@ -126,16 +128,21 @@ final class OverlayWindowController {
          isWindowOnscreen: @escaping (NSWindow) -> Bool? = WindowServerVisibility.isOnscreen,
          scheduleVisibilityCheck: @escaping (@escaping () -> Void) -> Void = { work in
              DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
-         }) {
+         },
+         now: @escaping () -> Date = Date.init) {
         self.preferences = preferences
         self.isWindowOnscreen = isWindowOnscreen
         self.scheduleVisibilityCheck = scheduleVisibilityCheck
+        self.now = now
         let created = Self.makeWindow(model: model, preferences: preferences)
         window = created.window
         hostingView = created.hostingView
+        windowCreatedAt = now()
         installScrollMonitor()
         installClickOutsideMonitor()
         installHoverGate()
+        // The window starts hidden, so it can age out before the first switch.
+        armRecycleTimer()
     }
 
     /// Routes the view's hover callbacks through the moved-pointer gate, so a panel
@@ -174,6 +181,7 @@ final class OverlayWindowController {
     }
 
     deinit {
+        recycleTimer?.invalidate()
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
         clickOutsideMonitors.forEach { NSEvent.removeMonitor($0) }
     }
@@ -221,6 +229,8 @@ final class OverlayWindowController {
     func show(apps: [AppInfo], selectedIndex: Int, on screen: NSScreen) {
         visibilityCheckGeneration &+= 1
         didRecreateForPresentation = false
+        recycleTimer?.invalidate()
+        recycleTimer = nil
         refreshWindowIfNeeded()
         resetWindowPresentationState()
 
@@ -434,6 +444,10 @@ final class OverlayWindowController {
         teardownMirrors()
         window.orderOut(nil)
         isVisible = false
+        // Recycle after hide() rather than in show(): building a replacement
+        // window and SwiftUI host costs time, and doing it while hidden keeps
+        // that cost off the first switch. show() still refreshes as a fallback.
+        armRecycleTimer()
         model.apps = []
         model.selectedIndex = 0
         model.dropTargetIndex = nil
@@ -450,16 +464,33 @@ final class OverlayWindowController {
         pointerOriginAtShow = nil
     }
 
+    /// Arms the one-shot timer that recycles the window once it reaches
+    /// `maximumWindowAge`. Reuses `refreshWindowIfNeeded()`'s guard, so it only
+    /// replaces the window while the overlay stays hidden.
+    private func armRecycleTimer() {
+        recycleTimer?.invalidate()
+        let remaining = maximumWindowAge - now().timeIntervalSince(windowCreatedAt)
+        let timer = Timer(timeInterval: max(0, remaining), repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.recycleTimer = nil
+            self.refreshWindowIfNeeded()
+        }
+        timer.tolerance = 60
+        RunLoop.main.add(timer, forMode: .common)
+        recycleTimer = timer
+    }
+
     private func refreshWindowIfNeeded() {
-        let agedOut = Date().timeIntervalSince(windowCreatedAt) > maximumWindowAge
+        let agedOut = now().timeIntervalSince(windowCreatedAt) > maximumWindowAge
         let disconnected = window.contentView == nil || hostingView.window !== window
         guard !isVisible, agedOut || disconnected else { return }
         NSLog("Zap: recycling overlay window (agedOut: \(agedOut), disconnected: \(disconnected))")
         window.orderOut(nil)
+        window.close()
         let created = Self.makeWindow(model: model, preferences: preferences)
         window = created.window
         hostingView = created.hostingView
-        windowCreatedAt = Date()
+        windowCreatedAt = now()
     }
 
     private func resetWindowPresentationState() {
@@ -539,7 +570,7 @@ final class OverlayWindowController {
         let created = Self.makeWindow(model: model, preferences: preferences, reusing: hostingView)
         window = created.window
         hostingView = created.hostingView
-        windowCreatedAt = Date()
+        windowCreatedAt = now()
         resetWindowPresentationState()
         // Keep geometry, model and SwiftUI hosts, including local ScrollView
         // state. Calling show() would discard the current selection, previews,
