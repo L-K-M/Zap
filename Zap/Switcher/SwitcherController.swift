@@ -1086,6 +1086,10 @@ final class SwitcherController {
 
         let interval = max(0.1, preferences.windowDwellMs / 1000)
         dwellTimer = Self.scheduleTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            // A spent one-shot timer is still non-nil; clear it so a non-nil
+            // `dwellTimer` keeps meaning "the dwell hasn't looked yet", which
+            // is what stops ↓ from repeating the lookup.
+            self?.dwellTimer = nil
             self?.revealWindows()
         }
     }
