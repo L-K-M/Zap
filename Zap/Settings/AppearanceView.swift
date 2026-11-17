@@ -215,10 +215,14 @@ struct AppearanceView: View {
         do {
             data = try Data(contentsOf: url)
         } catch {
-            showThemeFileError("Couldn’t read “\(url.lastPathComponent)”. Check that the file is accessible and try again.")
+            showThemeFileError("Couldn’t read “\(url.lastPathComponent)”. \(error.localizedDescription) Check that the file is accessible and try again.")
             return
         }
-        guard let preset = try? JSONDecoder().decode(AppearancePreset.self, from: data) else {
+        let preset: AppearancePreset
+        do {
+            preset = try JSONDecoder().decode(AppearancePreset.self, from: data)
+        } catch {
+            NSLog("Zap: couldn’t decode theme: %@", String(describing: error))
             showThemeFileError("Couldn’t import “\(url.lastPathComponent)”. Choose a theme JSON file exported by Zap.")
             return
         }
