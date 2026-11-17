@@ -35,6 +35,7 @@ final class Preferences: ObservableObject {
         static let cornerRadius = 18.0
         static let highlightCornerRadius = 14.0
         static let contentPadding = 20.0
+        static let showAppName = true
         static let showDelayMs = 150.0
         static let windowDwellMs = 400.0
         /// Un-jailing is only on where it does something — see
@@ -344,7 +345,7 @@ final class Preferences: ObservableObject {
         cornerRadius = Self.clamp(defaults.object(forKey: Key.cornerRadius) as? Double ?? Default.cornerRadius, 0, 64, Default.cornerRadius)
         highlightCornerRadius = Self.clamp(defaults.object(forKey: Key.highlightCornerRadius) as? Double ?? Default.highlightCornerRadius, 0, 64, Default.highlightCornerRadius)
         contentPadding = Self.clamp(defaults.object(forKey: Key.contentPadding) as? Double ?? Default.contentPadding, 0, 60, Default.contentPadding)
-        showAppName = defaults.object(forKey: Key.showAppName) as? Bool ?? true
+        showAppName = defaults.object(forKey: Key.showAppName) as? Bool ?? Default.showAppName
         showDelayMs = Self.clamp(defaults.object(forKey: Key.showDelayMs) as? Double ?? Default.showDelayMs, 0, 1000, Default.showDelayMs)
         showWindowList = defaults.object(forKey: Key.showWindowList) as? Bool ?? true
         showWindowPreviews = defaults.object(forKey: Key.showWindowPreviews) as? Bool ?? false
@@ -449,7 +450,7 @@ final class Preferences: ObservableObject {
         cornerRadius = Default.cornerRadius
         highlightCornerRadius = Default.highlightCornerRadius
         contentPadding = Default.contentPadding
-        showAppName = true
+        showAppName = Default.showAppName
         iconBleed = Default.iconBleed
         iconTrimTransparentEdges = Default.iconTrimTransparentEdges
         iconShadow = Default.iconShadow

@@ -290,7 +290,7 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(prefs.cornerRadius, Preferences.Default.cornerRadius)
         XCTAssertEqual(prefs.highlightCornerRadius, Preferences.Default.highlightCornerRadius)
         XCTAssertEqual(prefs.contentPadding, Preferences.Default.contentPadding)
-        XCTAssertTrue(prefs.showAppName)
+        XCTAssertEqual(prefs.showAppName, Preferences.Default.showAppName)
         XCTAssertEqual(prefs.iconBleed, Preferences.Default.iconBleed)
         XCTAssertEqual(prefs.iconTrimTransparentEdges, Preferences.Default.iconTrimTransparentEdges)
         XCTAssertEqual(prefs.iconShadow, Preferences.Default.iconShadow)
