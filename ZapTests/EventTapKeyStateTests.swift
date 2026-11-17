@@ -48,6 +48,13 @@ final class EventTapKeyStateTests: XCTestCase {
 
     // MARK: Held action keys
 
+    /// A Q pressed and released mid-session never reaches the app at all.
+    func testAReleaseDuringItsSessionIsConsumed() {
+        switching = true
+        XCTAssertFalse(reachesApps(.keyDown, qKey(down: true, flags: .maskCommand)))
+        XCTAssertFalse(reachesApps(.keyUp, qKey(down: false)))
+    }
+
     /// The pairing rule the bookkeeping exists for: a Q pressed mid-session was
     /// swallowed, so its release is swallowed too, even after the session ended.
     func testAReleaseOutlivingItsSessionIsStillConsumed() {

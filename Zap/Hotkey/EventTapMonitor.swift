@@ -80,6 +80,9 @@ final class EventTapMonitor {
     /// quick tap would never resolve and its armed hold would fire, quitting an
     /// app the user only meant to type a letter for. The key code is the one thing
     /// guaranteed to match across the pair.
+    ///
+    /// Main-thread only, like the rest of this class: the tap's run-loop source
+    /// is on the main run loop, and `setEnabled`/`stop` are called from main.
     private var heldShortcutKeyCodes: [Int64: ShortcutKey] = [:]
 
     var isRunning: Bool {
@@ -194,7 +197,7 @@ final class EventTapMonitor {
             // the controller ignores it.
             let cause = type == .tapDisabledByTimeout ? "timeout" : "user input"
             guard intendedEnabled, let tap = eventTap else {
-                diagnostics.lifecycle("Tap disabled by \(cause) while intentionally off; left off")
+                diagnostics.lifecycle("Tap disabled by \(cause) while \(intendedEnabled ? "already torn down" : "intentionally off"); left off")
                 return Unmanaged.passUnretained(event)
             }
             tap.setEnabled(true)
