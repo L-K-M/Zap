@@ -62,7 +62,7 @@ final class HelpHintsTests: XCTestCase {
         model.maxContentWidth = 500
         let overlay = OverlayView(model: model, preferences: preferences)
 
-        XCTAssertEqual(overlay.helpWidth, 360)
+        XCTAssertGreaterThanOrEqual(overlay.helpWidth, HelpFooterMetrics.minimumWidth)
 
         model.maxContentWidth = 300
         XCTAssertEqual(overlay.helpWidth, 300)

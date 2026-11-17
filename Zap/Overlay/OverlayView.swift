@@ -382,7 +382,7 @@ struct OverlayView: View {
     }
 
     /// A short icon row leaves too little room for the shortcuts to wrap.
-    /// Reserve space for the help text while keeping the row centered.
+    /// Reserve space for the help text up to the display’s width cap.
     var helpWidth: CGFloat {
         min(max(panelContentWidth, windowSectionWidth, HelpFooterMetrics.minimumWidth),
             model.maxContentWidth)
