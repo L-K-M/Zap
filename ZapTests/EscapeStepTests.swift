@@ -19,17 +19,22 @@ final class EscapeStepTests: XCTestCase {
     }
 
     /// ↓ shows the windows straight away instead of waiting out the dwell, but
-    /// only when the list is on and nothing is shown yet.
-    func testDownRevealsWindowsOnlyBeforeTheListIsShown() {
-        XCTAssertTrue(SwitcherController.revealsWindowsImmediately(
-            direction: .down, windowsShown: false, windowListEnabled: true))
-        XCTAssertFalse(SwitcherController.revealsWindowsImmediately(
-            direction: .down, windowsShown: true, windowListEnabled: true))
-        XCTAssertFalse(SwitcherController.revealsWindowsImmediately(
-            direction: .down, windowsShown: false, windowListEnabled: false))
+    /// only when the list is on, nothing is shown yet, and the dwell hasn't
+    /// already looked (so ↓ never repeats a lookup that found nothing).
+    func testDownRevealsWindowsOnlyWhileTheDwellIsPending() {
+        func reveals(_ direction: WindowNavDirection = .down, shown: Bool = false,
+                     pending: Bool = true, enabled: Bool = true) -> Bool {
+            SwitcherController.revealsWindowsImmediately(
+                direction: direction, windowsShown: shown,
+                dwellPending: pending, windowListEnabled: enabled)
+        }
+
+        XCTAssertTrue(reveals())
+        XCTAssertFalse(reveals(shown: true))
+        XCTAssertFalse(reveals(pending: false), "the dwell already looked")
+        XCTAssertFalse(reveals(enabled: false))
         for direction in [WindowNavDirection.up, .left, .right] {
-            XCTAssertFalse(SwitcherController.revealsWindowsImmediately(
-                direction: direction, windowsShown: false, windowListEnabled: true))
+            XCTAssertFalse(reveals(direction))
         }
     }
 }

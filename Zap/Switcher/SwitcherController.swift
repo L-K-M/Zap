@@ -807,8 +807,8 @@ final class SwitcherController {
         pendingShortcut = nil
     }
 
-    /// Escape clears an in-progress search query first; pressed with no query it
-    /// cancels the session — two-stage, like Spotlight.
+    /// Escape undoes one layer per press, like Spotlight: an in-progress search
+    /// query first, then a focused window, then the session itself.
     private func handleEscape() {
         cancelPendingShortcut()
         switch Self.escapeStep(hasQuery: !typeBuffer.isEmpty,
@@ -1190,6 +1190,7 @@ final class SwitcherController {
             return
         }
         if Self.revealsWindowsImmediately(direction: direction, windowsShown: !windows.isEmpty,
+                                          dwellPending: !overlay.isVisible || dwellTimer != nil,
                                           windowListEnabled: preferences.showWindowList) {
             revealWindowsNow()
         }
@@ -1204,9 +1205,12 @@ final class SwitcherController {
 
     /// Pure rule, extracted for unit testing: ↓ with no list on screen opens it
     /// at once, as the native switcher does, instead of waiting out the dwell.
+    /// Only while the dwell is still pending (panel not up yet, or its timer
+    /// armed): once the dwell has looked and found fewer than two windows, ↓
+    /// must not repeat that synchronous Accessibility query on every press.
     static func revealsWindowsImmediately(direction: WindowNavDirection, windowsShown: Bool,
-                                          windowListEnabled: Bool) -> Bool {
-        direction == .down && !windowsShown && windowListEnabled
+                                          dwellPending: Bool, windowListEnabled: Bool) -> Bool {
+        direction == .down && !windowsShown && dwellPending && windowListEnabled
     }
 
     /// Shows the selected app's windows now, presenting the panel first if the
