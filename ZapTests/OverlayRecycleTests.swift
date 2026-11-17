@@ -35,6 +35,14 @@ final class OverlayRecycleTests: XCTestCase {
                 fixture.overlayWindows.contains { $0 !== original }
             }))
             XCTAssertTrue(fixture.controller.hasPendingRecycle)
+
+            // The re-arm relies on a recycle making the window young again;
+            // if it didn't, the next timer would be due at once and rebuild
+            // windows in a loop while hidden.
+            let replacement = fixture.overlayWindows.first { $0 !== original }
+            XCTAssertFalse(spinRunLoop(for: 0.2, until: {
+                fixture.overlayWindows.contains { $0 !== original && $0 !== replacement }
+            }), "the replacement was rebuilt straight away")
         }
     }
 
