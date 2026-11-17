@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 /// Color and size customization with a live preview of the overlay.
 struct AppearanceView: View {
     @ObservedObject var preferences: Preferences
+    @State private var showsThemeFileError = false
+    @State private var themeFileErrorMessage = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -104,6 +106,11 @@ struct AppearanceView: View {
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
         }
+        .alert("Theme File Error", isPresented: $showsThemeFileError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(themeFileErrorMessage)
+        }
     }
 
     /// "Ball size" for the boing balls (which the slider scales), "Band size" for
@@ -181,20 +188,19 @@ struct AppearanceView: View {
 
     /// Writes the current appearance to a user-chosen `.json` file.
     private func exportPreset() {
-        let preset = AppearancePreset(name: "Zap Theme", from: preferences)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(preset) else { return }
-
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = "Zap Theme.json"
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        let preset = AppearancePreset(name: "Zap Theme", from: preferences)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
-            try data.write(to: url)
+            let data = try encoder.encode(preset)
+            try data.write(to: url, options: .atomic)
         } catch {
-            NSLog("Zap: failed to export theme: %@", error.localizedDescription)
+            showThemeFileError("Couldn’t export “\(url.lastPathComponent)”. \(error.localizedDescription) Try saving to another folder.")
         }
     }
 
@@ -205,12 +211,23 @@ struct AppearanceView: View {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard let data = try? Data(contentsOf: url),
-              let preset = try? JSONDecoder().decode(AppearancePreset.self, from: data) else {
-            NSLog("Zap: couldn't read a theme from %@", url.lastPathComponent)
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            showThemeFileError("Couldn’t read “\(url.lastPathComponent)”. Check that the file is accessible and try again.")
+            return
+        }
+        guard let preset = try? JSONDecoder().decode(AppearancePreset.self, from: data) else {
+            showThemeFileError("Couldn’t import “\(url.lastPathComponent)”. Choose a theme JSON file exported by Zap.")
             return
         }
         preset.apply(to: preferences)
+    }
+
+    private func showThemeFileError(_ message: String) {
+        themeFileErrorMessage = message
+        showsThemeFileError = true
     }
 
     private func resetDefaults() {
