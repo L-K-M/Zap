@@ -8,7 +8,7 @@ Two workflows do the work, and **neither needs any secrets or API keys**:
 | [`ci.yml`](workflows/ci.yml) | every pull request + push to `main` | `xcodebuild clean test` with **no code signing** — verifies the app builds and the XCTest suite passes |
 | [`release.yml`](workflows/release.yml) | pushing a `v*` tag (e.g. `v1.2.0`) | builds a Release **without Developer ID signing or notarization**, ad-hoc signs it so it can launch, packages a **DMG** + **zip**, and creates a **GitHub Release** with both attached |
 
-Both run on `macos-14` (Apple Silicon) with a **pinned Xcode** (`16.2`). There are no
+Both run on `macos-15` (Apple Silicon) with a **pinned Xcode** (`16.4`). There are no
 third-party dependencies, so there's nothing to cache or install beyond the build tools.
 
 > **Signing/notarization is intentionally off.** Releases are **not** signed with a Developer

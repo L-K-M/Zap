@@ -23,7 +23,7 @@ env:
 jobs:
   build-test:
     name: Build & Test
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       # Pin actions to commit SHAs: a mutable tag can be repointed at tampered code,
       # a SHA cannot. Same pin-and-verify discipline zai-code-review.yml already uses.
@@ -34,7 +34,7 @@ jobs:
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
-          xcode-version: '16.2'   # pin so a runner-image bump can't change the toolchain
+          xcode-version: '16.4'   # pin so a runner-image bump can't change the toolchain
 
       - name: Install xcbeautify
         run: brew install xcbeautify
