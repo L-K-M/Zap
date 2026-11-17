@@ -161,7 +161,7 @@ final class EventTapMonitor {
 
     private func startDiagnostics() {
         diagnosticsTimer?.invalidate()
-        diagnosticsTimer = BackgroundPoll.schedule(every: 2) { [weak self] _ in
+        diagnosticsTimer = BackgroundPoll.schedule(every: 2) { [weak self] in
             self?.recordTapHealth()
         }
         recordTapHealth()

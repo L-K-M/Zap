@@ -6,7 +6,7 @@ import XCTest
 final class BackgroundPollTests: XCTestCase {
 
     func testPollsRepeatWithATolerance() {
-        let timer = BackgroundPoll.schedule(every: 2) { _ in }
+        let timer = BackgroundPoll.schedule(every: 2) {}
         defer { timer.invalidate() }
 
         XCTAssertTrue(timer.isValid)
@@ -15,16 +15,23 @@ final class BackgroundPollTests: XCTestCase {
         XCTAssertGreaterThan(timer.tolerance, 0)
     }
 
-    func testPollsFireWhileAMenuIsTracking() {
+    func testShortPollsGetAProportionateTolerance() {
+        let timer = BackgroundPoll.schedule(every: 0.2) {}
+        defer { timer.invalidate() }
+
+        XCTAssertEqual(timer.tolerance, 0.05, accuracy: 0.0001)
+    }
+
+    func testPollsKeepFiringWhileAMenuIsTracking() {
         var fired = 0
-        let timer = BackgroundPoll.schedule(every: 0.01) { _ in fired += 1 }
+        let timer = BackgroundPoll.schedule(every: 0.01) { fired += 1 }
         defer { timer.invalidate() }
 
         // `.eventTracking` is the mode an open menu runs the main loop in.
         let deadline = Date(timeIntervalSinceNow: 2)
-        while fired == 0 && Date() < deadline {
+        while fired < 2 && Date() < deadline {
             RunLoop.main.run(mode: .eventTracking, before: Date(timeIntervalSinceNow: 0.05))
         }
-        XCTAssertGreaterThan(fired, 0)
+        XCTAssertGreaterThanOrEqual(fired, 2)
     }
 }

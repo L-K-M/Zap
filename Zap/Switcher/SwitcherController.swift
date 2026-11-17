@@ -169,7 +169,7 @@ final class SwitcherController {
     func start() {
         applyInputMode()
         inputHealthTimer?.invalidate()
-        inputHealthTimer = BackgroundPoll.schedule(every: Self.inputHealthCheckInterval) { [weak self] _ in
+        inputHealthTimer = BackgroundPoll.schedule(every: Self.inputHealthCheckInterval) { [weak self] in
             self?.refreshInputModeIfNeeded()
         }
     }
