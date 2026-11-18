@@ -106,6 +106,16 @@ final class HelpHintsTests: XCTestCase {
             .contains { $0.contains("pause for windows") })
     }
 
+    func testDownIsOfferedBeforeTheListAppears() {
+        XCTAssertTrue(hints(windowsShown: false, windowFocused: false)
+            .contains { $0.contains("↓") })
+    }
+
+    func testEscStepsBackFromAFocusedWindow() {
+        XCTAssertTrue(hints(windowsShown: true, windowFocused: true).contains("esc back"))
+        XCTAssertTrue(hints(windowsShown: true, windowFocused: false).contains("esc cancel"))
+    }
+
     func testHintsAlwaysExplainHowToDismissThemselves() {
         for (shown, focused) in [(false, false), (true, false), (true, true)] {
             XCTAssertTrue(hints(windowsShown: shown, windowFocused: focused)

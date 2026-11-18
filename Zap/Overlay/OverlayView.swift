@@ -367,7 +367,7 @@ struct OverlayView: View {
         var hints = ["⇥ next", "⇧⇥ back", "1–9 jump", "type to search"]
         if !windowsShown {
             // No list yet — mention how to get one, but only if it can appear.
-            if windowListEnabled { hints.append("pause for windows") }
+            if windowListEnabled { hints.append("↓ or pause for windows") }
         } else if windowFocused {
             hints.append("↑↓←→ move")
             hints.append("⌘W close")
@@ -376,7 +376,7 @@ struct OverlayView: View {
         }
         hints.append("hold ⌘Q quit")
         hints.append("hold ⌘H hide")
-        hints.append("esc cancel")
+        hints.append(windowFocused ? "esc back" : "esc cancel")
         hints.append("? hide hints")
         return hints
     }

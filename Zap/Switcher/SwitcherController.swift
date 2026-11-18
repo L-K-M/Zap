@@ -25,7 +25,13 @@ final class SwitcherController {
     private let reverseHotkey = CarbonHotkey(identifier: 2)
 
     private var apps: [AppInfo] = []
-    private var selectedIndex = 0
+    private var selectedIndex = 0 {
+        didSet {
+            guard selectedIndex != oldValue else { return }
+            // A lookup for the previous selection must not land on this one.
+            windowListLookup.invalidate()
+        }
+    }
     private var isSessionActive = false
     private var usesEventTap = false
     private var isPaused = false
@@ -38,6 +44,10 @@ final class SwitcherController {
 
     private var windows: [WindowInfo] = []
     private var windowSelectedIndex: Int?
+
+    /// Coordinates off-main window-list enumeration and rejects results that
+    /// belong to an earlier selection or session (see `WindowListLookup`).
+    private let windowListLookup = WindowListLookup()
 
     /// The display chosen when the session began. Resolved once (from the pointer
     /// location) so the per-display scoped app list and the panel are guaranteed to
@@ -809,8 +819,11 @@ final class SwitcherController {
         typeBuffer = pending.bufferBefore
         if let pid = pending.selectedPIDBefore,
            let index = apps.firstIndex(where: { $0.processIdentifier == pid }),
-           !quittingPIDs.contains(pid) {
+           !quittingPIDs.contains(pid), selectedIndex != index {
             selectedIndex = index
+            // Even an ignored shortcut (such as quitting Finder) must discard
+            // the tentative selection’s windows and restore the original dwell.
+            restartDwell()
         }
         overlay.setTypeQuery(typeBuffer)
         if overlay.isVisible { overlay.updateSelection(selectedIndex) }
@@ -827,15 +840,37 @@ final class SwitcherController {
         pendingShortcut = nil
     }
 
-    /// Escape clears an in-progress search query first; pressed with no query it
-    /// cancels the session — two-stage, like Spotlight.
+    /// Escape undoes one layer per press, like Spotlight: an in-progress search
+    /// query first, then a focused window, then the session itself.
     private func handleEscape() {
         cancelPendingShortcut()
-        if typeBuffer.isEmpty {
-            cancel()
-        } else {
+        switch Self.escapeStep(hasQuery: !typeBuffer.isEmpty,
+                               windowFocused: windowSelectedIndex != nil) {
+        case .clearQuery:
             clearTypeBuffer()
+        case .unfocusWindow:
+            windowSelectedIndex = nil
+            overlay.navigateWindowSelection(nil)
+        case .cancelSession:
+            cancel()
         }
+    }
+
+    /// What one Esc press undoes.
+    enum EscapeStep: Equatable {
+        case clearQuery
+        /// Back from a focused window to the app row, keeping the list open.
+        case unfocusWindow
+        case cancelSession
+    }
+
+    /// Pure rule, extracted for unit testing: Esc peels off the innermost layer
+    /// first (query, then window focus, then the session), so backing out of a
+    /// window doesn't throw the whole switch away.
+    static func escapeStep(hasQuery: Bool, windowFocused: Bool) -> EscapeStep {
+        if hasQuery { return .clearQuery }
+        if windowFocused { return .unfocusWindow }
+        return .cancelSession
     }
 
     // MARK: Commit / cancel
@@ -921,6 +956,7 @@ final class SwitcherController {
         // dimmed and skipped by the selection into the next session until
         // `verifyQuit` resolves it (then drops it or restores it). Clearing them
         // used to redraw the app undimmed and selectable mid-quit.
+        windowListLookup.invalidate()
         windows = []
         windowSelectedIndex = nil
         invalidateThumbnailBatch()
@@ -1084,11 +1120,17 @@ final class SwitcherController {
 
         let interval = max(0.1, preferences.windowDwellMs / 1000)
         dwellTimer = Self.scheduleTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
-            self?.revealWindows()
+            // A spent one-shot timer is still non-nil; clear it so a non-nil
+            // `dwellTimer` keeps meaning "the dwell hasn't looked yet", which
+            // is what stops ↓ from repeating the lookup.
+            self?.dwellTimer = nil
+            self?.startWindowLookup(reason: .dwell)
         }
     }
 
     private func clearWindows() {
+        // A lookup for the selection being left must not land on the new one.
+        windowListLookup.invalidate()
         guard !windows.isEmpty else { return }
         windows = []
         windowSelectedIndex = nil
@@ -1096,20 +1138,33 @@ final class SwitcherController {
         overlay.clearWindows()
     }
 
-    /// Enumerates the selected app's windows and reveals the list when it has at
-    /// least two windows worth choosing between.
-    private func revealWindows() {
+    /// Starts an off-main lookup of the selected app's windows. The result is
+    /// applied only if the selection and session are unchanged when it lands;
+    /// it is shown when it has at least two windows worth choosing between.
+    private func startWindowLookup(reason: WindowListLookup.Reason) {
         guard isSessionActive, overlay.isVisible, apps.indices.contains(selectedIndex) else { return }
         // The selection can rest on a quitting app only when it's the last one
         // left; don't reveal windows for an app that's on its way out.
         guard !quittingPIDs.contains(apps[selectedIndex].processIdentifier) else { return }
-        let found = WindowEnumerator.windows(
-            forPID: apps[selectedIndex].processIdentifier,
-            includeFullScreenWindows: preferences.includeFullScreenWindows)
-        guard found.count >= 2 else { return }
-        windows = found
+        let pid = apps[selectedIndex].processIdentifier
+        windowListLookup.start(pid: pid,
+                               includeFullScreenWindows: preferences.includeFullScreenWindows,
+                               reason: reason) { [weak self] result in
+            self?.applyWindowLookup(result)
+        }
+    }
+
+    private func applyWindowLookup(_ result: WindowListLookup.Result) {
+        guard isSessionActive, overlay.isVisible, apps.indices.contains(selectedIndex),
+              apps[selectedIndex].processIdentifier == result.pid
+        else { return }
+        windows = result.windows
         windowSelectedIndex = nil
-        overlay.setWindows(found, selected: nil)
+        overlay.setWindows(result.windows, selected: nil)
+        if result.focusFirst {
+            windowSelectedIndex = 0
+            overlay.navigateWindowSelection(0)
+        }
         loadThumbnails()
     }
 
@@ -1203,6 +1258,20 @@ final class SwitcherController {
             advanceSelection(forward: direction == .right)
             return
         }
+        if windowSelectedIndex == nil, direction == .down {
+            switch windowListLookup.downAction(
+                windowsShown: !windows.isEmpty,
+                dwellPending: !overlay.isVisible || dwellTimer != nil,
+                enabled: preferences.showWindowList
+            ) {
+            case .start:
+                revealWindowsNow()
+            case .adoptPending:
+                windowListLookup.adoptPendingForImmediateReveal()
+            case .none:
+                break
+            }
+        }
         guard !windows.isEmpty else { return }
         let columns = preferences.showWindowPreviews ? max(1, overlay.windowGridColumns) : 1
         let next = Self.nextWindowSelection(from: windowSelectedIndex, direction: direction,
@@ -1210,6 +1279,18 @@ final class SwitcherController {
         guard next != windowSelectedIndex else { return }
         windowSelectedIndex = next
         overlay.navigateWindowSelection(next)
+    }
+
+    /// Shows the selected app's windows now, presenting the panel first if the
+    /// show delay is still running. The caller's ↓ then focuses the first one.
+    private func revealWindowsNow() {
+        guard AccessibilityAuthorizer.isTrusted else { return }
+        if !overlay.isVisible { presentOverlay() }
+        // `presentOverlay` starts a dwell timer, which would reveal the list
+        // again later and drop the focus this ↓ is about to set.
+        dwellTimer?.invalidate()
+        dwellTimer = nil
+        startWindowLookup(reason: .immediateReveal)
     }
 
     /// Pure next-selection rule for arrow-key navigation over `count` windows laid
