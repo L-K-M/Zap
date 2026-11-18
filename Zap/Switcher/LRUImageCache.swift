@@ -18,6 +18,7 @@ struct LRUImageCache {
 
     private struct Entry {
         let image: NSImage
+        let capturePixels: CGFloat
         let timestamp: TimeInterval
     }
 
@@ -34,20 +35,22 @@ struct LRUImageCache {
 
     /// Returns the cached image for `key`, or `nil` when absent or expired. A hit
     /// promotes the key to most-recently-used; an expired entry is evicted.
-    mutating func value(for key: CGWindowID, now: TimeInterval) -> NSImage? {
+    mutating func value(for key: CGWindowID, capturePixels: CGFloat, now: TimeInterval) -> NSImage? {
         guard let entry = store[key] else { return nil }
         guard now - entry.timestamp <= maxAge else {
             remove(key)
             return nil
         }
+        // A capture budget is measured in pixels and changes between displays.
+        guard entry.capturePixels == capturePixels else { return nil }
         promote(key)
         return entry.image
     }
 
     /// Inserts (or refreshes) `image` for `key`, evicting the least-recently-used
     /// entry if the cache is over capacity.
-    mutating func insert(_ image: NSImage, for key: CGWindowID, now: TimeInterval) {
-        store[key] = Entry(image: image, timestamp: now)
+    mutating func insert(_ image: NSImage, for key: CGWindowID, capturePixels: CGFloat, now: TimeInterval) {
+        store[key] = Entry(image: image, capturePixels: capturePixels, timestamp: now)
         promote(key)
         while order.count > capacity, let oldest = order.first {
             remove(oldest)

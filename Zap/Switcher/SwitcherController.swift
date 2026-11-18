@@ -1119,7 +1119,7 @@ final class SwitcherController {
                                     selectedID: selectedID)
         guard !ids.isEmpty else { return }
 
-        let maxDimension = WindowPreviewMetrics.maxDimension
+        let capturePixels = WindowPreviewMetrics.capturePixelDimension(backingScale: previewBackingScale())
         thumbnailBatch = Task { [weak self, thumbnails = thumbnails] in
             await withTaskGroup(of: Void.self) { group in
                 // Keep at most `thumbnailCaptureConcurrency` captures in flight:
@@ -1132,7 +1132,7 @@ final class SwitcherController {
                     let id = ids[next]
                     next += 1
                     _ = group.addTaskUnlessCancelled {
-                        guard let image = await thumbnails.thumbnail(for: id, maxDimension: maxDimension),
+                        guard let image = await thumbnails.thumbnail(for: id, maxDimension: capturePixels),
                               !Task.isCancelled else { return }
                         await self?.applyWindowThumbnail(image, for: id, generation: generation)
                     }
@@ -1151,6 +1151,14 @@ final class SwitcherController {
         windowsGeneration &+= 1
         thumbnailBatch?.cancel()
         thumbnailBatch = nil
+    }
+
+    /// The pixel density previews are drawn at: the session's screen, or the
+    /// densest connected screen when the panel is mirrored onto all of them (one
+    /// capture serves every mirror). Defaults to Retina when nothing is known.
+    private func previewBackingScale() -> CGFloat {
+        let screens = preferences.showOnAllScreens ? NSScreen.screens : [sessionScreen].compactMap { $0 }
+        return screens.map(\.backingScaleFactor).max() ?? 2
     }
 
     /// Pure capture order for a preview batch: the selected window first (the
