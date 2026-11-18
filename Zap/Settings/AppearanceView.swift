@@ -216,6 +216,7 @@ struct AppearanceView: View {
             let data = try encoder.encode(preset)
             try data.write(to: url, options: .atomic)
         } catch {
+            NSLog("Zap: couldn’t export theme to %@: %@", url.lastPathComponent, error.localizedDescription)
             showThemeFileError("Couldn’t export “\(url.lastPathComponent)”. \(error.localizedDescription) Try saving to another folder.")
         }
     }
@@ -231,6 +232,7 @@ struct AppearanceView: View {
         do {
             data = try Data(contentsOf: url)
         } catch {
+            NSLog("Zap: couldn’t read theme from %@: %@", url.lastPathComponent, error.localizedDescription)
             showThemeFileError("Couldn’t read “\(url.lastPathComponent)”. \(error.localizedDescription) Check that the file is accessible and try again.")
             return
         }
