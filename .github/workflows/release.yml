@@ -62,8 +62,8 @@ jobs:
           echo "APP_PATH=$APP" >> "$GITHUB_ENV"
 
       # The shipped app states Zap's own license (Unlicense) in Finder's Get
-      # Info. It bundles only first-party PictKit, LiveryKit and KeycapKit (all
-      # Unlicense),
+      # Info. It bundles only first-party PictKit, LiveryKit, KeycapKit and
+      # UpdraftKit (all Unlicense),
       # so there are no third-party notice files to check.
       - name: Verify license statement
         run: |

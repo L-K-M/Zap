@@ -1,5 +1,5 @@
 {
-  "originHash" : "bed905fa6aa242be34f8b8128a63a7e7d127aa9e45f4e6dec8c1b8e407e78c70",
+  "originHash" : "5364dba739255f2498401d7655cc40cf093cd21a489f57a1559881e5a7bc66e7",
   "pins" : [
     {
       "identity" : "keycap",
@@ -26,6 +26,15 @@
       "state" : {
         "branch" : "main",
         "revision" : "77efe286ef4e6ea61ada06b69497798127c71e7e"
+      }
+    },
+    {
+      "identity" : "updraft",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/L-K-M/Updraft",
+      "state" : {
+        "revision" : "bc0fccf31d9c44b92de0f0fd83aa7c3c5c63f85f",
+        "version" : "0.1.0"
       }
     }
   ],

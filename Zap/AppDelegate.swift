@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import KeycapKit
 import PictKit
+import UpdraftKit
 
 /// Sets up the status-bar item, the switcher, and the settings window.
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -10,9 +11,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var icons = ZapIcons(preferences: preferences)
     private lazy var switcher = SwitcherController(preferences: preferences,
                                                    iconResolver: icons.resolver)
-    private let updateChecker = UpdateChecker(
-        configuration: .init(owner: "L-K-M", repo: "Zap", appName: "Zap")
-    )
+    /// Update alerts bring Zap forward through the shared window enumerator and
+    /// hand activation back to the previous app once they close, as the copied
+    /// checker's runModal did.
+    private let updateChecker: UpdateChecker = {
+        var handoff: ActivationHandoff?
+        return UpdateChecker(
+            configuration: .init(
+                owner: "L-K-M", repo: "Zap", appName: "Zap",
+                defaultsKeyPrefix: "UpdateChecker.L-K-M.Zap",
+                activateForAlert: {
+                    handoff = ActivationHandoff()
+                    WindowEnumerator.activateSelfForOwnWindow()
+                },
+                restoreAfterAlert: {
+                    handoff?.restore()
+                    handoff = nil
+                }
+            )
+        )
+    }()
     private lazy var settingsWindow = SettingsWindowController(preferences: preferences, inputMode: switcher.inputMode, updateChecker: updateChecker, icons: icons)
 
     private var statusItem: NSStatusItem?

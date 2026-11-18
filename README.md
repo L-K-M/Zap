@@ -153,7 +153,8 @@ Zap is distributed outside the App Store.
 
 Zap's own code is released under the [Unlicense](LICENSE). The app also
 compiles in PictKit from [Pict](https://github.com/L-K-M/Pict), LiveryKit
-from [Livery](https://github.com/L-K-M/Livery) and KeycapKit from
-[Keycap](https://github.com/L-K-M/Keycap), first-party packages released
+from [Livery](https://github.com/L-K-M/Livery), KeycapKit from
+[Keycap](https://github.com/L-K-M/Keycap) and UpdraftKit from
+[Updraft](https://github.com/L-K-M/Updraft), first-party packages released
 under the Unlicense too. It bundles no third-party code or assets: apart
 from these packages it links only Apple system frameworks.

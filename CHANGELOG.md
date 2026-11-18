@@ -14,3 +14,14 @@
   cause instead of collapsing to a bare failure; and “Open System Settings”
   opens the current Privacy & Security pane, falling back to the legacy
   Accessibility pane if that cannot be opened.
+- Adopted Updraft for update checks. Malformed version tags and installed
+  versions are now reported as unparseable instead of “you’re up to date”,
+  pre-release ordering follows SemVer, and “Skip This Version” survives a
+  re-tag. Downloads are verified (HTTPS GitHub hosts including redirects,
+  exact size, SHA-256 when the release provides one) and carry the quarantine
+  attribute so Gatekeeper checks them; assets for another OS or of an unknown
+  type are no longer offered. A Check for Updates click during a background
+  check is now reported instead of silently dropped. A failed download shows an
+  alert offering the release page instead of opening it silently, the release
+  page opened is always this repository's GitHub page, and the daily check runs
+  at 90% of the interval so a punctual timer no longer skips a day.
