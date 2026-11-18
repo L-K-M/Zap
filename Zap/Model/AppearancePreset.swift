@@ -1,4 +1,5 @@
 import AppKit
+import LiveryKit
 
 /// A named, shareable snapshot of every appearance setting. Serialized to a small
 /// JSON file for export/import, and used for the built-in themes. Decoupled from

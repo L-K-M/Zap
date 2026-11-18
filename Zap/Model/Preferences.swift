@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import ServiceManagement
 import PictKit
+import LiveryKit
 
 /// User-facing settings, backed by `UserDefaults`.
 ///

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import LiveryKit
 
 /// The switcher panel: a blurred rounded rectangle containing a row of app icons
 /// with the selected app highlighted and (optionally) named.
