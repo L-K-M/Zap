@@ -19,7 +19,7 @@ env:
 jobs:
   release:
     name: Build & publish (unsigned)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       # Pin actions to commit SHAs: a mutable tag can be repointed at tampered code,
       # a SHA cannot — and this workflow holds contents:write and produces the bytes
@@ -33,7 +33,7 @@ jobs:
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
-          xcode-version: '16.2'
+          xcode-version: '16.4'
 
       - name: Install tooling
         run: brew install xcbeautify create-dmg
