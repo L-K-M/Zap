@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import PictKit
 
 /// Sets up the status-bar item, the switcher, and the settings window.
@@ -15,6 +16,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem?
     private var pauseMenuItem: NSMenuItem?
+    /// Says why ⌘-Tab isn't being intercepted, and the way to fix it. Hidden
+    /// while ⌘-Tab works (or the user chose ⌥-Tab), so the healthy menu is
+    /// unchanged.
+    private var triggerWarningItem: NSMenuItem?
+    private var grantAccessibilityItem: NSMenuItem?
+    private var triggerWarningSeparator: NSMenuItem?
+    private var triggerWarning: String?
+    private var cancellables: Set<AnyCancellable> = []
     private var isPaused = false
     private var isSecureInputActive = false
 
@@ -39,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainMenu.install(into: NSApplication.shared)
         setUpStatusItem()
         switcher.start()
+        observeTriggerMode()       // after start(), so the first reading is real
         startSecureInputPolling()  // dim the menu icon while ⌘-Tab can't be intercepted
         updateChecker.start()   // check GitHub for a newer release on launch + daily
         warmIconCache()         // so the first ⌘-Tab already has un-jailed artwork
@@ -50,6 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setUpStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = Self.statusBarImage()
+        // The composed image carries no description of its own, so without this
+        // VoiceOver announced the status item as a bare "button".
+        item.button?.setAccessibilityLabel("Zap")
         item.menu = buildMenu()
         statusItem = item
     }
@@ -90,6 +103,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
+
+        let warningItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        warningItem.isEnabled = false
+        warningItem.isHidden = true
+        menu.addItem(warningItem)
+        triggerWarningItem = warningItem
+
+        let grantItem = NSMenuItem(title: "Open Accessibility Settings…",
+                                   action: #selector(openAccessibilitySettings), keyEquivalent: "")
+        grantItem.target = self
+        grantItem.isHidden = true
+        menu.addItem(grantItem)
+        grantAccessibilityItem = grantItem
+
+        let warningSeparator = NSMenuItem.separator()
+        warningSeparator.isHidden = true
+        menu.addItem(warningSeparator)
+        triggerWarningSeparator = warningSeparator
 
         let settingsItem = NSMenuItem(title: "Zap Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
@@ -140,6 +171,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
+    @objc private func openAccessibilitySettings() {
+        AccessibilityAuthorizer.openSystemSettings()
+    }
+
+    // MARK: Trigger state
+
+    /// Mirrors the live trigger into the menu and the icon's tooltip. Before
+    /// this, a missing Accessibility grant (which every ad-hoc-signed update
+    /// can cause) showed only in the Permissions tab: from the menu bar, Zap
+    /// looked fine while ⌘-Tab went to the system switcher.
+    private func observeTriggerMode() {
+        switcher.inputMode.$mode
+            .combineLatest(preferences.$useAlternateHotkey)
+            .sink { [weak self] mode, alternateForced in
+                self?.refreshTriggerWarning(mode: mode, alternateForced: alternateForced)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func refreshTriggerWarning(mode: SwitcherInputMode, alternateForced: Bool) {
+        let needsGrantState = !alternateForced && (mode == .fallback || mode == .unavailable)
+        let trusted = needsGrantState && AccessibilityAuthorizer.isTrusted
+        let warning = mode.statusMenuWarning(alternateForced: alternateForced, accessibilityTrusted: trusted)
+        guard triggerWarning != warning else { return }
+        let showsAccessibilityAction = mode.showsAccessibilityAction(alternateForced: alternateForced,
+                                                                    accessibilityTrusted: trusted)
+        triggerWarning = warning
+        triggerWarningItem?.title = warning ?? ""
+        let warningVisible = warning != nil
+        triggerWarningItem?.isHidden = !warningVisible
+        triggerWarningSeparator?.isHidden = !warningVisible
+        grantAccessibilityItem?.isHidden = !showsAccessibilityAction
+        updateStatusItemState()
+    }
+
     // MARK: Secure input
 
     /// Secure Keyboard Entry hides keyboard events from every event tap, so
@@ -157,6 +223,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshSecureInputState() {
+        // A grant can change while the same fallback remains active. The mode
+        // publisher suppresses duplicates, so refresh its explanation on this poll.
+        refreshTriggerWarning(mode: switcher.inputMode.mode, alternateForced: preferences.useAlternateHotkey)
         let enabled = SecureInputMonitor.isEnabled
         guard enabled != isSecureInputActive else { return }
         isSecureInputActive = enabled
@@ -170,6 +239,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.button?.appearsDisabled = isPaused || isSecureInputActive
 
         var notes: [String] = []
+        if let triggerWarning {
+            notes.append("Zap: \(triggerWarning.prefix(1).lowercased() + triggerWarning.dropFirst()).")
+        }
         if isSecureInputActive {
             notes.append("Zap: an app has Secure Keyboard Entry on, so ⌘-Tab is handled by the system switcher until it's off.")
         }
