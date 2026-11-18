@@ -35,6 +35,7 @@ final class Preferences: ObservableObject {
         static let cornerRadius = 18.0
         static let highlightCornerRadius = 14.0
         static let contentPadding = 20.0
+        static let showAppName = true
         static let showDelayMs = 150.0
         static let windowDwellMs = 400.0
         /// Un-jailing is only on where it does something — see
@@ -344,7 +345,7 @@ final class Preferences: ObservableObject {
         cornerRadius = Self.clamp(defaults.object(forKey: Key.cornerRadius) as? Double ?? Default.cornerRadius, 0, 64, Default.cornerRadius)
         highlightCornerRadius = Self.clamp(defaults.object(forKey: Key.highlightCornerRadius) as? Double ?? Default.highlightCornerRadius, 0, 64, Default.highlightCornerRadius)
         contentPadding = Self.clamp(defaults.object(forKey: Key.contentPadding) as? Double ?? Default.contentPadding, 0, 60, Default.contentPadding)
-        showAppName = defaults.object(forKey: Key.showAppName) as? Bool ?? true
+        showAppName = defaults.object(forKey: Key.showAppName) as? Bool ?? Default.showAppName
         showDelayMs = Self.clamp(defaults.object(forKey: Key.showDelayMs) as? Double ?? Default.showDelayMs, 0, 1000, Default.showDelayMs)
         showWindowList = defaults.object(forKey: Key.showWindowList) as? Bool ?? true
         showWindowPreviews = defaults.object(forKey: Key.showWindowPreviews) as? Bool ?? false
@@ -423,6 +424,37 @@ final class Preferences: ObservableObject {
         }
     }
 
+
+    // MARK: Appearance
+
+    /// Resets every setting shown on the Appearance tab to its default: colors,
+    /// layout, icon artwork, the decoration and the CRT effect. Everything else
+    /// (exclusions, timing, window list, triggers, display scoping, icon source
+    /// mode, switch counters, launch at login) is left as it is.
+    func resetAppearance() {
+        backgroundColorHex = Default.backgroundColorHex
+        useGradientBackground = Default.useGradientBackground
+        gradientColorHex = Default.gradientColorHex
+        gradientAngle = Default.gradientAngle
+        decorationStyle = Default.decorationStyle
+        decorationPosition = Default.decorationPosition
+        decorationOpacity = Default.decorationOpacity
+        decorationSize = Default.decorationSize
+        crtEnabled = Default.crtEnabled
+        crtIntensity = Default.crtIntensity
+        highlightColorHex = Default.highlightColorHex
+        labelColorHex = Default.labelColorHex
+        backgroundOpacity = Default.backgroundOpacity
+        highlightOpacity = Default.highlightOpacity
+        iconSize = Default.iconSize
+        cornerRadius = Default.cornerRadius
+        highlightCornerRadius = Default.highlightCornerRadius
+        contentPadding = Default.contentPadding
+        showAppName = Default.showAppName
+        iconBleed = Default.iconBleed
+        iconTrimTransparentEdges = Default.iconTrimTransparentEdges
+        iconShadow = Default.iconShadow
+    }
 
     // MARK: Exclusions
 

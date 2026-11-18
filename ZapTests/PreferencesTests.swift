@@ -235,6 +235,77 @@ final class PreferencesTests: XCTestCase {
         XCTAssertFalse(reloaded.showAppName)
     }
 
+    // MARK: Appearance reset
+
+    /// The Appearance tab's reset covers everything that tab shows, including
+    /// the icon artwork, and nothing outside it. Exclusions, timing, the window
+    /// list and the hotkey choice belong to other tabs, so they must survive.
+    func testResetAppearanceResetsAppearanceOnly() {
+        let prefs = Preferences(defaults: defaults)
+        prefs.backgroundColorHex = "#112233"
+        prefs.useGradientBackground = true
+        prefs.gradientColorHex = "#445566"
+        prefs.gradientAngle = 135
+        prefs.decorationStyle = .zxSpectrum
+        prefs.decorationPosition = .topLeading
+        prefs.decorationOpacity = 0.5
+        prefs.decorationSize = 18
+        prefs.crtEnabled = true
+        prefs.crtIntensity = 0.3
+        prefs.highlightColorHex = "#AABBCC"
+        prefs.labelColorHex = "#010203"
+        prefs.backgroundOpacity = 0.2
+        prefs.highlightOpacity = 0.4
+        prefs.iconSize = 96
+        prefs.cornerRadius = 24
+        prefs.highlightCornerRadius = 8
+        prefs.contentPadding = 40
+        prefs.showAppName = false
+        prefs.iconBleed = 0.12
+        prefs.iconTrimTransparentEdges = false
+        prefs.iconShadow = false
+
+        prefs.setExcluded(true, bundleID: "com.apple.Safari")
+        prefs.showDelayMs = 500
+        prefs.showWindowList = false
+        prefs.useAlternateHotkey = true
+
+        prefs.resetAppearance()
+
+        XCTAssertEqual(prefs.backgroundColorHex, Preferences.Default.backgroundColorHex)
+        XCTAssertEqual(prefs.useGradientBackground, Preferences.Default.useGradientBackground)
+        XCTAssertEqual(prefs.gradientColorHex, Preferences.Default.gradientColorHex)
+        XCTAssertEqual(prefs.gradientAngle, Preferences.Default.gradientAngle)
+        XCTAssertEqual(prefs.decorationStyle, Preferences.Default.decorationStyle)
+        XCTAssertEqual(prefs.decorationPosition, Preferences.Default.decorationPosition)
+        XCTAssertEqual(prefs.decorationOpacity, Preferences.Default.decorationOpacity)
+        XCTAssertEqual(prefs.decorationSize, Preferences.Default.decorationSize)
+        XCTAssertEqual(prefs.crtEnabled, Preferences.Default.crtEnabled)
+        XCTAssertEqual(prefs.crtIntensity, Preferences.Default.crtIntensity)
+        XCTAssertEqual(prefs.highlightColorHex, Preferences.Default.highlightColorHex)
+        XCTAssertEqual(prefs.labelColorHex, Preferences.Default.labelColorHex)
+        XCTAssertEqual(prefs.backgroundOpacity, Preferences.Default.backgroundOpacity)
+        XCTAssertEqual(prefs.highlightOpacity, Preferences.Default.highlightOpacity)
+        XCTAssertEqual(prefs.iconSize, Preferences.Default.iconSize)
+        XCTAssertEqual(prefs.cornerRadius, Preferences.Default.cornerRadius)
+        XCTAssertEqual(prefs.highlightCornerRadius, Preferences.Default.highlightCornerRadius)
+        XCTAssertEqual(prefs.contentPadding, Preferences.Default.contentPadding)
+        XCTAssertEqual(prefs.showAppName, Preferences.Default.showAppName)
+        XCTAssertEqual(prefs.iconBleed, Preferences.Default.iconBleed)
+        XCTAssertEqual(prefs.iconTrimTransparentEdges, Preferences.Default.iconTrimTransparentEdges)
+        XCTAssertEqual(prefs.iconShadow, Preferences.Default.iconShadow)
+
+        XCTAssertEqual(prefs.excludedBundleIDs, ["com.apple.Safari"])
+        XCTAssertEqual(prefs.showDelayMs, 500)
+        XCTAssertFalse(prefs.showWindowList)
+        XCTAssertTrue(prefs.useAlternateHotkey)
+
+        // The reset reaches the store, not just the live object.
+        let reloaded = Preferences(defaults: defaults)
+        XCTAssertEqual(reloaded.iconBleed, Preferences.Default.iconBleed)
+        XCTAssertEqual(reloaded.backgroundColorHex, Preferences.Default.backgroundColorHex)
+    }
+
     func testColorHexParsingRoundTrip() {
         let color = NSColor(hex: "#0A84FF")
         XCTAssertNotNil(color)

@@ -5,6 +5,10 @@ import UniformTypeIdentifiers
 /// Color and size customization with a live preview of the overlay.
 struct AppearanceView: View {
     @ObservedObject var preferences: Preferences
+    /// Whether the reset confirmation is showing. Reset acts only after it.
+    @State private var confirmingReset = false
+    @State private var showsThemeFileError = false
+    @State private var themeFileErrorMessage = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -98,11 +102,30 @@ struct AppearanceView: View {
                 }
 
                 Section {
-                    Button("Reset to defaults", role: .destructive, action: resetDefaults)
+                    Button("Reset to defaults…", role: .destructive) {
+                        confirmingReset = true
+                    }
                 }
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
+            // Resetting is destructive, so it asks first, as the Icons tab's
+            // bulk reset does.
+            .confirmationDialog(
+                "Reset the appearance to its defaults?",
+                isPresented: $confirmingReset,
+                titleVisibility: .visible
+            ) {
+                Button("Reset", role: .destructive, action: preferences.resetAppearance)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Colors, layout, icon artwork, the decoration and the CRT effect go back to how Zap ships. Excluded apps, custom app icons and your other settings stay as they are.")
+            }
+        }
+        .alert("Theme File Error", isPresented: $showsThemeFileError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(themeFileErrorMessage)
         }
     }
 
@@ -181,20 +204,20 @@ struct AppearanceView: View {
 
     /// Writes the current appearance to a user-chosen `.json` file.
     private func exportPreset() {
-        let preset = AppearancePreset(name: "Zap Theme", from: preferences)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(preset) else { return }
-
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = "Zap Theme.json"
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        let preset = AppearancePreset(name: "Zap Theme", from: preferences)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
-            try data.write(to: url)
+            let data = try encoder.encode(preset)
+            try data.write(to: url, options: .atomic)
         } catch {
-            NSLog("Zap: failed to export theme: %@", error.localizedDescription)
+            NSLog("Zap: couldn’t export theme to %@: %@", url.lastPathComponent, error.localizedDescription)
+            showThemeFileError("Couldn’t export “\(url.lastPathComponent)”. \(error.localizedDescription) Try saving to another folder.")
         }
     }
 
@@ -205,33 +228,27 @@ struct AppearanceView: View {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard let data = try? Data(contentsOf: url),
-              let preset = try? JSONDecoder().decode(AppearancePreset.self, from: data) else {
-            NSLog("Zap: couldn't read a theme from %@", url.lastPathComponent)
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            NSLog("Zap: couldn’t read theme from %@: %@", url.lastPathComponent, error.localizedDescription)
+            showThemeFileError("Couldn’t read “\(url.lastPathComponent)”. \(error.localizedDescription) Check that the file is accessible and try again.")
+            return
+        }
+        let preset: AppearancePreset
+        do {
+            preset = try JSONDecoder().decode(AppearancePreset.self, from: data)
+        } catch {
+            NSLog("Zap: couldn’t decode theme: %@", String(describing: error))
+            showThemeFileError("Couldn’t import “\(url.lastPathComponent)”. Choose a theme JSON file exported by Zap.")
             return
         }
         preset.apply(to: preferences)
     }
 
-    private func resetDefaults() {
-        preferences.backgroundColorHex = Preferences.Default.backgroundColorHex
-        preferences.useGradientBackground = Preferences.Default.useGradientBackground
-        preferences.gradientColorHex = Preferences.Default.gradientColorHex
-        preferences.gradientAngle = Preferences.Default.gradientAngle
-        preferences.decorationStyle = Preferences.Default.decorationStyle
-        preferences.decorationPosition = Preferences.Default.decorationPosition
-        preferences.decorationOpacity = Preferences.Default.decorationOpacity
-        preferences.decorationSize = Preferences.Default.decorationSize
-        preferences.crtEnabled = Preferences.Default.crtEnabled
-        preferences.crtIntensity = Preferences.Default.crtIntensity
-        preferences.highlightColorHex = Preferences.Default.highlightColorHex
-        preferences.labelColorHex = Preferences.Default.labelColorHex
-        preferences.backgroundOpacity = Preferences.Default.backgroundOpacity
-        preferences.highlightOpacity = Preferences.Default.highlightOpacity
-        preferences.iconSize = Preferences.Default.iconSize
-        preferences.cornerRadius = Preferences.Default.cornerRadius
-        preferences.highlightCornerRadius = Preferences.Default.highlightCornerRadius
-        preferences.contentPadding = Preferences.Default.contentPadding
-        preferences.showAppName = true
+    private func showThemeFileError(_ message: String) {
+        themeFileErrorMessage = message
+        showsThemeFileError = true
     }
 }
