@@ -248,7 +248,10 @@ final class EventTapMonitor {
                 } else if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
                     pressesSinceRecovery?.insert(keyCode)
                 } else if pressesSinceRecovery?.contains(keyCode) == false {
-                    return Unmanaged.passUnretained(event)
+                    // A repeat cannot establish who saw the press. Keep the
+                    // switcher's usual repeat suppression without arming a
+                    // shortcut or claiming the eventual release.
+                    return nil
                 }
             }
             let tabStartedAt = keyCode == KeyCode.tab ? ProcessInfo.processInfo.systemUptime : nil

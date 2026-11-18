@@ -109,6 +109,20 @@ final class EventTapKeyStateTests: XCTestCase {
         }
     }
 
+    func testOutageDoesNotForwardOrRearmARepeatingShortcut() {
+        switching = true
+        var shortcuts = 0
+        monitor.onShortcutKey = { _, _, _ in shortcuts += 1 }
+        XCTAssertFalse(reachesApps(.keyDown, qKey(down: true, flags: .maskCommand)))
+        reachesApps(.tapDisabledByTimeout, CGEvent(source: nil)!)
+
+        let repeating = qKey(down: true, flags: .maskCommand)
+        repeating.setIntegerValueField(.keyboardEventAutorepeat, value: 1)
+        XCTAssertFalse(reachesApps(.keyDown, repeating))
+        XCTAssertEqual(shortcuts, 1)
+        XCTAssertTrue(reachesApps(.keyUp, qKey(down: false)))
+    }
+
     func testSessionStillConsumesPressesItHandlesAfterAnOutage() {
         switching = true
         reachesApps(.tapDisabledByTimeout, CGEvent(source: nil)!)
