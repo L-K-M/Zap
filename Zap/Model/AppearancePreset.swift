@@ -110,11 +110,25 @@ extension AppearancePreset {
     /// theme, or a Zap theme with missing or wrong-typed fields) is mapped
     /// onto Zap's settings, with Zap's defaults for whatever it lacks.
     /// Returns nil for a file that is not a theme.
+    ///
+    /// Invariant: Zap's `Decodable` conformance must require every key (no
+    /// `decodeIfPresent` defaults). Jetty and Invoque files share many key
+    /// names (`name`, `crtEnabled`, `iconSize`, `decorationStyle`, ...), so a
+    /// lax decoder would let them decode natively with half-wrong values
+    /// instead of taking the `ThemeSnapshot` path.
     static func decode(from data: Data) -> AppearancePreset? {
-        if let native = try? JSONDecoder().decode(AppearancePreset.self, from: data) {
-            return native
+        do {
+            return try JSONDecoder().decode(AppearancePreset.self, from: data)
+        } catch {
+            // Partial Zap themes and sibling formats land here by design;
+            // only report a problem when the shared reader fails too.
+            guard let theme = ThemeSnapshot(themeData: data) else {
+                NSLog("Zap: theme unreadable as Zap, Jetty or Invoque format: %@",
+                      String(describing: error))
+                return nil
+            }
+            return AppearancePreset(importing: theme)
         }
-        return ThemeSnapshot(themeData: data).map(AppearancePreset.init(importing:))
     }
 
     /// Maps a theme read by `ThemeSnapshot` onto Zap's settings. Values are
@@ -143,6 +157,9 @@ extension AppearancePreset {
         iconSize = theme.iconSize ?? d.iconSize
         cornerRadius = theme.cornerRadius ?? d.cornerRadius
         highlightCornerRadius = theme.highlightCornerRadius ?? d.highlightCornerRadius
+        // ThemeSnapshot has no slot for Zap-only settings, so a Zap file that
+        // takes this path loses its custom contentPadding. Acceptable until
+        // Livery exposes it; revisit if anyone reports padding loss on import.
         contentPadding = d.contentPadding
         showAppName = theme.showsLabels ?? d.showAppName
     }
