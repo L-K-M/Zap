@@ -101,6 +101,53 @@ extension AppearancePreset {
     }
 }
 
+// MARK: - Import (Zap, Jetty or Invoque format)
+
+extension AppearancePreset {
+
+    /// Reads a theme file. A complete Zap theme decodes as itself; anything
+    /// else that Livery's `ThemeSnapshot` recognises (a Jetty or Invoque
+    /// theme, or a Zap theme with missing or wrong-typed fields) is mapped
+    /// onto Zap's settings, with Zap's defaults for whatever it lacks.
+    /// Returns nil for a file that is not a theme.
+    static func decode(from data: Data) -> AppearancePreset? {
+        if let native = try? JSONDecoder().decode(AppearancePreset.self, from: data) {
+            return native
+        }
+        return ThemeSnapshot(themeData: data).map(AppearancePreset.init(importing:))
+    }
+
+    /// Maps a theme read by `ThemeSnapshot` onto Zap's settings. Values are
+    /// validated and clamped later by `apply(to:)`.
+    init(importing theme: ThemeSnapshot) {
+        let d = Preferences.Default.self
+        // Zap paints a solid or gradient fill. On glass materials whose tint
+        // and opacity the system ignores (`usesTintAndOpacity`), the sibling
+        // never showed its tint color, so Zap keeps its own background.
+        let usesTint = theme.material?.usesTintAndOpacity ?? true
+        name = theme.name ?? "Imported Theme"
+        backgroundColorHex = usesTint ? theme.tintHex ?? d.backgroundColorHex : d.backgroundColorHex
+        backgroundOpacity = usesTint ? theme.backgroundOpacity ?? d.backgroundOpacity : d.backgroundOpacity
+        useGradientBackground = theme.material.map { $0 == .gradient } ?? d.useGradientBackground
+        gradientColorHex = theme.gradientHex ?? d.gradientColorHex
+        gradientAngle = theme.gradientAngle ?? d.gradientAngle
+        decorationStyle = (theme.decorationStyle ?? d.decorationStyle).rawValue
+        decorationPosition = (theme.decorationPosition ?? d.decorationPosition).rawValue
+        decorationOpacity = theme.decorationOpacity ?? d.decorationOpacity
+        decorationSize = theme.decorationSize ?? d.decorationSize
+        crtEnabled = theme.crtEnabled ?? d.crtEnabled
+        crtIntensity = theme.crtIntensity ?? d.crtIntensity
+        highlightColorHex = theme.highlightHex ?? d.highlightColorHex
+        labelColorHex = theme.labelHex ?? d.labelColorHex
+        highlightOpacity = theme.highlightOpacity ?? d.highlightOpacity
+        iconSize = theme.iconSize ?? d.iconSize
+        cornerRadius = theme.cornerRadius ?? d.cornerRadius
+        highlightCornerRadius = theme.highlightCornerRadius ?? d.highlightCornerRadius
+        contentPadding = d.contentPadding
+        showAppName = theme.showsLabels ?? d.showAppName
+    }
+}
+
 // MARK: - Built-in themes
 
 extension AppearancePreset {

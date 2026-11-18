@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Import… also reads themes exported by Jetty and Invoque, through Livery
+  0.2.0's shared theme reader. Settings Zap doesn't have are skipped and Zap's
+  defaults fill the rest; a glass theme whose tint the system ignores keeps
+  Zap's background colour. A Zap theme with a missing or wrong-typed field now
+  imports with defaults for those fields instead of failing.
 - A hotkey press that arrives just as its shortcut is changed or turned off no
   longer fires the old action (Keycap 0.1.1).
 - When GitHub's rate limit stops a Check for Updates, the alert says when to

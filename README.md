@@ -101,7 +101,9 @@ Accessibility permission prompt behave correctly.
   <kbd>⌘</kbd>+<kbd>W</kbd> closes it.
 - **Themes:** in **Appearance**, apply a built-in theme (Classic, ZX Night, Vaporwave,
   Amiga) or **Export…** your look to a small `.json` file to share and **Import…**
-  later.
+  later. **Import…** also reads themes exported by
+  [Jetty](https://github.com/L-K-M/Jetty) and [Invoque](https://github.com/L-K-M/Invoque);
+  settings Zap doesn't have are skipped and Zap's defaults fill the rest.
 
 ## Troubleshooting
 
