@@ -381,10 +381,11 @@ struct OverlayView: View {
         return hints
     }
 
-    /// Footer width: as wide as the panel already is, so showing hints never makes
-    /// the panel wider (only taller, downward).
-    private var helpWidth: CGFloat {
-        min(max(panelContentWidth, windowSectionWidth), model.maxContentWidth)
+    /// A short icon row leaves too little room for the shortcuts to wrap.
+    /// Reserve space for the help text up to the display’s width cap.
+    var helpWidth: CGFloat {
+        min(max(panelContentWidth, windowSectionWidth, HelpFooterMetrics.minimumWidth),
+            model.maxContentWidth)
     }
 
     // MARK: Window list / grid
@@ -632,6 +633,7 @@ enum WindowGridMetrics {
 /// Fixed sizing for the key-hints footer, kept exact for the same reason as
 /// `WindowGridMetrics`: the panel's height budget is computed analytically.
 enum HelpFooterMetrics {
+    static let minimumWidth: CGFloat = 360
     static let fontSize: CGFloat = 11
     /// Generous line height for the footer's font.
     static let lineHeight: CGFloat = fontSize * 1.35
