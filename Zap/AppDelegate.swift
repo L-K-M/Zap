@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import KeycapKit
 import PictKit
 
 /// Sets up the status-bar item, the switcher, and the settings window.

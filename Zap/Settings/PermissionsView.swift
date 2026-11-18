@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import KeycapKit
 
 /// Shows Accessibility permission status and guidance for granting it.
 struct PermissionsView: View {

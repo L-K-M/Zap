@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import KeycapKit
 
 /// Intercepts ⌘+Tab using a `CGEventTap` and drives the custom switcher.
 ///
