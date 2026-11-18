@@ -3,6 +3,7 @@ import Combine
 
 /// Shows Accessibility permission status and guidance for granting it.
 struct PermissionsView: View {
+    @ObservedObject var preferences: Preferences
     @ObservedObject var inputMode: InputModeReporter
     @State private var isTrusted = AccessibilityAuthorizer.isTrusted
     @State private var isScreenRecordingGranted = ScreenRecordingAuthorizer.isGranted
@@ -38,8 +39,8 @@ struct PermissionsView: View {
                     Button("Open System Settings") { AccessibilityAuthorizer.openSystemSettings() }
                 }
 
-                if !isTrusted {
-                    Text("After granting access, quit and relaunch Zap to enable ⌘-Tab.")
+                if !isTrusted, !preferences.useAlternateHotkey {
+                    Text("Zap retries ⌘-Tab automatically after you grant access.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -145,11 +146,16 @@ struct PermissionsView: View {
         case .eventTap:
             return "Granted — ⌘-Tab interception is active."
         case .fallback:
+            if preferences.useAlternateHotkey {
+                return "Using ⌥-Tab by choice. Change this under General."
+            }
             return isTrusted
                 ? "Using the ⌥-Tab fallback (⌘-Tab interception is off)."
                 : "Not granted — Zap is using the ⌥-Tab fallback."
         case .unavailable:
-            return "No trigger active — ⌘-Tab interception and the ⌥-Tab fallback both failed."
+            return preferences.useAlternateHotkey
+                ? "No trigger active — Zap couldn’t register ⌥-Tab."
+                : "No trigger active — Zap couldn’t register either shortcut."
         case .paused:
             return "Paused — Zap is not intercepting any shortcut."
         }

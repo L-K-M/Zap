@@ -30,7 +30,7 @@ final class SettingsTabViewController: NSViewController {
         contentController.addTabViewItem(Self.item("Exclusions", content: ExclusionsView(preferences: preferences)))
         contentController.addTabViewItem(Self.item("Appearance", content: AppearanceView(preferences: preferences)))
         contentController.addTabViewItem(Self.item("Icons", content: IconsView(preferences: preferences, icons: icons)))
-        contentController.addTabViewItem(Self.item("Permissions", content: PermissionsView(inputMode: inputMode)))
+        contentController.addTabViewItem(Self.item("Permissions", content: PermissionsView(preferences: preferences, inputMode: inputMode)))
         contentController.addTabViewItem(Self.item("About", content: AboutView(preferences: preferences)))
         setShowsDisplays(showsDisplays)
 

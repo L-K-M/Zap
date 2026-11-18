@@ -88,8 +88,8 @@ struct GeneralView: View {
             }
 
             Section("Trigger") {
-                Toggle("Use ⌥-Tab fallback when ⌘-Tab is unavailable", isOn: $preferences.useAlternateHotkey)
-                Text("⌘-Tab requires Accessibility permission. Without it, Zap falls back to ⌥-Tab.")
+                Toggle("Use ⌥-Tab instead of ⌘-Tab", isOn: $preferences.useAlternateHotkey)
+                Text("This leaves ⌘-Tab to the system switcher. Zap also uses ⌥-Tab automatically when ⌘-Tab is unavailable. In ⌥-Tab mode, a short pause confirms your selection.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
