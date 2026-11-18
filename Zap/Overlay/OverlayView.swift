@@ -441,7 +441,10 @@ struct OverlayView: View {
         let columns = max(1, windowGridGeometry.columns)
         let count = model.windows.count
         let rowStarts = Array(stride(from: 0, to: count, by: columns))
-        return VStack(spacing: WindowGridMetrics.spacing) {
+        // Leading-aligned, so a short last row keeps its cells in their columns.
+        // Arrow-key navigation is row-major (`nextWindowSelection`): a centred
+        // last row would put the cell ↓ lands on visibly down and to the side.
+        return VStack(alignment: .leading, spacing: WindowGridMetrics.spacing) {
             ForEach(rowStarts, id: \.self) { start in
                 HStack(spacing: WindowGridMetrics.spacing) {
                     ForEach(start..<min(start + columns, count), id: \.self) { index in
@@ -500,7 +503,7 @@ struct OverlayView: View {
                 .fill(Color.white.opacity(0.06))
                 .frame(width: WindowGridMetrics.thumbWidth, height: WindowGridMetrics.thumbHeight)
                 .overlay(
-                    Image(systemName: window.isMinimized ? "macwindow.badge.minus" : "macwindow")
+                    Image(systemName: WindowGlyph.symbolName(isMinimized: window.isMinimized))
                         .foregroundStyle(Color(hexString: preferences.labelColorHex).opacity(0.8))
                 )
         }
@@ -518,7 +521,7 @@ struct OverlayView: View {
 
     private func windowRow(_ window: WindowInfo, index: Int, isSelected: Bool) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: window.isMinimized ? "macwindow.badge.minus" : "macwindow")
+            Image(systemName: WindowGlyph.symbolName(isMinimized: window.isMinimized))
                 .foregroundStyle(Color(hexString: preferences.labelColorHex).opacity(0.8))
             Text(window.title.isEmpty ? "Untitled" : window.title)
                 .font(.system(size: 13))
