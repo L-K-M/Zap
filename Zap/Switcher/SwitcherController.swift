@@ -23,7 +23,7 @@ final class SwitcherController {
     private let eventTap: EventTapMonitor
     private let isAccessibilityTrusted: () -> Bool
     /// Four-char signature `'ZAPH'`, matching Zap's Carbon hotkey constant.
-    private static let hotkeySignature: OSType = 0x5A41_5048
+    private static let hotkeySignature: OSType = 0x5A_41_50_48
     private let forwardHotkey = CarbonHotkey(identifier: 1, signature: SwitcherController.hotkeySignature)
     private let reverseHotkey = CarbonHotkey(identifier: 2, signature: SwitcherController.hotkeySignature)
 
@@ -376,7 +376,9 @@ final class SwitcherController {
         let forwardOK = forwardResult.isRegistered
         let reverseOK = reverseResult.isRegistered
         if !(forwardOK && reverseOK) {
-            NSLog("Zap: alternate hotkey registration failed (forward: \(forwardOK), reverse: \(reverseOK))")
+            let forwardWhy = forwardResult.failureDescription ?? "registered"
+            let reverseWhy = reverseResult.failureDescription ?? "registered"
+            NSLog("Zap: alternate hotkey registration failed (forward: \(forwardWhy), reverse: \(reverseWhy))")
         }
         // Forward cycling is the essential capability; treat that as "fallback active".
         return forwardOK
