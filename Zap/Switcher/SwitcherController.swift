@@ -266,6 +266,8 @@ final class SwitcherController {
         // because a callback ran long, so the recovery — which can run a full
         // commit, overlay teardown included — must not happen inside the next one.
         eventTap.onTapReEnabled = { [weak self] in
+            // A release during the outage must not turn a tap into a hold.
+            self?.cancelPendingShortcut()
             DispatchQueue.main.async { self?.endStrandedSessionIfNeeded() }
         }
     }
