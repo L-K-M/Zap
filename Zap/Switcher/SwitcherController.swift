@@ -1223,7 +1223,7 @@ final class SwitcherController {
             switch windowListLookup.downAction(
                 windowsShown: !windows.isEmpty,
                 dwellPending: !overlay.isVisible || dwellTimer != nil,
-                enabled: preferences.showWindowList && AccessibilityAuthorizer.isTrusted
+                enabled: preferences.showWindowList
             ) {
             case .start:
                 revealWindowsNow()

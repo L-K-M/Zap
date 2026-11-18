@@ -70,7 +70,7 @@ struct WindowLookupState {
 
     /// What ↓ should do while `windowsShown` is false. `dwellPending` means the
     /// dwell timer is still armed (or the panel hasn't appeared yet), and
-    /// `enabled` is the window-list preference together with the AX grant.
+    /// `enabled` is the window-list preference. The caller checks AX trust before starting a lookup.
     func downAction(windowsShown: Bool, dwellPending: Bool, enabled: Bool) -> DownAction {
         guard !windowsShown, enabled else { return .none }
         if isPending { return .adoptPending }

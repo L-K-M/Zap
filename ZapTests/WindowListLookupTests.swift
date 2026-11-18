@@ -165,8 +165,8 @@ final class WindowListLookupTests: XCTestCase {
                        isCancelled: @escaping () -> Bool) -> [WindowInfo] {
             lock.lock()
             callCount += 1
-            lock.unlock()
             offMainChecks.append(!Thread.isMainThread)
+            lock.unlock()
             onCall?()
             release?.wait()
             onReturn?()

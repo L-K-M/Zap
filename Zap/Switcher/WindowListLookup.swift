@@ -79,19 +79,14 @@ final class WindowListLookup {
         }
     }
 
-    private let queue: OperationQueue
+    private let queue = makeQueue()
     private let enumerate: Enumeration
     private var operation: LookupOperation?
     private var state = WindowLookupState()
 
-    init(enumerate: @escaping Enumeration = defaultEnumeration,
-         queue: OperationQueue = makeQueue()) {
+    init(enumerate: @escaping Enumeration = defaultEnumeration) {
         self.enumerate = enumerate
-        self.queue = queue
     }
-
-    /// The current selection/session generation, for diagnostics.
-    var generation: Int { state.generation }
 
     /// Whether a lookup is queued or running for the current generation.
     var isPending: Bool { state.isPending }
