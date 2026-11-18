@@ -149,6 +149,10 @@ struct AppearanceView: View {
     /// all three at once (`UNJAILED.md §8.4`): a free-form silhouette, a rounded
     /// square, and a full-bleed square.
     private var previewApps: [AppInfo] {
+        // Template symbols otherwise follow the Settings appearance instead of
+        // the theme and can be almost invisible on a dark preview in light mode.
+        let ink = NSColor(hex: preferences.labelColorHex) ?? .white
+        let symbolColors = NSImage.SymbolConfiguration(paletteColors: [ink])
         let samples = [("Free-form", "hammer.fill"),
                        ("Rounded", "app.fill"),
                        ("Full-bleed", "square.fill")]
@@ -157,7 +161,8 @@ struct AppearanceView: View {
                 bundleIdentifier: "preview.\(sample.0)",
                 name: sample.0,
                 processIdentifier: pid_t(index),
-                icon: NSImage(systemSymbolName: sample.1, accessibilityDescription: sample.0)
+                icon: NSImage(systemSymbolName: sample.1, accessibilityDescription: sample.0)?
+                    .withSymbolConfiguration(symbolColors)
             )
         }
     }
