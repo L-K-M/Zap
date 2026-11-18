@@ -66,27 +66,34 @@ enum WindowEnumerator {
     /// The standard, user-facing windows of the process `pid`, in AX order. When
     /// `includeFullScreenWindows` is on, also lists full-screen windows on other
     /// Spaces that the Accessibility API omits.
-    static func windows(forPID pid: pid_t, includeFullScreenWindows: Bool = false) -> [WindowInfo] {
+    ///
+    /// `isCancelled` is consulted between round-trips so a lookup that has been
+    /// superseded (the selection moved on, the session ended) stops instead of
+    /// queueing up AX IPC nobody will read. Callers run this off the main thread.
+    static func windows(forPID pid: pid_t, includeFullScreenWindows: Bool = false,
+                        isCancelled: @escaping () -> Bool = { false }) -> [WindowInfo] {
+        guard !isCancelled() else { return [] }
         let app = AXUIElementCreateApplication(pid)
-        // Set on the application element, so it also bounds the calls made against
-        // the window elements it hands back (raise, close, attribute reads).
-        let timeoutResult = AXUIElementSetMessagingTimeout(app, messagingTimeout)
-        if timeoutResult != .success {
-            NSLog("Zap: could not set AX messaging timeout for pid \(pid) (AX error \(timeoutResult.rawValue))")
-        }
+        setMessagingTimeout(app, description: "pid \(pid)")
         let isFinder = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == finderBundleID
 
-        var axWindows = windowInfos(from: elementsAttribute(app, kAXWindowsAttribute), allowFinderFallback: isFinder)
+        var axWindows = windowInfos(from: elementsAttribute(app, kAXWindowsAttribute),
+                                   allowFinderFallback: isFinder,
+                                   isCancelled: isCancelled)
+        guard !isCancelled() else { return [] }
         if isFinder, axWindows.count < 2 {
             // Finder is a special case: depending on macOS/Finder state, browser
             // windows can be omitted from AXWindows or lack the standard subrole.
             // AXChildren often still exposes the same live window elements, so merge
             // it only as a Finder fallback and keep the normal stricter path for apps.
-            let fallback = windowInfos(from: elementsAttribute(app, kAXChildrenAttribute), allowFinderFallback: true)
+            let fallback = windowInfos(from: elementsAttribute(app, kAXChildrenAttribute),
+                                       allowFinderFallback: true,
+                                       isCancelled: isCancelled)
             axWindows = unique(axWindows + fallback)
         }
 
         guard includeFullScreenWindows else { return axWindows }
+        guard !isCancelled() else { return [] }
 
         // `AXWindows` only reports windows on the active Space, so full-screen windows
         // (each on their own Space) and windows on other desktops go missing. Backfill
@@ -99,8 +106,22 @@ enum WindowEnumerator {
         return unique(axWindows + offSpace)
     }
 
-    private static func windowInfos(from elements: [AXUIElement], allowFinderFallback: Bool) -> [WindowInfo] {
+    /// Bounds every round-trip against one element. The application element's
+    /// timeout does not carry to the window elements copied out of it — they are
+    /// independent proxies into the same possibly-wedged process — so each one
+    /// needs its own or a single stalled window can still hold the caller.
+    private static func setMessagingTimeout(_ element: AXUIElement, description: String) {
+        let result = AXUIElementSetMessagingTimeout(element, messagingTimeout)
+        if result != .success {
+            NSLog("Zap: could not set AX messaging timeout for \(description) (AX error \(result.rawValue))")
+        }
+    }
+
+    private static func windowInfos(from elements: [AXUIElement], allowFinderFallback: Bool,
+                                    isCancelled: @escaping () -> Bool) -> [WindowInfo] {
         elements.compactMap { element in
+            guard !isCancelled() else { return nil }
+            setMessagingTimeout(element, description: "a window")
             guard stringAttribute(element, kAXRoleAttribute) == (kAXWindowRole as String) else { return nil }
             let cgWindowID = windowID(of: element)
             guard isUserFacingWindow(element, allowFinderFallback: allowFinderFallback) else { return nil }
