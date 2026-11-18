@@ -12,8 +12,8 @@ final class DisplayNameDisambiguationTests: XCTestCase {
 
     func testUniqueNamesAreUnchanged() {
         let displays = [
-            (name: "Built-in Retina Display", frame: rect(x: 0, y: 0)),
-            (name: "DELL U2723QE", frame: rect(x: 200, y: 0))
+            (id: "Built-in-Retina-Display-0", name: "Built-in Retina Display", frame: rect(x: 0, y: 0)),
+            (id: "DELL-U2723QE-200", name: "DELL U2723QE", frame: rect(x: 200, y: 0))
         ]
 
         XCTAssertEqual(
@@ -26,10 +26,10 @@ final class DisplayNameDisambiguationTests: XCTestCase {
         let right = rect(x: 200, y: 0)
 
         XCTAssertEqual(
-            ScreenIdentity.disambiguatedNames([(name: "DELL", frame: left), (name: "DELL", frame: right)]),
+            ScreenIdentity.disambiguatedNames([(id: "left", name: "DELL", frame: left), (id: "right", name: "DELL", frame: right)]),
             ["DELL (left)", "DELL (right)"])
         XCTAssertEqual(
-            ScreenIdentity.disambiguatedNames([(name: "DELL", frame: right), (name: "DELL", frame: left)]),
+            ScreenIdentity.disambiguatedNames([(id: "right", name: "DELL", frame: right), (id: "left", name: "DELL", frame: left)]),
             ["DELL (right)", "DELL (left)"])
     }
 
@@ -39,10 +39,10 @@ final class DisplayNameDisambiguationTests: XCTestCase {
         let top = rect(x: 0, y: 200)
 
         XCTAssertEqual(
-            ScreenIdentity.disambiguatedNames([(name: "DELL", frame: bottom), (name: "DELL", frame: top)]),
+            ScreenIdentity.disambiguatedNames([(id: "bottom", name: "DELL", frame: bottom), (id: "top", name: "DELL", frame: top)]),
             ["DELL (bottom)", "DELL (top)"])
         XCTAssertEqual(
-            ScreenIdentity.disambiguatedNames([(name: "DELL", frame: top), (name: "DELL", frame: bottom)]),
+            ScreenIdentity.disambiguatedNames([(id: "top", name: "DELL", frame: top), (id: "bottom", name: "DELL", frame: bottom)]),
             ["DELL (top)", "DELL (bottom)"])
     }
 
@@ -52,7 +52,7 @@ final class DisplayNameDisambiguationTests: XCTestCase {
         let upper = rect(x: 100, y: 100)
 
         XCTAssertEqual(
-            ScreenIdentity.disambiguatedNames([(name: "DELL", frame: lower), (name: "DELL", frame: upper)]),
+            ScreenIdentity.disambiguatedNames([(id: "lower", name: "DELL", frame: lower), (id: "upper", name: "DELL", frame: upper)]),
             ["DELL (left)", "DELL (right)"])
     }
 
@@ -65,9 +65,9 @@ final class DisplayNameDisambiguationTests: XCTestCase {
 
         XCTAssertEqual(
             ScreenIdentity.disambiguatedNames([
-                (name: "DELL", frame: p),
-                (name: "DELL", frame: q),
-                (name: "DELL", frame: r)
+                (id: "p", name: "DELL", frame: p),
+                (id: "q", name: "DELL", frame: q),
+                (id: "r", name: "DELL", frame: r)
             ]),
             ["DELL (3)", "DELL (1)", "DELL (2)"])
     }
@@ -80,18 +80,18 @@ final class DisplayNameDisambiguationTests: XCTestCase {
 
         XCTAssertEqual(
             ScreenIdentity.disambiguatedNames([
-                (name: "DELL", frame: a),
-                (name: "DELL", frame: b),
-                (name: "DELL", frame: c)
+                (id: "a", name: "DELL", frame: a),
+                (id: "b", name: "DELL", frame: b),
+                (id: "c", name: "DELL", frame: c)
             ]),
             ["DELL (2)", "DELL (1)", "DELL (3)"])
     }
 
     func testMixedGroupLeavesUniqueNameUnchanged() {
         let displays = [
-            (name: "Studio Display", frame: rect(x: 400, y: 0)),
-            (name: "DELL", frame: rect(x: 0, y: 0)),
-            (name: "DELL", frame: rect(x: 200, y: 0))
+            (id: "Studio-Display-400", name: "Studio Display", frame: rect(x: 400, y: 0)),
+            (id: "DELL-0", name: "DELL", frame: rect(x: 0, y: 0)),
+            (id: "DELL-200", name: "DELL", frame: rect(x: 200, y: 0))
         ]
 
         XCTAssertEqual(
@@ -99,14 +99,11 @@ final class DisplayNameDisambiguationTests: XCTestCase {
             ["Studio Display", "DELL (left)", "DELL (right)"])
     }
 
-    func testIdenticalCentersFallBackToNumbering() {
+    func testCoincidentCentersKeepTheirNumberWhenScreenOrderChanges() {
         let mirrored = rect(x: 0, y: 0)
-
-        XCTAssertEqual(
-            ScreenIdentity.disambiguatedNames([
-                (name: "DELL", frame: mirrored),
-                (name: "DELL", frame: mirrored)
-            ]),
-            ["DELL (1)", "DELL (2)"])
+        let a = (id: "panel-A", name: "DELL", frame: mirrored)
+        let b = (id: "panel-B", name: "DELL", frame: mirrored)
+        XCTAssertEqual(ScreenIdentity.disambiguatedNames([a, b]), ["DELL (1)", "DELL (2)"])
+        XCTAssertEqual(ScreenIdentity.disambiguatedNames([b, a]), ["DELL (2)", "DELL (1)"])
     }
 }

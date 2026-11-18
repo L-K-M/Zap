@@ -76,8 +76,7 @@ struct DisplayScopeSection: View {
             let name = ScreenIdentity.displayName(for: screen)
             return (id: id, name: name, frame: screen.frame)
         }
-        let names = ScreenIdentity.disambiguatedNames(
-            detected.map { (name: $0.name, frame: $0.frame) })
+        let names = ScreenIdentity.disambiguatedNames(detected)
         displays = zip(detected, names).map { DisplayOption(id: $0.id, name: $1) }
     }
 

@@ -53,7 +53,7 @@ enum ScreenIdentity {
     /// left alone rather than renumbered. Callers must pass frames in AppKit's
     /// global screen coordinate space for the position words to match the
     /// physical layout.
-    static func disambiguatedNames(_ displays: [(name: String, frame: CGRect)]) -> [String] {
+    static func disambiguatedNames(_ displays: [(id: String, name: String, frame: CGRect)]) -> [String] {
         var names = [String](repeating: "", count: displays.count)
         let groups = Dictionary(grouping: displays.indices, by: { displays[$0].name })
 
@@ -95,11 +95,11 @@ enum ScreenIdentity {
     }
 
     /// Writes "name (n)" for `indices`, ordered by `midX` ascending with `midY`
-    /// descending as the tie-break (reading order). Input index is the final
+    /// descending as the tie-break (reading order). The persistent display ID is the final
     /// tie-break for exactly coincident centers.
     private static func assignNumberedNames(
         _ indices: [Int],
-        displays: [(name: String, frame: CGRect)],
+        displays: [(id: String, name: String, frame: CGRect)],
         into names: inout [String]
     ) {
         let name = displays[indices[0]].name
@@ -108,7 +108,7 @@ enum ScreenIdentity {
             let b = displays[$1].frame
             if a.midX != b.midX { return a.midX < b.midX }
             if a.midY != b.midY { return a.midY > b.midY }
-            return $0 < $1
+            return displays[$0].id < displays[$1].id
         }
         for (position, index) in ordered.enumerated() {
             names[index] = "\(name) (\(position + 1))"
