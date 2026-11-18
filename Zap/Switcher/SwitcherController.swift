@@ -19,7 +19,8 @@ final class SwitcherController {
     private let preferences: Preferences
     private let provider: AppListProvider
     private let overlay: OverlayWindowController
-    private let eventTap = EventTapMonitor()
+    private let eventTap: EventTapMonitor
+    private let isAccessibilityTrusted: () -> Bool
     private let forwardHotkey = CarbonHotkey(identifier: 1)
     private let reverseHotkey = CarbonHotkey(identifier: 2)
 
@@ -131,8 +132,16 @@ final class SwitcherController {
     /// Whether the switcher is currently driven by the real ⌘+Tab event tap.
     var isUsingEventTap: Bool { usesEventTap }
 
-    init(preferences: Preferences, iconResolver: IconResolver? = nil) {
+    /// - Parameters:
+    ///   - eventTap: The ⌘+Tab tap. Tests pass one built on a fake connection.
+    ///   - isAccessibilityTrusted: Whether Accessibility access is granted, so
+    ///     tests can drive the event-tap path without a real grant.
+    init(preferences: Preferences, iconResolver: IconResolver? = nil,
+         eventTap: EventTapMonitor = EventTapMonitor(),
+         isAccessibilityTrusted: @escaping () -> Bool = { AccessibilityAuthorizer.isTrusted }) {
         self.preferences = preferences
+        self.eventTap = eventTap
+        self.isAccessibilityTrusted = isAccessibilityTrusted
         self.provider = AppListProvider(preferences: preferences, iconResolver: iconResolver)
         self.overlay = OverlayWindowController(preferences: preferences)
         wireEventTap()
@@ -145,9 +154,14 @@ final class SwitcherController {
         overlay.onDropFiles = { [weak self] index, urls in self?.openFiles(urls, withAppAt: index) }
 
         // Reconfigure live if the user toggles the alternate-hotkey preference.
+        // `@Published` emits from `willSet`, while the preference still holds
+        // the old value, and `applyInputMode` reads the preference, so hop to
+        // the main queue and apply once the store has landed. The main queue,
+        // unlike `RunLoop.main`, also drains while AppKit tracks the mouse.
         preferences.$useAlternateHotkey
             .dropFirst()
             .removeDuplicates()
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.applyInputMode() }
             .store(in: &cancellables)
 
@@ -181,7 +195,7 @@ final class SwitcherController {
         guard !isPaused, !preferences.useAlternateHotkey else { return }
         guard Self.shouldRefreshInputMode(isPaused: isPaused,
                                            useAlternateHotkey: preferences.useAlternateHotkey,
-                                           accessibilityTrusted: AccessibilityAuthorizer.isTrusted,
+                                           accessibilityTrusted: isAccessibilityTrusted(),
                                            usesEventTap: usesEventTap,
                                            tapReady: usesEventTap && eventTap.isReady,
                                            isSessionActive: isSessionActive)
@@ -216,7 +230,7 @@ final class SwitcherController {
         // The preference forces the ⌥+Tab fallback even when ⌘+Tab is available.
         let forceFallback = preferences.useAlternateHotkey
 
-        if !forceFallback && AccessibilityAuthorizer.isTrusted {
+        if !forceFallback && isAccessibilityTrusted() {
             usesEventTap = eventTap.start()
             if usesEventTap {
                 eventTap.setEnabled(true)
@@ -266,6 +280,8 @@ final class SwitcherController {
         // because a callback ran long, so the recovery — which can run a full
         // commit, overlay teardown included — must not happen inside the next one.
         eventTap.onTapReEnabled = { [weak self] in
+            // A release during the outage must not turn a tap into a hold.
+            self?.cancelPendingShortcut()
             DispatchQueue.main.async { self?.endStrandedSessionIfNeeded() }
         }
     }
@@ -1058,7 +1074,7 @@ final class SwitcherController {
         clearWindows()
         guard
             preferences.showWindowList,
-            AccessibilityAuthorizer.isTrusted,
+            isAccessibilityTrusted(),
             overlay.isVisible
         else { return }
 
