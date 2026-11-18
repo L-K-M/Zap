@@ -227,7 +227,8 @@ struct AppearanceView: View {
         }
     }
 
-    /// Reads a `.json` theme file and applies it (validating every value).
+    /// Reads a `.json` theme file (Zap's own, or one exported by Jetty or
+    /// Invoque) and applies it, validating every value.
     private func importPreset() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.json]
@@ -242,12 +243,9 @@ struct AppearanceView: View {
             showThemeFileError("Couldn’t read “\(url.lastPathComponent)”. \(error.localizedDescription) Check that the file is accessible and try again.")
             return
         }
-        let preset: AppearancePreset
-        do {
-            preset = try JSONDecoder().decode(AppearancePreset.self, from: data)
-        } catch {
-            NSLog("Zap: couldn’t decode theme: %@", String(describing: error))
-            showThemeFileError("Couldn’t import “\(url.lastPathComponent)”. Choose a theme JSON file exported by Zap.")
+        guard let preset = AppearancePreset.decode(from: data) else {
+            NSLog("Zap: %@ is not a Zap, Jetty or Invoque theme", url.lastPathComponent)
+            showThemeFileError("Couldn’t import “\(url.lastPathComponent)”. Choose a theme JSON file exported by Zap, Jetty or Invoque.")
             return
         }
         preset.apply(to: preferences)
