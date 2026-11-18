@@ -7,6 +7,8 @@ struct AppearanceView: View {
     @ObservedObject var preferences: Preferences
     /// Whether the reset confirmation is showing. Reset acts only after it.
     @State private var confirmingReset = false
+    @State private var showsThemeFileError = false
+    @State private var themeFileErrorMessage = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -120,6 +122,11 @@ struct AppearanceView: View {
                 Text("Colors, layout, icon artwork, the decoration and the CRT effect go back to how Zap ships. Excluded apps, custom app icons and your other settings stay as they are.")
             }
         }
+        .alert("Theme File Error", isPresented: $showsThemeFileError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(themeFileErrorMessage)
+        }
     }
 
     /// "Ball size" for the boing balls (which the slider scales), "Band size" for
@@ -197,31 +204,19 @@ struct AppearanceView: View {
 
     /// Writes the current appearance to a user-chosen `.json` file.
     private func exportPreset() {
-        let preset = AppearancePreset(name: "Zap Theme", from: preferences)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-
-        let data: Data
-        do {
-            data = try encoder.encode(preset)
-        } catch {
-            NSLog("Zap: failed to encode theme: %@", error.localizedDescription)
-            showThemeAlert(messageText: "Couldn't export the theme",
-                           informativeText: error.localizedDescription)
-            return
-        }
-
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = "Zap Theme.json"
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        let preset = AppearancePreset(name: "Zap Theme", from: preferences)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
-            try data.write(to: url)
+            let data = try encoder.encode(preset)
+            try data.write(to: url, options: .atomic)
         } catch {
-            NSLog("Zap: failed to export theme: %@", error.localizedDescription)
-            showThemeAlert(messageText: "Couldn't export the theme",
-                           informativeText: error.localizedDescription)
+            showThemeFileError("Couldn’t export “\(url.lastPathComponent)”. \(error.localizedDescription) Try saving to another folder.")
         }
     }
 
@@ -232,37 +227,26 @@ struct AppearanceView: View {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        // Unreadable and unparseable are different failures: one says the file
-        // couldn't be read at all, the other that it was read but isn't a theme.
         let data: Data
         do {
             data = try Data(contentsOf: url)
         } catch {
-            NSLog("Zap: couldn't read a theme from %@: %@", url.lastPathComponent, error.localizedDescription)
-            showThemeAlert(messageText: "Couldn't import the theme",
-                           informativeText: "Zap couldn't read “\(url.lastPathComponent)”: \(error.localizedDescription)")
+            showThemeFileError("Couldn’t read “\(url.lastPathComponent)”. \(error.localizedDescription) Check that the file is accessible and try again.")
             return
         }
-
+        let preset: AppearancePreset
         do {
-            let preset = try JSONDecoder().decode(AppearancePreset.self, from: data)
-            preset.apply(to: preferences)
+            preset = try JSONDecoder().decode(AppearancePreset.self, from: data)
         } catch {
-            NSLog("Zap: couldn't read a theme from %@: %@", url.lastPathComponent, error.localizedDescription)
-            showThemeAlert(messageText: "Couldn't import the theme",
-                           informativeText: "“\(url.lastPathComponent)” isn't a Zap theme file. Themes are the .json files Zap's Export… button saves.")
+            NSLog("Zap: couldn’t decode theme: %@", String(describing: error))
+            showThemeFileError("Couldn’t import “\(url.lastPathComponent)”. Choose a theme JSON file exported by Zap.")
+            return
         }
+        preset.apply(to: preferences)
     }
 
-    /// Reports a theme import/export failure the user can see. `NSLog` alone
-    /// leaves a failed click looking like nothing happened at all.
-    private func showThemeAlert(messageText: String, informativeText: String) {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = messageText
-        alert.informativeText = informativeText
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+    private func showThemeFileError(_ message: String) {
+        themeFileErrorMessage = message
+        showsThemeFileError = true
     }
 }
