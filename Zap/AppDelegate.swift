@@ -226,11 +226,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// "Secure Keyboard Entry"). Zap cannot intercept those keys; the least it
     /// can do is say so, the way the paused state already dims the icon.
     private func startSecureInputPolling() {
-        let timer = Timer(timeInterval: Self.secureInputPollInterval, repeats: true) { [weak self] _ in
+        secureInputTimer?.invalidate()
+        secureInputTimer = BackgroundPoll.schedule(every: Self.secureInputPollInterval) { [weak self] in
             self?.refreshSecureInputState()
         }
-        RunLoop.main.add(timer, forMode: .common)
-        secureInputTimer = timer
         refreshSecureInputState()
     }
 

@@ -177,11 +177,9 @@ final class EventTapMonitor {
 
     private func startDiagnostics() {
         diagnosticsTimer?.invalidate()
-        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+        diagnosticsTimer = BackgroundPoll.schedule(every: 2) { [weak self] in
             self?.recordTapHealth()
         }
-        RunLoop.main.add(timer, forMode: .common)
-        diagnosticsTimer = timer
         recordTapHealth()
     }
 
