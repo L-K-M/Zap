@@ -55,6 +55,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         promptForAccessibilityIfNeeded()
     }
 
+    /// Opening Zap again while it runs (from Finder, Spotlight or Launchpad)
+    /// shows Settings, the convention for menu-bar apps. Without this the
+    /// relaunch did nothing at all, and it is the only way back into Settings
+    /// when the menu-bar icon is out of sight, e.g. hidden behind a MacBook's
+    /// notch by a crowded menu bar.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard !TestEnvironment.isRunningTests else { return false }
+        openSettings()
+        // Settings is now up; AppKit has nothing left to do for this reopen.
+        return false
+    }
+
     // MARK: Status item
 
     private func setUpStatusItem() {
