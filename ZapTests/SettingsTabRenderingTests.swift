@@ -1,6 +1,7 @@
 import AppKit
 import PictKit
 import SwiftUI
+import UpdraftKit
 import XCTest
 @testable import Zap
 

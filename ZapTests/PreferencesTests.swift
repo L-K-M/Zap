@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import LiveryKit
 @testable import Zap
 
 final class PreferencesTests: XCTestCase {
@@ -310,11 +311,39 @@ final class PreferencesTests: XCTestCase {
         let color = NSColor(hex: "#0A84FF")
         XCTAssertNotNil(color)
         XCTAssertEqual(color?.hexString, "#0A84FF")
+
+        // Shorthand expands by doubling each nibble.
+        XCTAssertEqual(NSColor(hex: "#08F")?.hexString, "#0088FF")
+        XCTAssertEqual(NSColor(hex: "#08F8")?.hexString, "#0088FF88")
+    }
+
+    /// Translucent colours keep their alpha when written back, so an imported
+    /// theme no longer silently turns opaque on export.
+    func testColorHexKeepsAlphaOnExport() {
+        let color = NSColor(hex: "#0A84FF80")
+        XCTAssertNotNil(color)
+        XCTAssertEqual(color?.hexString, "#0A84FF80")
+    }
+
+    /// The storage grammar accepts `#RGB`/`#RGBA`; Preferences validates with it.
+    func testStoredShorthandColorIsAccepted() {
+        let prefs = Preferences(defaults: defaults)
+        prefs.backgroundColorHex = "#112"
+        prefs.highlightColorHex = "#AABBCCDD"
+
+        let reloaded = Preferences(defaults: defaults)
+        XCTAssertEqual(reloaded.backgroundColorHex, "#112")
+        XCTAssertEqual(reloaded.highlightColorHex, "#AABBCCDD")
     }
 
     func testColorHexInvalidReturnsNil() {
         XCTAssertNil(NSColor(hex: "nothex"))
         XCTAssertNil(NSColor(hex: "#12"))
+        // A leading "+" is not a hex digit; it used to decode as a wrong colour.
+        XCTAssertNil(NSColor(hex: "+12345"))
+        XCTAssertNil(NSColor(hex: "+ABCDE"))
+        XCTAssertNil(NSColor(hex: "+ABC"))
+        XCTAssertNil(NSColor(hex: "#+ABC"))
     }
 
     func testInvalidStoredColorFallsBackToDefault() {

@@ -16,10 +16,19 @@ customization. See `PLAN.md` for the full design and milestones.
 - **System APIs:** `NSWorkspace`, `CGEventTap` (hotkey interception), Carbon
   `RegisterEventHotKey` (fallback hotkey), `SMAppService` (launch at login).
 - **Persistence:** `UserDefaults`, plus the shared icon store via `PictKit`.
-- **Dependencies:** exactly one — [`PictKit`](https://github.com/L-K-M/Pict), a
-  first-party SwiftPM package holding the icon store and resolution ladder shared
-  with Jetty, Top Drawer and the Pict editor. It is not what "don't add heavy
-  dependencies" is about: the code in it came out of this repository.
+- **Dependencies:** four first-party SwiftPM packages —
+  [`PictKit`](https://github.com/L-K-M/Pict), the icon store and resolution
+  ladder shared with Jetty, Top Drawer and the Pict editor,
+  [`LiveryKit`](https://github.com/L-K-M/Livery), the shared panel theming (hex
+  colours, contrast maths, corner decorations, CRT overlay, angle dial,
+  accessibility display mirror),
+  [`KeycapKit`](https://github.com/L-K-M/Keycap), the shared global-hotkey
+  registration (Carbon hotkeys and Accessibility trust), and
+  [`UpdraftKit`](https://github.com/L-K-M/Updraft), the shared GitHub Releases
+  update checker (version comparison, download verification, alerts). PictKit
+  tracks Pict's `main` branch; LiveryKit, KeycapKit and UpdraftKit are pinned
+  by tag up to the next minor. None is what "don't add heavy dependencies" is
+  about: the code in them came out of this repository.
 - **Min target:** macOS 13 (Ventura) or newer.
 - **App type:** Menu-bar agent (`LSUIElement = true`, no Dock icon).
 
@@ -76,8 +85,9 @@ Prefer building/running from Xcode during development for permission prompts.
 - **Do** update `PLAN.md` when the design changes.
 - **Do** keep distribution assumptions in mind (Developer ID + notarization, not App
   Store).
-- **Don't** add heavy dependencies; prefer system frameworks. `PictKit` is the
-  one exception and is first-party (see Tech Stack).
+- **Don't** add heavy dependencies; prefer system frameworks. `PictKit`,
+  `LiveryKit`, `KeycapKit` and `UpdraftKit` are the exceptions and are
+  first-party (see Tech Stack).
 - **Don't** put icon *ingestion* back in Zap. Decoding untrusted images, running a
   `WKWebView` over fetched markup and spawning `tar` all moved to Pict precisely
   because Zap holds an Accessibility event tap and can never be sandboxed.

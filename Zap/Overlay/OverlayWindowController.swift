@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import LiveryKit
 
 /// An `NSHostingView` that accepts the first mouse click even when its window is
 /// not key, so a click on the (background-app) overlay registers immediately.

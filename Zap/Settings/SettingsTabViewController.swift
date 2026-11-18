@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UpdraftKit
 
 /// Custom tabs above a native borderless controller that retains lazy panes.
 final class SettingsTabViewController: NSViewController {

@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import LiveryKit
 
 /// Color and size customization with a live preview of the overlay.
 struct AppearanceView: View {

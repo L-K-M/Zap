@@ -1,4 +1,5 @@
 import SwiftUI
+import UpdraftKit
 
 /// General preferences: launch at login, the show delay, and the fallback hotkey.
 struct GeneralView: View {

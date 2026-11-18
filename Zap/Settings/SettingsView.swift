@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Combine
+import UpdraftKit
 
 /// Root settings window content with tabs for each settings area.
 struct SettingsView: View {

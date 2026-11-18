@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import Combine
+import KeycapKit
 import PictKit
 
 /// Coordinates hotkey input, the app list, and the overlay window.
@@ -21,8 +22,10 @@ final class SwitcherController {
     private let overlay: OverlayWindowController
     private let eventTap: EventTapMonitor
     private let isAccessibilityTrusted: () -> Bool
-    private let forwardHotkey = CarbonHotkey(identifier: 1)
-    private let reverseHotkey = CarbonHotkey(identifier: 2)
+    /// Four-char signature `'ZAPH'`, matching Zap's Carbon hotkey constant.
+    private static let hotkeySignature: OSType = 0x5A_41_50_48
+    private let forwardHotkey = CarbonHotkey(identifier: 1, signature: SwitcherController.hotkeySignature)
+    private let reverseHotkey = CarbonHotkey(identifier: 2, signature: SwitcherController.hotkeySignature)
 
     private var apps: [AppInfo] = []
     private var selectedIndex = 0 {
@@ -368,10 +371,14 @@ final class SwitcherController {
         let shift = UInt32(shiftKey)
         forwardHotkey.onPressed = { [weak self] in self?.fallbackCycle(forward: true) }
         reverseHotkey.onPressed = { [weak self] in self?.fallbackCycle(forward: false) }
-        let forwardOK = forwardHotkey.register(keyCode: KeyCode.Carbon.tab, modifiers: option)
-        let reverseOK = reverseHotkey.register(keyCode: KeyCode.Carbon.tab, modifiers: option | shift)
+        let forwardResult = forwardHotkey.register(keyCode: KeyCode.Carbon.tab, modifiers: option)
+        let reverseResult = reverseHotkey.register(keyCode: KeyCode.Carbon.tab, modifiers: option | shift)
+        let forwardOK = forwardResult.isRegistered
+        let reverseOK = reverseResult.isRegistered
         if !(forwardOK && reverseOK) {
-            NSLog("Zap: alternate hotkey registration failed (forward: \(forwardOK), reverse: \(reverseOK))")
+            let forwardWhy = forwardResult.failureDescription ?? "registered"
+            let reverseWhy = reverseResult.failureDescription ?? "registered"
+            NSLog("Zap: alternate hotkey registration failed (forward: \(forwardWhy), reverse: \(reverseWhy))")
         }
         // Forward cycling is the essential capability; treat that as "fallback active".
         return forwardOK

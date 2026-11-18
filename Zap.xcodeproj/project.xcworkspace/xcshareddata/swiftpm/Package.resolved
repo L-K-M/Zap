@@ -1,6 +1,24 @@
 {
-  "originHash" : "8237b3f39d48dec371e543cc7dc0ceac0bc0f2393ee43d80aec805901e5ff241",
+  "originHash" : "5364dba739255f2498401d7655cc40cf093cd21a489f57a1559881e5a7bc66e7",
   "pins" : [
+    {
+      "identity" : "keycap",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/L-K-M/Keycap",
+      "state" : {
+        "revision" : "416486bdc26d9b781db2f37f699b438ac7e6e958",
+        "version" : "0.1.0"
+      }
+    },
+    {
+      "identity" : "livery",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/L-K-M/Livery",
+      "state" : {
+        "revision" : "e0e36b6abc10effdd04b9e1da8f3bb39e48113a8",
+        "version" : "0.1.0"
+      }
+    },
     {
       "identity" : "pict",
       "kind" : "remoteSourceControl",
@@ -8,6 +26,15 @@
       "state" : {
         "branch" : "main",
         "revision" : "77efe286ef4e6ea61ada06b69497798127c71e7e"
+      }
+    },
+    {
+      "identity" : "updraft",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/L-K-M/Updraft",
+      "state" : {
+        "revision" : "bc0fccf31d9c44b92de0f0fd83aa7c3c5c63f85f",
+        "version" : "0.1.0"
       }
     }
   ],

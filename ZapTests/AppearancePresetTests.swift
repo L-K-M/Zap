@@ -1,4 +1,5 @@
 import XCTest
+import LiveryKit
 @testable import Zap
 
 final class AppearancePresetTests: XCTestCase {
