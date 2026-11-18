@@ -10,6 +10,8 @@ import Foundation
 /// that generation is still current — that is how selection and session changes
 /// discard stale lists. A lookup that found fewer than two windows marks the
 /// generation exhausted so ↓ cannot make it repeat the query.
+/// The controller owns the lookup state on the main thread. Only the operation’s
+/// enumeration runs on the worker queue.
 final class WindowListLookup {
 
     /// Why a lookup was started; decides whether its result takes the window

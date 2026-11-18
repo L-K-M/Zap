@@ -19,7 +19,7 @@ final class WindowListLookupTests: XCTestCase {
             if condition() { return }
             RunLoop.current.run(until: Date().addingTimeInterval(0.01))
         }
-        XCTFail("Timed out waiting for \(description)")
+        XCTAssertTrue(condition(), "Timed out waiting for \(description)")
     }
 
     func testEnumerationRunsOffMainAndResultArrivesOnMain() {

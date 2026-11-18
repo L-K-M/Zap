@@ -799,8 +799,11 @@ final class SwitcherController {
         typeBuffer = pending.bufferBefore
         if let pid = pending.selectedPIDBefore,
            let index = apps.firstIndex(where: { $0.processIdentifier == pid }),
-           !quittingPIDs.contains(pid) {
+           !quittingPIDs.contains(pid), selectedIndex != index {
             selectedIndex = index
+            // Even an ignored shortcut (such as quitting Finder) must discard
+            // the tentative selection’s windows and restore the original dwell.
+            restartDwell()
         }
         overlay.setTypeQuery(typeBuffer)
         if overlay.isVisible { overlay.updateSelection(selectedIndex) }
