@@ -342,6 +342,8 @@ final class PreferencesTests: XCTestCase {
         // A leading "+" is not a hex digit; it used to decode as a wrong colour.
         XCTAssertNil(NSColor(hex: "+12345"))
         XCTAssertNil(NSColor(hex: "+ABCDE"))
+        XCTAssertNil(NSColor(hex: "+ABC"))
+        XCTAssertNil(NSColor(hex: "#+ABC"))
     }
 
     func testInvalidStoredColorFallsBackToDefault() {
