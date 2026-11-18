@@ -86,14 +86,4 @@ final class StatusMenuWarningTests: XCTestCase {
         XCTAssertFalse(SwitcherInputMode.unavailable.showsAccessibilityAction(alternateForced: false,
                                                                               accessibilityTrusted: true))
     }
-
-    /// The one-argument form predates the trust distinction and models the
-    /// missing-Accessibility case #96 was written for.
-    func testLegacyOneArgumentFormAssumesMissingAccessibility() {
-        XCTAssertEqual(SwitcherInputMode.fallback.statusMenuWarning(alternateForced: false),
-                       SwitcherInputMode.fallback.statusMenuWarning(alternateForced: false,
-                                                                    accessibilityTrusted: false))
-        XCTAssertNotNil(SwitcherInputMode.unavailable.statusMenuWarning(alternateForced: false))
-        XCTAssertNil(SwitcherInputMode.fallback.statusMenuWarning(alternateForced: true))
-    }
 }

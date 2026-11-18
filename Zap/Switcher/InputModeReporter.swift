@@ -54,12 +54,6 @@ enum SwitcherInputMode: Equatable {
         else { return false }
         return !alternateForced && !accessibilityTrusted
     }
-
-    /// The form #96 shipped, kept for callers that don't know the trust state.
-    /// It models the missing-Accessibility case that motivated the warning.
-    func statusMenuWarning(alternateForced: Bool) -> String? {
-        statusMenuWarning(alternateForced: alternateForced, accessibilityTrusted: false)
-    }
 }
 
 /// Observable wrapper so SwiftUI settings views can react to input-mode changes.

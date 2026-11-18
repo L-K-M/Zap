@@ -185,20 +185,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switcher.inputMode.$mode
             .combineLatest(preferences.$useAlternateHotkey)
             .sink { [weak self] mode, alternateForced in
-                // Read the grant live: the mode alone can't tell a missing
-                // Accessibility permission from an event-tap failure that
-                // happened with the grant already in place.
-                let trusted = AccessibilityAuthorizer.isTrusted
-                self?.showTriggerWarning(
-                    mode.statusMenuWarning(alternateForced: alternateForced,
-                                           accessibilityTrusted: trusted),
-                    showsAccessibilityAction: mode.showsAccessibilityAction(
-                        alternateForced: alternateForced, accessibilityTrusted: trusted))
+                self?.refreshTriggerWarning(mode: mode, alternateForced: alternateForced)
             }
             .store(in: &cancellables)
     }
 
-    private func showTriggerWarning(_ warning: String?, showsAccessibilityAction: Bool) {
+    private func refreshTriggerWarning(mode: SwitcherInputMode, alternateForced: Bool) {
+        let needsGrantState = !alternateForced && (mode == .fallback || mode == .unavailable)
+        let trusted = needsGrantState && AccessibilityAuthorizer.isTrusted
+        let warning = mode.statusMenuWarning(alternateForced: alternateForced, accessibilityTrusted: trusted)
+        guard triggerWarning != warning else { return }
+        let showsAccessibilityAction = mode.showsAccessibilityAction(alternateForced: alternateForced,
+                                                                    accessibilityTrusted: trusted)
         triggerWarning = warning
         triggerWarningItem?.title = warning ?? ""
         let warningVisible = warning != nil
@@ -225,6 +223,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshSecureInputState() {
+        // A grant can change while the same fallback remains active. The mode
+        // publisher suppresses duplicates, so refresh its explanation on this poll.
+        refreshTriggerWarning(mode: switcher.inputMode.mode, alternateForced: preferences.useAlternateHotkey)
         let enabled = SecureInputMonitor.isEnabled
         guard enabled != isSecureInputActive else { return }
         isSecureInputActive = enabled
