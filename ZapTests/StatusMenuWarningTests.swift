@@ -1,33 +1,99 @@
 import XCTest
 @testable import Zap
 
-/// When the status menu explains that ⌘-Tab isn't being intercepted
-/// (`SwitcherInputMode.statusMenuWarning(alternateForced:)`).
+/// The status menu's explanation and Accessibility action
+/// (`SwitcherInputMode.statusMenuWarning(alternateForced:accessibilityTrusted:)`
+/// and `showsAccessibilityAction(alternateForced:accessibilityTrusted:)`).
 final class StatusMenuWarningTests: XCTestCase {
 
     func testHealthyTapShowsNothing() {
-        XCTAssertNil(SwitcherInputMode.eventTap.statusMenuWarning(alternateForced: false))
-        XCTAssertNil(SwitcherInputMode.eventTap.statusMenuWarning(alternateForced: true))
+        for trusted in [false, true] {
+            XCTAssertNil(SwitcherInputMode.eventTap.statusMenuWarning(alternateForced: false,
+                                                                      accessibilityTrusted: trusted))
+            XCTAssertFalse(SwitcherInputMode.eventTap.showsAccessibilityAction(alternateForced: false,
+                                                                               accessibilityTrusted: trusted))
+        }
     }
 
     func testPauseIsAlreadyExplainedByTheMenu() {
-        XCTAssertNil(SwitcherInputMode.paused.statusMenuWarning(alternateForced: false))
+        XCTAssertNil(SwitcherInputMode.paused.statusMenuWarning(alternateForced: false,
+                                                                accessibilityTrusted: false))
+        XCTAssertFalse(SwitcherInputMode.paused.showsAccessibilityAction(alternateForced: false,
+                                                                         accessibilityTrusted: false))
     }
 
-    /// The case this exists for: Accessibility is missing, so Zap is on ⌥-Tab
+    /// The case #96 exists for: Accessibility is missing, so Zap is on ⌥-Tab
     /// without the user having asked for it.
-    func testUnchosenFallbackPointsAtAccessibility() throws {
-        let warning = try XCTUnwrap(SwitcherInputMode.fallback.statusMenuWarning(alternateForced: false))
+    func testMissingAccessibilityFallbackPointsAtAccessibilityAndShowsTheAction() throws {
+        let warning = try XCTUnwrap(SwitcherInputMode.fallback.statusMenuWarning(alternateForced: false,
+                                                                                 accessibilityTrusted: false))
         XCTAssertTrue(warning.contains("⌥-Tab"))
         XCTAssertTrue(warning.contains("Accessibility"))
+        XCTAssertFalse(warning.contains("event tap"))
+        XCTAssertTrue(SwitcherInputMode.fallback.showsAccessibilityAction(alternateForced: false,
+                                                                          accessibilityTrusted: false))
     }
 
     func testChosenFallbackIsNotAWarning() {
-        XCTAssertNil(SwitcherInputMode.fallback.statusMenuWarning(alternateForced: true))
+        for trusted in [false, true] {
+            XCTAssertNil(SwitcherInputMode.fallback.statusMenuWarning(alternateForced: true,
+                                                                      accessibilityTrusted: trusted))
+            XCTAssertFalse(SwitcherInputMode.fallback.showsAccessibilityAction(alternateForced: true,
+                                                                               accessibilityTrusted: trusted))
+        }
     }
 
-    func testNoTriggerAtAllIsAlwaysAWarning() {
+    /// Trust is already granted, so the event tap itself failed. Blaming
+    /// Accessibility, and offering its settings pane, would be misleading.
+    func testTrustedEventTapFailureDoesNotBlameAccessibility() throws {
+        let warning = try XCTUnwrap(SwitcherInputMode.fallback.statusMenuWarning(alternateForced: false,
+                                                                                 accessibilityTrusted: true))
+        XCTAssertTrue(warning.contains("⌥-Tab"))
+        XCTAssertTrue(warning.contains("event tap"))
+        XCTAssertFalse(warning.contains("Accessibility"))
+        XCTAssertFalse(SwitcherInputMode.fallback.showsAccessibilityAction(alternateForced: false,
+                                                                           accessibilityTrusted: true))
+    }
+
+    /// The user deliberately chose ⌥-Tab and its registration failed. ⌘-Tab
+    /// was never attempted, so the warning must not blame it, and Accessibility
+    /// is not the fix.
+    func testDeliberateOptionTabRegistrationFailureDoesNotBlameCommandLineOrOfferAccessibility() throws {
+        for trusted in [false, true] {
+            let warning = try XCTUnwrap(SwitcherInputMode.unavailable.statusMenuWarning(alternateForced: true,
+                                                                                         accessibilityTrusted: trusted))
+            XCTAssertTrue(warning.contains("⌥-Tab"))
+            XCTAssertFalse(warning.contains("⌘-Tab"))
+            XCTAssertFalse(warning.contains("Accessibility"))
+            XCTAssertFalse(SwitcherInputMode.unavailable.showsAccessibilityAction(alternateForced: true,
+                                                                                   accessibilityTrusted: trusted))
+        }
+    }
+
+    func testMissingAccessibilityWithFailedFallbackStillOffersTheAction() throws {
+        let warning = try XCTUnwrap(SwitcherInputMode.unavailable.statusMenuWarning(alternateForced: false,
+                                                                                    accessibilityTrusted: false))
+        XCTAssertTrue(warning.contains("Accessibility"))
+        XCTAssertTrue(SwitcherInputMode.unavailable.showsAccessibilityAction(alternateForced: false,
+                                                                             accessibilityTrusted: false))
+    }
+
+    func testTrustedEventTapAndFallbackFailureHidesTheAction() throws {
+        let warning = try XCTUnwrap(SwitcherInputMode.unavailable.statusMenuWarning(alternateForced: false,
+                                                                                    accessibilityTrusted: true))
+        XCTAssertTrue(warning.contains("event tap"))
+        XCTAssertFalse(warning.contains("Accessibility"))
+        XCTAssertFalse(SwitcherInputMode.unavailable.showsAccessibilityAction(alternateForced: false,
+                                                                              accessibilityTrusted: true))
+    }
+
+    /// The one-argument form predates the trust distinction and models the
+    /// missing-Accessibility case #96 was written for.
+    func testLegacyOneArgumentFormAssumesMissingAccessibility() {
+        XCTAssertEqual(SwitcherInputMode.fallback.statusMenuWarning(alternateForced: false),
+                       SwitcherInputMode.fallback.statusMenuWarning(alternateForced: false,
+                                                                    accessibilityTrusted: false))
         XCTAssertNotNil(SwitcherInputMode.unavailable.statusMenuWarning(alternateForced: false))
-        XCTAssertNotNil(SwitcherInputMode.unavailable.statusMenuWarning(alternateForced: true))
+        XCTAssertNil(SwitcherInputMode.fallback.statusMenuWarning(alternateForced: true))
     }
 }

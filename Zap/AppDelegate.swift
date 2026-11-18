@@ -185,17 +185,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switcher.inputMode.$mode
             .combineLatest(preferences.$useAlternateHotkey)
             .sink { [weak self] mode, alternateForced in
-                self?.showTriggerWarning(mode.statusMenuWarning(alternateForced: alternateForced))
+                // Read the grant live: the mode alone can't tell a missing
+                // Accessibility permission from an event-tap failure that
+                // happened with the grant already in place.
+                let trusted = AccessibilityAuthorizer.isTrusted
+                self?.showTriggerWarning(
+                    mode.statusMenuWarning(alternateForced: alternateForced,
+                                           accessibilityTrusted: trusted),
+                    showsAccessibilityAction: mode.showsAccessibilityAction(
+                        alternateForced: alternateForced, accessibilityTrusted: trusted))
             }
             .store(in: &cancellables)
     }
 
-    private func showTriggerWarning(_ warning: String?) {
+    private func showTriggerWarning(_ warning: String?, showsAccessibilityAction: Bool) {
         triggerWarning = warning
         triggerWarningItem?.title = warning ?? ""
-        for item in [triggerWarningItem, grantAccessibilityItem, triggerWarningSeparator] {
-            item?.isHidden = warning == nil
-        }
+        let warningVisible = warning != nil
+        triggerWarningItem?.isHidden = !warningVisible
+        triggerWarningSeparator?.isHidden = !warningVisible
+        grantAccessibilityItem?.isHidden = !showsAccessibilityAction
         updateStatusItemState()
     }
 
