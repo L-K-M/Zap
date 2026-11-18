@@ -24,21 +24,32 @@ actor WindowThumbnailProvider {
     /// than once per window.
     private let contentTTL: TimeInterval
 
-    /// Most-recent shareable-content snapshot and the time it was taken. macOS 14+
-    /// only; typed `Any?` so the property needs no availability annotation.
-    private var cachedContent: Any?
+    private var cachedContent: SCShareableContent?
     private var cachedContentAt: TimeInterval = 0
+    // Share the fetch across actor calls that overlap while it is suspended.
+    private var contentFetch: Task<SCShareableContent?, Never>?
+    private var cacheGeneration = 0
 
-    init(capacity: Int = 24, maxAge: TimeInterval = 5, contentTTL: TimeInterval = 1) {
+    private let fetchContent: @Sendable () async -> SCShareableContent?
+
+    init(capacity: Int = 24, maxAge: TimeInterval = 5, contentTTL: TimeInterval = 1,
+         fetchContent: @escaping @Sendable () async -> SCShareableContent? = {
+             try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+         }) {
         cache = LRUImageCache(capacity: capacity, maxAge: maxAge)
         self.contentTTL = contentTTL
+        self.fetchContent = fetchContent
     }
 
     /// Returns a cached or freshly-captured thumbnail for `windowID`, scaled so its
-    /// longest edge is at most `maxDimension` points. `nil` when capture fails.
+    /// longest edge is at most `maxDimension` *pixels* (callers convert from the
+    /// tile's point size with `WindowPreviewMetrics.capturePixelDimension`). `nil`
+    /// when capture fails.
     func thumbnail(for windowID: CGWindowID, maxDimension: CGFloat) async -> NSImage? {
+        guard !Task.isCancelled else { return nil }
+        let generation = cacheGeneration
         let now = Date.timeIntervalSinceReferenceDate
-        if let cached = cache.value(for: windowID, now: now) {
+        if let cached = cache.value(for: windowID, capturePixels: maxDimension, now: now) {
             return cached
         }
 
@@ -48,15 +59,18 @@ actor WindowThumbnailProvider {
         } else {
             cgImage = captureLegacy(windowID: windowID, maxDimension: maxDimension)
         }
-        guard let cgImage else { return nil }
+        guard !Task.isCancelled, cacheGeneration == generation, let cgImage else { return nil }
 
         let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-        cache.insert(image, for: windowID, now: Date.timeIntervalSinceReferenceDate)
+        cache.insert(image, for: windowID, capturePixels: maxDimension, now: Date.timeIntervalSinceReferenceDate)
         return image
     }
 
     /// Drops all cached thumbnails (e.g. when previews are turned off).
     func clear() {
+        cacheGeneration &+= 1
+        contentFetch?.cancel()
+        contentFetch = nil
         cache.removeAll()
         cachedContent = nil
         cachedContentAt = 0
@@ -69,17 +83,30 @@ actor WindowThumbnailProvider {
     /// expensive part of a capture, so sharing one snapshot across a preview batch
     /// keeps the switcher's run loop responsive (an overloaded run loop gets the
     /// ⌘+Tab event tap disabled by timeout, dropping the commit on key release).
-    @available(macOS 14.0, *)
     private func shareableContent() async -> SCShareableContent? {
         let now = Date.timeIntervalSinceReferenceDate
-        if let content = cachedContent as? SCShareableContent, now - cachedContentAt < contentTTL {
-            return content
+        if let cachedContent, now - cachedContentAt < contentTTL {
+            return cachedContent
         }
-        guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true) else {
-            return nil
+        if let contentFetch { return await contentFetch.value }
+
+        let generation = cacheGeneration
+        // The shared fetch outlives individual callers. Only clear() cancels it.
+        let fetch = Task { await refreshShareableContent(generation: generation) }
+        contentFetch = fetch
+        return await fetch.value
+    }
+
+    private func refreshShareableContent(generation: Int) async -> SCShareableContent? {
+        guard cacheGeneration == generation, !Task.isCancelled else { return nil }
+        let content = await fetchContent()
+        // A clear may have made room for a newer fetch while this one was suspended.
+        guard cacheGeneration == generation else { return nil }
+        contentFetch = nil
+        if let content {
+            cachedContent = content
+            cachedContentAt = Date.timeIntervalSinceReferenceDate
         }
-        cachedContent = content
-        cachedContentAt = Date.timeIntervalSinceReferenceDate
         return content
     }
 
@@ -87,6 +114,7 @@ actor WindowThumbnailProvider {
     private func captureModern(windowID: CGWindowID, maxDimension: CGFloat) async -> CGImage? {
         guard
             let content = await shareableContent(),
+            !Task.isCancelled,
             let window = content.windows.first(where: { $0.windowID == windowID })
         else {
             return nil
@@ -106,6 +134,8 @@ actor WindowThumbnailProvider {
 
     /// `CGWindowListCreateImage` is deprecated in macOS 14 but is the only
     /// screenshot path on macOS 13, where `SCScreenshotManager` is unavailable.
+    /// `.nominalResolution` keeps this capture at 1× even on Retina, which
+    /// bounds its cost; macOS 13 previews stay at that density.
     /// It cannot size its capture, so the result is downsampled before it can be
     /// wrapped in an `NSImage` and cached — otherwise every cached thumbnail
     /// holds a full-resolution bitmap.
