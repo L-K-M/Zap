@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- A hotkey press that arrives just as its shortcut is changed or turned off no
+  longer fires the old action (Keycap 0.1.1).
+- When GitHub's rate limit stops a Check for Updates, the alert says when to
+  try again instead of showing a bare HTTP 403 (Updraft 0.2.0).
 - Adopted Livery for panel theming. Theme colours now accept `#RGB` and
   `#RGBA` shorthand, reject signed strings such as `+12345`, and keep their
   alpha when a theme is exported; the CRT overlay's strength now scales
