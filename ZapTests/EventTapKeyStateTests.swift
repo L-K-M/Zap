@@ -95,6 +95,27 @@ final class EventTapKeyStateTests: XCTestCase {
 
     // MARK: Re-enabling after the system disables the tap
 
+    func testSystemOutageForgetsAReleaseThatMayBelongToAnotherApp() {
+        for reason: CGEventType in [.tapDisabledByTimeout, .tapDisabledByUserInput] {
+            for sessionStillOpen in [false, true] {
+                switching = true
+                XCTAssertFalse(reachesApps(.keyDown, qKey(down: true, flags: .maskCommand)))
+                // The original Q was released during the outage. A different
+                // press reached the front app before Zap recovered.
+                reachesApps(reason, CGEvent(source: nil)!)
+                switching = sessionStillOpen
+                XCTAssertTrue(reachesApps(.keyUp, qKey(down: false)))
+            }
+        }
+    }
+
+    func testSessionStillConsumesPressesItHandlesAfterAnOutage() {
+        switching = true
+        reachesApps(.tapDisabledByTimeout, CGEvent(source: nil)!)
+        XCTAssertFalse(reachesApps(.keyDown, qKey(down: true, flags: .maskCommand)))
+        XCTAssertFalse(reachesApps(.keyUp, qKey(down: false)))
+    }
+
     func testASystemDisableReEnablesAnActiveTap() {
         connection.isEnabled = false   // what macOS does on a slow callback
 

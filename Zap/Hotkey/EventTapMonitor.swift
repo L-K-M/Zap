@@ -85,6 +85,11 @@ final class EventTapMonitor {
     /// is on the main run loop, and `setEnabled`/`stop` are called from main.
     private var heldShortcutKeyCodes: [Int64: ShortcutKey] = [:]
 
+    /// During a session interrupted by an outage, only these presses are
+    /// known to have been consumed since recovery. Other releases may belong
+    /// to an app that saw its press while the tap was offline.
+    private var pressesSinceRecovery: Set<Int64>?
+
     var isRunning: Bool {
         guard let eventTap, eventTap.isValid,
               let events = eventTap.registeredEvents else { return false }
@@ -148,6 +153,7 @@ final class EventTapMonitor {
         diagnosticsTimer = nil
         intendedEnabled = false
         heldShortcutKeyCodes.removeAll()
+        pressesSinceRecovery = nil
         let hadTap = eventTap != nil
         eventTap?.invalidate()
         eventTap = nil
@@ -158,7 +164,10 @@ final class EventTapMonitor {
         intendedEnabled = enabled
         // Releases bypass a disabled tap, so a record kept now could never be
         // cleared by its key-up and would swallow some later release instead.
-        if !enabled { heldShortcutKeyCodes.removeAll() }
+        if !enabled {
+            heldShortcutKeyCodes.removeAll()
+            pressesSinceRecovery = nil
+        }
         guard let tap = eventTap else { return }
         tap.setEnabled(enabled)
         recordTapHealth()
@@ -200,6 +209,8 @@ final class EventTapMonitor {
                 diagnostics.lifecycle("Tap disabled by \(cause) while \(intendedEnabled ? "already torn down" : "intentionally off"); left off")
                 return Unmanaged.passUnretained(event)
             }
+            heldShortcutKeyCodes.removeAll()
+            pressesSinceRecovery = isSwitching() ? [] : nil
             tap.setEnabled(true)
             // Log off the callback thread and distinguish an enable request from
             // confirmed health. The old NSLog claimed success without checking.
@@ -231,6 +242,15 @@ final class EventTapMonitor {
 
         case .keyDown:
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+            if pressesSinceRecovery != nil {
+                if !isSwitching() {
+                    pressesSinceRecovery = nil
+                } else if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+                    pressesSinceRecovery?.insert(keyCode)
+                } else if pressesSinceRecovery?.contains(keyCode) == false {
+                    return Unmanaged.passUnretained(event)
+                }
+            }
             let tabStartedAt = keyCode == KeyCode.tab ? ProcessInfo.processInfo.systemUptime : nil
             let tabSequence = tabStartedAt.map { _ in
                 diagnostics.tabReceived(flags: flags, matchedTrigger: cleanCommand)
@@ -326,6 +346,9 @@ final class EventTapMonitor {
             // is always cleared, even when the session ended first.
             let recorded = heldShortcutKeyCodes.removeValue(forKey: keyCode)
             let switching = isSwitching()
+            if switching, pressesSinceRecovery != nil, pressesSinceRecovery?.remove(keyCode) == nil {
+                return Unmanaged.passUnretained(event)
+            }
             guard Self.shouldConsumeKeyUp(recordedShortcutKey: recorded != nil,
                                           isSwitching: switching) else {
                 return Unmanaged.passUnretained(event)
