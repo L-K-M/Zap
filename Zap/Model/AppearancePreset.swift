@@ -115,7 +115,8 @@ extension AppearancePreset {
     /// `decodeIfPresent` defaults). Jetty and Invoque files share many key
     /// names (`name`, `crtEnabled`, `iconSize`, `decorationStyle`, ...), so a
     /// lax decoder would let them decode natively with half-wrong values
-    /// instead of taking the `ThemeSnapshot` path.
+    /// instead of taking the `ThemeSnapshot` path. The Jetty and Invoque
+    /// import tests check that both fixtures fail native decoding.
     static func decode(from data: Data) -> AppearancePreset? {
         do {
             return try JSONDecoder().decode(AppearancePreset.self, from: data)
