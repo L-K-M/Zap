@@ -144,9 +144,11 @@ final class AppearancePresetImportTests: XCTestCase {
         AppearancePreset.decode(from: Data(json.utf8))
     }
 
-    func testCompleteZapThemeDecodesAsItself() throws {
-        let data = try JSONEncoder().encode(AppearancePreset.zxNight)
-        XCTAssertEqual(AppearancePreset.decode(from: data), AppearancePreset.zxNight)
+    func testCompleteZapThemesDecodeAsThemselves() throws {
+        for preset in AppearancePreset.builtIns {
+            let data = try JSONEncoder().encode(preset)
+            XCTAssertEqual(AppearancePreset.decode(from: data), preset, preset.name)
+        }
     }
 
     /// The shared reader must recognise every built-in theme Zap exports and
@@ -172,7 +174,7 @@ final class AppearancePresetImportTests: XCTestCase {
 
     /// Jetty's built-in "Vapor" theme as Jetty exports it.
     func testImportsJettyTheme() throws {
-        let preset = try XCTUnwrap(decode(##"""
+        let json = ##"""
         {"accentGlow": true, "backgroundOpacity": 0.7, "cornerRadius": 24,
          "crtEnabled": true, "crtIntensity": 0.5, "decorationOpacity": 1,
          "decorationPosition": "topTrailing", "decorationSize": 12,
@@ -181,7 +183,9 @@ final class AppearancePresetImportTests: XCTestCase {
          "indicatorStyle": "dot", "magnification": 1.6, "magnificationEnabled": true,
          "material": "gradient", "name": "Vapor", "showLabels": false,
          "tileSpacing": 10, "tintHex": "#FF6AD5"}
-        """##))
+        """##
+        XCTAssertThrowsError(try JSONDecoder().decode(AppearancePreset.self, from: Data(json.utf8)))
+        let preset = try XCTUnwrap(decode(json))
 
         let d = Preferences.Default.self
         XCTAssertEqual(preset.name, "Vapor")
@@ -203,7 +207,7 @@ final class AppearancePresetImportTests: XCTestCase {
 
     /// Invoque's built-in "Summon" theme as Invoque exports it.
     func testImportsInvoqueTheme() throws {
-        let preset = try XCTUnwrap(decode(##"""
+        let json = ##"""
         {"adaptiveAccent": true, "backgroundOpacity": 0.9, "cornerRadius": 16,
          "crtEnabled": false, "crtIntensity": 0.5, "decorationOpacity": 1,
          "decorationPosition": "topTrailing", "decorationSize": 10,
@@ -211,7 +215,9 @@ final class AppearancePresetImportTests: XCTestCase {
          "highlightCornerRadius": 10, "highlightHex": "#B18CFF", "highlightOpacity": 0.4,
          "labelHex": "#EDE9FF", "material": "gradient", "name": "Summon",
          "tintHex": "#17122B", "typeface": "system"}
-        """##))
+        """##
+        XCTAssertThrowsError(try JSONDecoder().decode(AppearancePreset.self, from: Data(json.utf8)))
+        let preset = try XCTUnwrap(decode(json))
 
         let d = Preferences.Default.self
         XCTAssertEqual(preset.name, "Summon")
