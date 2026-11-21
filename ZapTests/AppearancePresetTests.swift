@@ -145,8 +145,12 @@ final class AppearancePresetImportTests: XCTestCase {
     }
 
     func testCompleteZapThemesDecodeAsThemselves() throws {
+        XCTAssertFalse(AppearancePreset.builtIns.isEmpty)
+        let encoder = JSONEncoder()
+        let decoder = JSONDecoder()
         for preset in AppearancePreset.builtIns {
-            let data = try JSONEncoder().encode(preset)
+            let data = try encoder.encode(preset)
+            XCTAssertEqual(try decoder.decode(AppearancePreset.self, from: data), preset, preset.name)
             XCTAssertEqual(AppearancePreset.decode(from: data), preset, preset.name)
         }
     }
@@ -184,7 +188,8 @@ final class AppearancePresetImportTests: XCTestCase {
          "material": "gradient", "name": "Vapor", "showLabels": false,
          "tileSpacing": 10, "tintHex": "#FF6AD5"}
         """##
-        XCTAssertThrowsError(try JSONDecoder().decode(AppearancePreset.self, from: Data(json.utf8)))
+        XCTAssertThrowsError(try JSONDecoder().decode(AppearancePreset.self, from: Data(json.utf8)),
+                             "Jetty themes must take the shared import path")
         let preset = try XCTUnwrap(decode(json))
 
         let d = Preferences.Default.self
@@ -216,7 +221,8 @@ final class AppearancePresetImportTests: XCTestCase {
          "labelHex": "#EDE9FF", "material": "gradient", "name": "Summon",
          "tintHex": "#17122B", "typeface": "system"}
         """##
-        XCTAssertThrowsError(try JSONDecoder().decode(AppearancePreset.self, from: Data(json.utf8)))
+        XCTAssertThrowsError(try JSONDecoder().decode(AppearancePreset.self, from: Data(json.utf8)),
+                             "Invoque themes must take the shared import path")
         let preset = try XCTUnwrap(decode(json))
 
         let d = Preferences.Default.self
